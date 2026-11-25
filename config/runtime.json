@@ -1,0 +1,68 @@
+{
+  "manifestVersion": 2,
+  "provisionAiRuntime": true,
+  "useExistingStack": false,
+  "requireHashes": true,
+  "logging": {
+    "directory": "logs",
+    "retentionDays": 14
+  },
+  "dependencyPins": {
+    "llama.cpp": {
+      "repository": "https://github.com/ggerganov/llama.cpp.git",
+      "gitRef": "2d973636e292ee6f75fadcf08d29cb33511f509f"
+    }
+  },
+  "enginePacks": [
+    {
+      "cpu": {
+        "llm": {
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10724/llama-b10724-bin-win-cpu-x64.zip",
+          "sha256": "287B320F2B217809E24E0A7459A25E627B8785223080667D9ECF575253EF0762",
+          "enabled": true,
+          "requiredFiles": [
+            "llama.dll",
+            "ggml.dll",
+            "llama-server.exe"
+          ]
+        }
+      },
+      "cuda": {
+        "llm": {
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10724/llama-b10724-bin-win-cuda-13.3-x64.zip",
+          "sha256": "D46CB57B73F68E52D5DD142574061E32F7AD3865282C351F2ABB6C08A1279CE9",
+          "enabled": true,
+          "requiredFiles": [
+            "llama.dll",
+            "ggml.dll",
+            "llama-server.exe"
+          ]
+        }
+      },
+      "vulkan": {
+        "llm": {
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10724/llama-b10724-bin-win-vulkan-x64.zip",
+          "sha256": "0C8147447EA91103E8E1179249F1F9D2D1EBA7EA3782F0C2B0AF52695A5F813C",
+          "enabled": true,
+          "requiredFiles": [
+            "llama.dll",
+            "ggml.dll",
+            "llama-server.exe"
+          ]
+        }
+      }
+    }
+  ],
+  "models": [
+    {
+      "enabled": true,
+      "id": "plamo-3-translate-0.8b-q4",
+      "version": "7de4409",
+      "path": "models/llm/plamo-3-translate-0.8b-Q4_0.gguf",
+      "url": "https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF/resolve/7de4409/plamo-3-translate-0.8b-Q4_0.gguf",
+      "sha256": "",
+      "maxBytes": 800000000
+    }
+  ],
+  "services": []
+}
