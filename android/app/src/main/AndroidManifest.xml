@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+<application android:label="Roots" android:usesCleartextTraffic="true" android:allowBackup="false">
+<activity android:name="com.wds.sixstars.contextoverlay.OverlayTranslationSettingsActivity" android:exported="true" tools:replace="android:exported">
+<intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+</activity></application></manifest>

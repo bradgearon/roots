@@ -72,7 +72,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             "With desktop translation enabled, the text you tap may be sent to your configured Roots desktop over the local network for PLaMo inference. " +
             "If automatic translation is also enabled, eligible visible X text may be sent automatically. The X content could include private messages. " +
             "Plain HTTP does not encrypt text or the access key; use only a trusted home Wi-Fi network, or an HTTPS/VPN bridge. " +
-            "Nothing is sent unless you separately enable desktop translation. " +
+            "By default translation runs on this device. Nothing is sent unless you separately enable desktop translation. " +
             "You can stop processing below, and disable the service at any time in Android Accessibility settings.",
             14, 0xFFE5EFF4);
         disclosure.setPadding(0, dp(8), 0, dp(14));
@@ -104,8 +104,11 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         });
         content.addView(stop);
 
+        Button download = button("Download local PLaMo model (~550 MB)");
+        download.setOnClickListener(v -> LocalPLaMoTranslationProvider.downloadModel(this, (message, error) -> runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(error == null ? message : error).setPositiveButton("OK", null).show())));
+        content.addView(download);
         content.addView(text("Desktop PLaMo connection", 18, 0xFFFFFFFF));
-        content.addView(text("Bridge address (same as Roots settings)", 13, 0xFFAAC8D4));
+        content.addView(text("Desktop bridge address (http://YOUR-PC:8123)", 13, 0xFFAAC8D4));
         bridgeAddress = new EditText(this);
         bridgeAddress.setSingleLine(true);
         bridgeAddress.setText(prefs.bridgeUrl());
@@ -156,15 +159,13 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(targetLanguage);
 
         desktopTranslation = new CheckBox(this);
-        desktopTranslation.setText("Send X text to my desktop for real PLaMo translation");
+        desktopTranslation.setText("Use desktop host instead of on-device PLaMo");
         desktopTranslation.setTextColor(0xFFE5EFF4);
         desktopTranslation.setChecked(prefs.desktopTranslationEnabled());
         desktopTranslation.setOnCheckedChangeListener((button, checked) -> {
             if (!checked) {
                 prefs.setDesktopTranslationEnabled(false);
-                prefs.setAutoPreview(false);
                 TranslationRuntime.disconnect();
-                if (translationMode != null) translationMode.check(manualModeId);
                 refreshStatus();
                 return;
             }
@@ -213,9 +214,9 @@ public final class OverlayTranslationSettingsActivity extends Activity {
 
         translationMode.check(prefs.autoPreview() ? autoModeId : manualModeId);
         translationMode.setOnCheckedChangeListener((group, selectedId) -> {
-            if (selectedId == autoModeId && !prefs.desktopTranslationEnabled()) {
+            if (selectedId == autoModeId && !prefs.translationEnabled()) {
                 group.check(manualModeId);
-                status.setText("Enable and consent to desktop translation before using Automatic mode.");
+                status.setText("Grant X text processing consent before using Automatic mode.");
                 return;
             }
             prefs.setAutoPreview(selectedId == autoModeId);
@@ -259,12 +260,12 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(system);
 
         content.addView(text("PLaMo translation connection test", 18, 0xFFFFFFFF));
-        Button sample = button("Test actual desktop translation");
+        Button sample = button("Test actual PLaMo translation");
         content.addView(sample);
         preview = text("Sample: Bonjour à tous!", 14, 0xFFE5EFF4);
         content.addView(preview);
         sample.setOnClickListener(v -> {
-            preview.setText("Contacting desktop PLaMo…");
+            preview.setText("Translating with PLaMo…");
             TranslationRuntime.provider(this).translate("Bonjour à tous!", "fr", prefs.targetLanguage(),
                 (result, error) -> runOnUiThread(() -> preview.setText(
                     (error == null ? "PLaMo: " + result : "Cannot translate: " + error) +

@@ -12,7 +12,7 @@ public final class OverlayPreferences {
     private static final String INLINE_THEME = "auto_inline_theme";
     private static final String DESKTOP_TRANSLATION = "desktop_translation_consent";
     private static final String BRIDGE_URL = "translation_bridge_url";
-    private static final String PARENT_PREFS = "SixStarsMobilePrefs";
+    
     private final SharedPreferences prefs;
     private final Context prefsContext;
 
@@ -23,6 +23,7 @@ public final class OverlayPreferences {
 
     public boolean enabled() { return prefs.getBoolean(CONSENT, false); }
     public void setEnabled(boolean value) { prefs.edit().putBoolean(CONSENT, value).apply(); }
+    public boolean translationEnabled() { return enabled(); }
     public boolean desktopTranslationEnabled() {
         return prefs.getBoolean(DESKTOP_TRANSLATION, false);
     }
@@ -34,8 +35,7 @@ public final class OverlayPreferences {
         if (saved == null || saved.trim().isEmpty()) {
             // Integration-only preference adapter; the module remains independent
             // of Roots Java classes and can migrate into a separate app.
-            saved = prefsContext.getSharedPreferences(PARENT_PREFS, Context.MODE_PRIVATE)
-                    .getString("bridgeUrl", "http://192.168.1.179:8066");
+            saved = "http://127.0.0.1:8123";
         }
         return saved == null ? "" : saved.trim().replaceAll("/+$", "");
     }

@@ -101,7 +101,7 @@ public final class OverlayTranslationCoordinator {
 
         // Only one auto request initiated at a time. A later scan may start
         // the next post; no timer/polling and no unbounded request queue.
-        if (automatic && preferences.desktopTranslationEnabled()
+        if (automatic && preferences.translationEnabled()
                 && autoPendingFingerprint == null) {
             for (TextCandidate candidate : current) {
                 if (!shouldTranslateAutomatically(candidate, target)) continue;
@@ -132,7 +132,7 @@ public final class OverlayTranslationCoordinator {
                     autoPendingFingerprint = null;
                     autoPendingMissingSince = 0L;
                     if (!active || !preferences.enabled() ||
-                            !preferences.desktopTranslationEnabled() ||
+                            !preferences.translationEnabled() ||
                             !preferences.autoPreview()) return;
 
                     if (error == null && translated != null && !translated.trim().isEmpty()) {
@@ -152,7 +152,7 @@ public final class OverlayTranslationCoordinator {
 
     private void translateAtTap(TextCandidate tapped) {
         if (!active || !preferences.enabled() ||
-                !preferences.desktopTranslationEnabled()) return;
+                !preferences.translationEnabled()) return;
 
         List<TextCandidate> fresh = freshView.capture();
         TextCandidate current = match(fresh, tapped.fingerprint);
@@ -166,12 +166,12 @@ public final class OverlayTranslationCoordinator {
         }
 
         final long sequence = ++requestSequence;
-        renderer.showDetail(current, "Translating with desktop PLaMo…");
+        renderer.showDetail(current, "Translating with PLaMo…");
         provider.translate(current.text, current.languageHint, target,
                 (translation, error) -> main.post(() -> {
                     if (sequence != requestSequence || !active ||
                             !preferences.enabled() ||
-                            !preferences.desktopTranslationEnabled()) return;
+                            !preferences.translationEnabled()) return;
 
                     String output = error == null
                             ? (translation == null ? "No translation returned." : translation)

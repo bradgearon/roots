@@ -76,7 +76,7 @@ public final class LanPLaMoTranslationProvider implements TranslationProvider {
                 }
 
                 String base = preferences.bridgeUrl();
-                URL address = new URL(base + "/api/mobile/translation");
+                URL address = new URL(base + "/api/translation/v1/translate");
                 if (!"http".equalsIgnoreCase(address.getProtocol())
                         && !"https".equalsIgnoreCase(address.getProtocol())) {
                     callback.completed(null, "Use an http:// or https:// Roots bridge address.");

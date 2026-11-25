@@ -135,8 +135,9 @@ final class PersistentMobileTranslationSocket {
         try {
             JSONObject message = new JSONObject()
                     .put("type", "translate")
-                    .put("requestId", id)
-                    .put("payload", payload);
+                    .put("id", Integer.toString(id));
+            java.util.Iterator<String> keys = payload.keys();
+            while (keys.hasNext()) { String k = keys.next(); message.put(k, payload.get(k)); }
             if (!active.send(message.toString())) {
                 pending.remove(id);
                 failConnect(active, 0);
@@ -147,7 +148,7 @@ final class PersistentMobileTranslationSocket {
                 pending.remove(id);
                 try {
                     active.send(new JSONObject().put("type", "cancel")
-                            .put("requestId", id).toString());
+                            .put("id", Integer.toString(id)).toString());
                 } catch (Exception ignored) { }
                 return new Reply(null, "PLaMo translation timed out.");
             }
@@ -172,9 +173,9 @@ final class PersistentMobileTranslationSocket {
         if (bridge == null) throw new IllegalArgumentException("Bridge URL required");
         String normalized = bridge.trim().replaceAll("/+$", "");
         if (normalized.startsWith("https://"))
-            return "wss://" + normalized.substring(8) + "/api/mobile/translation/socket";
+            return "wss://" + normalized.substring(8) + "/api/translation/v1/socket";
         if (normalized.startsWith("http://"))
-            return "ws://" + normalized.substring(7) + "/api/mobile/translation/socket";
+            return "ws://" + normalized.substring(7) + "/api/translation/v1/socket";
         throw new IllegalArgumentException("Unsupported bridge URL");
     }
 
@@ -256,8 +257,8 @@ final class PersistentMobileTranslationSocket {
             try {
                 JSONObject message = new JSONObject(text);
                 String type = message.optString("type", "");
-                if ("hello".equals(type)) {
-                    if (!"translation".equals(message.optString("capability"))) {
+                if ("auth".equals(type)) {
+                    if (!message.optBoolean("ok", false)) {
                         failConnect(ws, 0);
                         return;
                     }
@@ -272,7 +273,7 @@ final class PersistentMobileTranslationSocket {
                 }
 
                 if (!"result".equals(type)) return;
-                int requestId = message.optInt("requestId", -1);
+                int requestId = message.optInt("id", -1);
                 Pending op = pending.remove(requestId);
                 if (op == null) return;
                 if (!message.optBoolean("ok", false)) {
@@ -280,7 +281,7 @@ final class PersistentMobileTranslationSocket {
                             "Desktop translation: " + message.optString("error", "unknown_error")));
                     return;
                 }
-                JSONObject answer = message.optJSONObject("payload");
+                JSONObject answer = message;
                 String translated = answer == null ? "" : answer.optString("translation", "");
                 op.complete(translated.trim().isEmpty()
                         ? new Reply(null, "PLaMo returned an empty translation.")
