@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{width:300px;padding:13px;background:#111827;color:#f9fafb;font:13px system-ui,sans-serif}
+h1{font-size:16px;margin:0 0 12px}
+label{display:block;margin:9px 0 4px}
+input:not([type=checkbox]),select{box-sizing:border-box;width:100%;border-radius:6px;padding:7px;background:#1f2937;color:#f9fafb;border:1px solid #6b7280}
+button{border-radius:7px;border:0;background:#059669;color:white;padding:8px 12px;margin-top:12px;cursor:pointer}
+small{display:block;margin:8px 0;color:#cbd5e1}
+#status{margin-top:9px;min-height:20px}
+</style>
+</head>
+<body>
+<h1>Roots · Local Translate</h1>
+<small>Requires Roots running on this PC. Only 127.0.0.1:8123 is used.</small>
+<label for="token">Local access token</label>
+<input type="password" id="token" autocomplete="off" placeholder="Paste token from Show-TranslationToken.ps1">
+<label for="target">Translate into</label>
+<select id="target">
+<option value="en">English</option><option value="ja">Japanese</option><option value="es">Spanish</option>
+<option value="fr">French</option><option value="de">German</option>
+</select>
+<label><input type="checkbox" id="auto"> Auto-translate nearby foreign-language X posts</label>
+<button id="save">Save settings</button>
+<button id="ping" style="background:#475569">Check service</button>
+<div id="status" role="status"></div>
+<small>Manual translation buttons appear below X posts. Original text remains unchanged.</small>
+<script src="popup.js"></script>
+</body>
+</html>

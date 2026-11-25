@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Roots Local PLaMo Translate",
+  "description": "Translate nearby X posts with local PLaMo 3 over a persistent authenticated WebSocket, using viewport-aware prefetch and HTTP fallback.",
+  "version": "0.3.0",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Roots Translate"
+  },
+  "minimum_chrome_version": "116"
+}
