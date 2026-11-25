@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="context_overlay_title">X translation overlay</string>
+    <string name="context_overlay_service_label">Roots X Translation Overlay</string>
+    <string name="context_overlay_service_description">Optional translation badges over text in the X app. Only the visible X window is read after you consent; other applications are not scanned.</string>
+</resources>

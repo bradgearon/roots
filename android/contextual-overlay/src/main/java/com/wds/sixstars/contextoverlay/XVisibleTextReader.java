@@ -1,0 +1,215 @@
+package com.wds.sixstars.contextoverlay;
+
+import android.graphics.Rect;
+import android.view.accessibility.AccessibilityNodeInfo;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Captures only X's foreground accessibility nodes. The reader extracts likely
+ * post bodies; XPostSpatialAnalyzer selects one body per card and handles
+ * viewport geometry. No screenshot, persistence or non-X application reading.
+ */
+public final class XVisibleTextReader {
+    public static final String X_PACKAGE = "com.twitter.android";
+    private static final int MAX_VISITED_NODES = 650;
+    private static final int MAX_SOURCE_CHARS = 1100;
+    private final XPostSpatialAnalyzer spatial = new XPostSpatialAnalyzer();
+    private int lastVisited;
+    private int lastTextNodes;
+    private int lastCandidateCount;
+
+    public int lastVisitedNodes() { return lastVisited; }
+    public int lastTextNodes() { return lastTextNodes; }
+    public int lastCandidateCount() { return lastCandidateCount; }
+
+    public List<TextCandidate> find(AccessibilityNodeInfo root, int width, int height) {
+        List<TextCandidate> raw = new ArrayList<>();
+        List<Rect> avatars = new ArrayList<>();
+        lastVisited = 0;
+        lastTextNodes = 0;
+        lastCandidateCount = 0;
+        if (root == null || root.getPackageName() == null
+                || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
+
+        ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+
+        while (!queue.isEmpty() && lastVisited < MAX_VISITED_NODES) {
+            AccessibilityNodeInfo node = queue.removeFirst();
+            final int order = ++lastVisited;
+            try {
+                // Descendants of custom X containers can still be readable even
+                // when the container itself is not considered visible.
+                int childCount = Math.min(node.getChildCount(), 45);
+                for (int i = 0; i < childCount; i++) {
+                    AccessibilityNodeInfo child = node.getChild(i);
+                    if (child != null) queue.add(child);
+                }
+                if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
+                if (node.getPackageName() != null && !X_PACKAGE.contentEquals(node.getPackageName()))
+                    continue;
+
+                // Avatar identity is a separate card element, not translatable
+                // body text. Capture its rectangle without retaining X nodes.
+                String nodeId = node.getViewIdResourceName();
+                CharSequence accessibilityLabel = node.getContentDescription();
+                if (avatars.size() < 32 && looksLikeAvatar(nodeId, accessibilityLabel)) {
+                    Rect avatar = new Rect();
+                    node.getBoundsInScreen(avatar);
+                    if (plausibleAvatar(avatar, width, height)) avatars.add(avatar);
+                }
+
+                CharSequence textValue = node.getText();
+                boolean description = textValue == null || textValue.length() == 0;
+                if (description) textValue = node.getContentDescription();
+                if (textValue == null || textValue.length() == 0) continue;
+                lastTextNodes++;
+
+                String text = TextFingerprint.normalized(textValue.toString());
+                if (text.length() > MAX_SOURCE_CHARS) continue;
+                String viewId = node.getViewIdResourceName();
+                String className = node.getClassName() == null
+                        ? "" : node.getClassName().toString();
+                String language = languageHint(text);
+
+                Rect bounds = new Rect();
+                node.getBoundsInScreen(bounds);
+                if (!XPostSpatialAnalyzer.onScreen(bounds, width, height)) continue;
+                if (description && childCount > 5) continue; // whole-feed descriptions
+
+                int score = PostTextHeuristics.score(text, viewId, className, description,
+                        node.isClickable(), bounds.width(), bounds.height(), language);
+                if (score < 0) continue;
+
+                PostCard card = findCard(node, bounds, width, height);
+                // Prefer the body node exposed with a known tweet-text resource ID,
+                // then bounded text within a known tweet card, then fallback text.
+                if (card.found) score += 28;
+                raw.add(new TextCandidate(text, language, bounds, card.bounds,
+                        order, score, card.found, description,
+                        PostTextHeuristics.isPostTextId(viewId)));
+            } catch (IllegalStateException ignored) {
+                // X may recompose a node while its virtual accessibility tree is read.
+                // A later event performs a new scan without retaining stale nodes.
+            }
+        }
+
+        // Associate each readable body with its nearest profile image. The
+        // spatial analyzer may then deduplicate header/body descriptions of
+        // the SAME tweet even when X omits recognizable post-container IDs.
+        List<TextCandidate> associated = new ArrayList<>(raw.size());
+        for (TextCandidate candidate : raw) {
+            Rect avatar = nearestAvatar(candidate, avatars, width);
+            associated.add(new TextCandidate(candidate.text, candidate.languageHint,
+                    candidate.bounds, candidate.postBounds, candidate.order,
+                    candidate.bodyScore, candidate.hasPostContainer,
+                    candidate.fromDescription, candidate.knownPostTextId, avatar));
+        }
+        List<TextCandidate> selected = spatial.locate(associated, width, height);
+        lastCandidateCount = selected.size();
+        return selected;
+    }
+
+    private static PostCard findCard(AccessibilityNodeInfo node, Rect body, int width, int height) {
+        AccessibilityNodeInfo parent = node.getParent();
+        for (int depth = 0; parent != null && depth < 9; depth++) {
+            Rect rect = new Rect();
+            parent.getBoundsInScreen(rect);
+            if (rect.width() >= body.width() && rect.height() >= body.height()
+                    && rect.width() <= width && rect.height() <= height * 2
+                    && rect.right > 0 && rect.left < width) {
+                String id = parent.getViewIdResourceName();
+                if (PostTextHeuristics.isPostContainerId(id))
+                    return new PostCard(rect, true);
+
+                AccessibilityNodeInfo grand = parent.getParent();
+                if (grand != null && grand.getClassName() != null
+                        && PostTextHeuristics.isListClass(grand.getClassName().toString()))
+                    return new PostCard(rect, true);
+            }
+            // Stop at the feed's scroll container rather than using the entire
+            // timeline as a single post bounding box.
+            if (parent.isScrollable()) break;
+            parent = parent.getParent();
+        }
+        return new PostCard(body, false);
+    }
+
+    private static boolean looksLikeAvatar(String id, CharSequence description) {
+        String resource = id == null ? "" : id.toLowerCase(Locale.ROOT);
+        String label = description == null ? "" :
+                description.toString().toLowerCase(Locale.ROOT);
+        return resource.contains("avatar") || resource.contains("profile_image")
+                || resource.contains("profile_photo")
+                || label.startsWith("profile image") || label.startsWith("profile photo")
+                || label.startsWith("profile picture") || label.startsWith("avatar ")
+                || label.startsWith("profile images for");
+    }
+
+    private static boolean plausibleAvatar(Rect box, int width, int height) {
+        int w = box.width();
+        int h = box.height();
+        return w >= Math.max(24, width / 32) && h >= Math.max(24, width / 32)
+                && w <= width / 4 && h <= width / 4
+                && Math.abs(w - h) <= Math.max(w, h) / 3
+                && XPostSpatialAnalyzer.onScreen(box, width, height);
+    }
+
+    private static Rect nearestAvatar(TextCandidate body, List<Rect> avatars, int width) {
+        Rect nearest = null;
+        int best = Integer.MAX_VALUE;
+        for (Rect avatar : avatars) {
+            // The profile picture is in X's LEFT GUTTER of the same post,
+            // slightly above the body text. Never borrow an image from an
+            // adjacent tweet or from the media region below the body.
+            int gap = body.bounds.left - avatar.right;
+            if (gap < 0 || gap > Math.max(60, width / 6)
+                    || avatar.top > body.bounds.top + width / 24
+                    || avatar.bottom < body.bounds.top - width / 8) continue;
+            if (body.hasPostContainer && (avatar.centerY() < body.postBounds.top
+                    || avatar.centerY() > body.postBounds.bottom)) continue;
+            int score = gap + Math.abs(avatar.bottom - body.bounds.top);
+            if (score < best) {
+                best = score;
+                nearest = avatar;
+            }
+        }
+        return nearest == null ? null : new Rect(nearest);
+    }
+
+    private static final class PostCard {
+        final Rect bounds;
+        final boolean found;
+        PostCard(Rect bounds, boolean found) {
+            this.bounds = new Rect(bounds);
+            this.found = found;
+        }
+    }
+
+    /**
+     * Best-effort language hint. Actual translation stays with PLaMo. Native X
+     * doesn't necessarily expose the tweet's language or normalized post ID.
+     */
+    public static String languageHint(String text) {
+        if (text == null || text.isEmpty()) return "";
+        if (text.codePoints().anyMatch(c -> (c >= 0x3040 && c <= 0x30ff))) return "ja";
+        if (text.codePoints().anyMatch(c -> c >= 0xac00 && c <= 0xd7af)) return "ko";
+        if (text.codePoints().anyMatch(c -> c >= 0x0600 && c <= 0x06ff)) return "ar";
+        if (text.codePoints().anyMatch(c -> c >= 0x0400 && c <= 0x04ff)) return "ru";
+        if (text.codePoints().anyMatch(c -> c >= 0x4e00 && c <= 0x9fff)) return "zh";
+        String s = " " + text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}]+", " ") + " ";
+        if (containsAny(s, " bonjour ", " merci ", " pourquoi ", " aujourd hui ", " je suis ", " avec vous ")) return "fr";
+        if (containsAny(s, " hola ", " gracias ", " buenos dias ", " buenas noches ", " estoy ", " nosotros ")) return "es";
+        if (containsAny(s, " hallo ", " danke ", " bitte ", " guten morgen ", " ich bin ")) return "de";
+        return "";
+    }
+
+    private static boolean containsAny(String text, String... words) {
+        for (String candidate : words) if (text.contains(candidate)) return true;
+        return false;
+    }
+}
