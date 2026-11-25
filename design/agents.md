@@ -1,0 +1,45 @@
+# Agents and personal state
+
+Status: proposal. See [design index](README.md).
+
+## Natural-language agents (Tendrils)
+
+Users create an agent by stating an intention in ordinary language: "expand my network of Japanese game developers," "find people who might collaborate on my music project," "help me explore a new interest," or "find opportunities appropriate for my engineering experience."
+
+An intent compiler produces an editable, inspectable plan: goal, desired outcome, eligible sources, allowed data scopes, matching criteria, exclusions, cadence, budget, expiration, notification policy and action permissions. Ask for approval when scope or cost increases. No agent can grant itself permissions.
+
+Candidate roles: Explorer (interests and communities), Connector (people), Scout (professional/creative opportunities), Muse (ideas), Scholar (learning), Curator (content), Gardener (existing connections), Bridge (languages/cultures), Resonance (success patterns), Kairos (timely opportunities). These are templates, not mandatory personas.
+
+## Living personal state
+
+Separate stable user-provided profile, declared skills, languages, interests, projects, creative history, verified identities, relationships, current intentions and temporary user-provided state (e.g., available time, creative direction). Each value carries origin, timestamp, scope and optional expiry. Keep inferred interests separate from explicit user statements; allow correction, removal and opt-out. Do not infer sensitive identity or psychological states from incidental content.
+
+An agent receives only the profile fields and evidence allowed for its purpose. Availability, dating preferences and ratings visibility are authoritative user controls, not model guesses. See [social.md](social.md).
+
+## Conversation intelligence
+
+Analyze explicitly authorized conversation selections, preferably on-device or via the user's approved local desktop. Identify shared interests, complementary skills, open questions, commitments, follow-ups, resources, potential collaborations and creative ideas. Example: a person building procedural environments mentions interest in composition; a suggestion is to explore adaptive soundtracks together. Do not infer that the other participant desires collaboration or romance. Preserve a minimal evidence pointer, uncertainty and a proposed next step. Private conversations are not automatically shared with other agents, users or servers.
+
+Offer ideas during or after a conversation, as appropriate to the interface, without interrupting the original interaction. Suggest replies or introductions only; user decides whether to send them. Do not impersonate or secretly contact people.
+
+## Discovery and coordination
+
+Agents operate on the authorized Roots graph. One may find a creator, another recognize a relevant interest, another connect a current event to a past work. Share structured, scoped findings and evidence; never leak private source context across permissions. Rank opportunities by relevance, complementary interests, novelty, availability, feasibility and evidence quality; no universal popularity requirement.
+
+Support deliberate interest expansion: familiar topics, adjacent disciplines and an adjustable exploration budget for unfamiliar areas. Offer discovered content to the timeline mixer, highlights or an inbox. A dismissed finding should not recur unless meaningfully changed.
+
+Opt-in opportunity exchange allows two users' agents to match shared goals or complementary skills via minimal, explicitly shared opportunity descriptors; mutual availability and approval gate any introduction. No profile or private-message export is implied.
+
+## Execution and UX
+
+Agent lifecycle: draft -> authorized -> active -> paused/expired/completed/revoked. Show last run, discoveries, next eligibility, budget and permissions. Allow manual run, pause, edit, delete, mute, and digest. Prefer event-driven wakeups and scheduled batches to continuous polling; persist checkpoints and deduplicate results. Back off on failures; cancel work and invalidate caches when permission is revoked.
+
+Agent output: recommendation with evidence, why it matches the user's intention, confidence/limitations, suggested next steps, expiry and feedback controls. External posts, messages, introductions, account changes and sharing private data require explicit authorization appropriate to each action. No autonomous unsolicited outreach by default.
+
+## Acceptance
+
+- Create and edit an agent from a short natural-language intent.
+- Suggest a novel adjacent interest, a relevant person and a feasible opportunity with source evidence.
+- Generate a useful idea from an authorized sample conversation without asserting another person's hidden intention.
+- Pausing or revoking an agent stops its work and prevents further discoveries from being presented.
+- An unavailable or blocked person never appears in a matchmaking result for that mode.
