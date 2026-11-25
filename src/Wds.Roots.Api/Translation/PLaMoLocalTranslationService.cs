@@ -22,7 +22,7 @@ namespace Wds.Roots.Api.Translation
         private readonly bool _ownsClient;
 
         public PLaMoLocalTranslationService(
-            string completionEndpoint = "http://127.0.0.1:8081/v1/chat/completions",
+            string completionEndpoint = "http://127.0.0.1:8081/v1/completions",
             HttpClient? client = null)
         {
             _endpoint = completionEndpoint;
@@ -42,13 +42,14 @@ namespace Wds.Roots.Api.Translation
             string? source = NormalizeLanguage(request.SourceLang, required: false);
             int maxTokens = request.MaxTokens <= 0 ? 512 : Math.Min(request.MaxTokens, 2048);
 
-            var kwargs = new Dictionary<string, object> { ["target_lang"] = target };
-            if (source != null) kwargs["source_lang"] = source;
+            if (request.Text.Contains("<|plamo:", StringComparison.Ordinal)) throw new ArgumentException("Text contains a reserved model delimiter.");
+            string prompt = "<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input"
+                + (source == null ? "" : "<|plamo:key|>lang<|plamo:val|>" + source)
+                + "<|plamo:msg|>" + request.Text + "<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>" + target + "<|plamo:msg|>";
             var payload = new
             {
                 model = ModelName,
-                messages = new[] { new { role = "user", content = request.Text } },
-                chat_template_kwargs = kwargs,
+                prompt,
                 temperature = 0,
                 max_tokens = maxTokens,
                 stream = false,
@@ -62,14 +63,13 @@ namespace Wds.Roots.Api.Translation
             };
             using var result = await _http.SendAsync(outbound, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);
-            string responseText = await result.Content.ReadAsStringAsync().ConfigureAwait(false);
+            string responseText = await result.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (!result.IsSuccessStatusCode)
                 throw new HttpRequestException("Local translation returned HTTP " + (int)result.StatusCode + ". " +
                     (responseText.Length > 500 ? responseText.Substring(0, 500) : responseText));
 
             using var doc = JsonDocument.Parse(responseText);
-            string? translation = doc.RootElement.GetProperty("choices")[0].GetProperty("message")
-                .GetProperty("content").GetString();
+            string? translation = doc.RootElement.GetProperty("choices")[0].GetProperty("text").GetString();
             if (string.IsNullOrWhiteSpace(translation))
                 throw new InvalidOperationException("Translation model returned empty content.");
             timer.Stop();

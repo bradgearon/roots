@@ -22,7 +22,7 @@ internal static class LocalTranslationSocket
 
     public static async Task RunAsync(
         HttpContext context, ITranslationService translator, string secret,
-        ILanguageDetectionService detector)
+        ILanguageDetectionService detector, bool lan = false)
     {
         if (!context.WebSockets.IsWebSocketRequest)
         {
@@ -32,7 +32,10 @@ internal static class LocalTranslationSocket
 
         // WebSocket connections are not protected by CORS. Allow Chrome extension
         // workers only; an arbitrary website must never initiate this protocol.
-        if (!IsChromeExtensionOrigin(context.Request.Headers["Origin"].ToString()))
+        bool mobile = lan && string.IsNullOrEmpty(context.Request.Headers["Origin"].ToString()) && LocalTranslationGateway.IsAuthorized(context.Request.Headers["X-SixStars-Token"].ToString(), secret);
+        var remote = context.Connection.RemoteIpAddress;
+        if (remote?.IsIPv4MappedToIPv6 == true) remote = remote.MapToIPv4();
+        if (!mobile && (!System.Net.IPAddress.IsLoopback(remote ?? System.Net.IPAddress.None) || !IsChromeExtensionOrigin(context.Request.Headers["Origin"].ToString())))
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
@@ -46,7 +49,7 @@ internal static class LocalTranslationSocket
 
         try
         {
-            using (var authDeadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token))
+            if (!mobile) using (var authDeadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token))
             {
                 authDeadline.CancelAfter(TimeSpan.FromSeconds(AuthDeadlineSeconds));
                 string? first = await ReceiveTextAsync(socket, authDeadline.Token);
@@ -92,7 +95,7 @@ internal static class LocalTranslationSocket
                     if (!ValidId(id)) continue;
                     if (type == "cancel")
                     {
-                        if (active.TryGetValue(id!, out var running)) running.Cancel();
+                        if (active.TryGetValue(id!, out var running)) { try { running.Cancel(); } catch (ObjectDisposedException) { } }
                         continue;
                     }
                     if (type != "translate" && type != "detect") continue;

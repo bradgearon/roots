@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using Wds.Roots.Api.Forge;
+using Wds.Roots.Api.Forge.Contracts;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
@@ -16,12 +18,14 @@ namespace Wds.Roots.Host;
 internal sealed class LocalTranslationGateway : IAsyncDisposable
 {
     private readonly int _port;
+    private readonly bool _lan;
     private readonly PLaMoLocalTranslationService _translator;
     private WebApplication? _app;
 
-    public LocalTranslationGateway(int port, string llamaChatEndpoint)
+    public LocalTranslationGateway(int port, string llamaChatEndpoint, bool lan = false)
     {
         _port = port;
+        _lan = lan;
         _translator = new PLaMoLocalTranslationService(llamaChatEndpoint);
     }
 
@@ -31,7 +35,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = Array.Empty<string>() });
         builder.WebHost.ConfigureKestrel(options =>
         {
-            options.ListenLocalhost(_port);
+            if (_lan) options.ListenAnyIP(_port); else options.ListenLocalhost(_port);
             options.Limits.MaxRequestBodySize = 32 * 1024;
             options.AddServerHeader = false;
         });
@@ -44,8 +48,21 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         });
 
         app.MapGet("/api/translation/v1/socket", (HttpContext context) =>
-            LocalTranslationSocket.RunAsync(context, _translator, secret, FastTextLanguageDetectionService.Shared));
+            LocalTranslationSocket.RunAsync(context, _translator, secret, FastTextLanguageDetectionService.Shared, _lan));
 
+
+        app.MapPost("/api/forge/v1/invoke", async (HttpContext context) =>
+        {
+            if (!IsAuthorized(context.Request.Headers["X-SixStars-Token"].ToString(), secret)) return Results.Unauthorized();
+            try {
+                var request = await context.Request.ReadFromJsonAsync<ForgeServiceRequest>(cancellationToken: context.RequestAborted);
+                if (request == null) return Results.BadRequest(new { error = "request_required" });
+                return Results.Json(await new TranslationForge(_translator, FastTextLanguageDetectionService.Shared).InvokeAsync(request, context.RequestAborted));
+            } catch (ArgumentException) { return Results.BadRequest(new { error = "invalid_forge_request" }); }
+              catch (JsonException) { return Results.BadRequest(new { error = "invalid_json" }); }
+              catch (OperationCanceledException) { return Results.StatusCode(499); }
+              catch (Exception) { return Results.StatusCode(503); }
+        });
 
         app.MapGet("/api/translation/v1/health", () => Results.Json(new
         {
