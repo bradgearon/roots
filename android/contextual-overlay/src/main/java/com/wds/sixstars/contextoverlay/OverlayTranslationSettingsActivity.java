@@ -113,7 +113,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         bridgeAddress.setSingleLine(true);
         bridgeAddress.setText(prefs.bridgeUrl());
         bridgeAddress.setTextColor(Color.WHITE);
-        bridgeAddress.setHint("http://192.168.1.179:8066");
+        bridgeAddress.setHint("http://192.168.1.100:8123");
         bridgeAddress.setHintTextColor(0xFF8AADB6);
         bridgeAddress.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         content.addView(bridgeAddress);

@@ -56,6 +56,15 @@
   "models": [
     {
       "enabled": true,
+      "id": "plamo-3-translate-2b-q4",
+      "version": "1",
+      "path": "models/llm/plamo-3-translate-2b-Q4_K_M.gguf",
+      "url": "https://huggingface.co/pfnet/plamo-3-translate-2b-GGUF/resolve/main/plamo-3-translate-2b-Q4_K_M.gguf",
+      "sha256": "",
+      "maxBytes": 2500000000
+    },
+    {
+      "enabled": false,
       "id": "plamo-3-translate-0.8b-q4",
       "version": "7de4409",
       "path": "models/llm/plamo-3-translate-0.8b-Q4_0.gguf",

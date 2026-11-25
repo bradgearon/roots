@@ -10,7 +10,7 @@ public static class AiRuntimeIntegrity
     private const string MarkerRelativePath = "state/roots-llm-reverify.required";
 
     public static string LlmReverificationMarker(string? aiRoot = null)
-        => Path.Combine(Path.GetFullPath(aiRoot ?? AiRuntimeRoot.Resolve()), "state", "llm-reverify.required");
+        => Path.Combine(Path.GetFullPath(aiRoot ?? AiRuntimeRoot.Resolve()), "state", "roots-llm-reverify.required");
 
     public static bool IsLlmReverificationRequested(string? aiRoot = null)
     {

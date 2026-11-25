@@ -12,7 +12,7 @@ namespace Wds.Roots.Api.Translation
 {
     /// <summary>
     /// Reusable PLaMo 3 Translate client. Uses a dedicated localhost llama.cpp
-    /// server kept resident alongside the independent Six Stars conversation model.
+    /// server kept resident independently of the integration clients.
     /// </summary>
     public sealed class PLaMoLocalTranslationService : ITranslationService, IDisposable
     {
@@ -65,8 +65,7 @@ namespace Wds.Roots.Api.Translation
                 .ConfigureAwait(false);
             string responseText = await result.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             if (!result.IsSuccessStatusCode)
-                throw new HttpRequestException("Local translation returned HTTP " + (int)result.StatusCode + ". " +
-                    (responseText.Length > 500 ? responseText.Substring(0, 500) : responseText));
+                throw new HttpRequestException("Local translation returned HTTP " + (int)result.StatusCode + ".");
 
             using var doc = JsonDocument.Parse(responseText);
             string? translation = doc.RootElement.GetProperty("choices")[0].GetProperty("text").GetString();

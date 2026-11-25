@@ -4,8 +4,6 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Wds.Roots.Host.Runtime;
-using Wds.Roots.Host.Runtime;
 
 namespace Wds.Roots.Host.Runtime;
 
@@ -74,7 +72,7 @@ internal partial class RuntimeJson : JsonSerializerContext;
 
 /// <summary>
 /// Launcher-owned AI runtime provisioner and optional service supervisor. Engines and models
-/// live beneath AI_ROOT rather than beneath the Resone installation so multiple WDS products
+/// live beneath AI_ROOT rather than beneath the Roots installation so multiple WDS products
 /// can share the same verified binaries and model files.
 /// </summary>
 public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient http, Action<string>? onStatus = null) : IDisposable

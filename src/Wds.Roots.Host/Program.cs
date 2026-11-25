@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Wds.Roots.Host;
 using Wds.Roots.Host.Runtime;
 var root = Directory.GetCurrentDirectory();
@@ -11,12 +12,14 @@ Process? engine = null;
 try {
     if (!external) {
         await supervisor.StartAsync(quit.Token);
-        string model = Path.Combine(AiRuntimeRoot.Resolve(), "models/llm/plamo-3-translate-0.8b-Q4_0.gguf");
+        var manifest = JsonSerializer.Deserialize(await File.ReadAllTextAsync(Path.Combine(root, "config", "runtime.json"), quit.Token), RuntimeJson.Default.RuntimeConfig) ?? throw new InvalidDataException("Invalid runtime manifest.");
+        var selected = manifest.Models.Single(m => m.Enabled && m.Path.StartsWith("models/llm/", StringComparison.OrdinalIgnoreCase));
+        string model = EnginePackInstaller.Under(AiRuntimeRoot.Resolve(), selected.Path);
         string dir = AiRuntimeRoot.ResolveEngineDirectory("llm", "engines/llm/llama-cpp-dynamic-win-x64");
         string exe = Path.Combine(dir, "llama-server.exe");
         if (!File.Exists(exe)) throw new FileNotFoundException("llama-server not found", exe);
         var start = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = dir, CreateNoWindow = true };
-        foreach (var arg in new[]{"-m",model,"--host","127.0.0.1","--port","8081","--ctx-size","4096","--jinja","--no-prefill-assistant","--alias","plamo-3-translate","-ngl",supervisor.SelectedBackend=="cpu"?"0":"99"}) start.ArgumentList.Add(arg);
+        foreach (var arg in new[]{"-m",model,"--host","127.0.0.1","--port","8081","--ctx-size","8192","--jinja","--no-prefill-assistant","--alias","plamo-3-translate","-ngl",supervisor.SelectedBackend=="cpu"?"0":"99"}) start.ArgumentList.Add(arg);
         engine = Process.Start(start) ?? throw new InvalidOperationException("Could not start PLaMo.");
     }
     using var readiness = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };

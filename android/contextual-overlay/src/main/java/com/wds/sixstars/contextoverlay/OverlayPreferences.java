@@ -47,7 +47,7 @@ public final class OverlayPreferences {
             java.net.URL parsed = new java.net.URL(value);
             if (parsed.getHost().isEmpty() || !parsed.getPath().isEmpty() && !"/".equals(parsed.getPath())
                     || parsed.getUserInfo() != null || parsed.getQuery() != null || parsed.getRef() != null)
-                throw new IllegalArgumentException("Enter a bridge base URL, for example http://192.168.1.179:8066");
+                throw new IllegalArgumentException("Enter a bridge base URL, for example http://192.168.1.100:8123");
         } catch (java.net.MalformedURLException e) {
             throw new IllegalArgumentException("Invalid bridge URL");
         }
