@@ -289,7 +289,7 @@ public final class XVisibleTextReader {
                         && other.bounds.left>=sample.bounds.left
                         && XAuthorNameHeuristics.hasVisibleEllipsis(other.text))clipped=true;
             }
-            addAuthor(names,new XAuthorInfo(name,sample.bounds,avatar,clipped));
+            addAuthor(names,new XAuthorInfo(name,sample.bounds,avatar,clipped,!composite));
         }
         // Preserve verified associations as a fallback; they no longer gate
         // name discovery. Do not duplicate a richer independent header.
@@ -307,8 +307,10 @@ public final class XVisibleTextReader {
     private static void addAuthor(Map<String, TextCandidate> names, XAuthorInfo info) {
         TextCandidate c=TextCandidate.forAuthor(info,names.size());
         TextCandidate existing=names.get(c.fingerprint);
-        if(existing==null || existing.avatarBounds.isEmpty() && !c.avatarBounds.isEmpty()
-                || !existing.author.truncated && info.truncated)
+        if(existing==null || !existing.author.inlineSafe && info.inlineSafe
+                || existing.author.inlineSafe==info.inlineSafe &&
+                    (existing.avatarBounds.isEmpty() && !c.avatarBounds.isEmpty()
+                        || !existing.author.truncated && info.truncated))
             names.put(c.fingerprint,c);
     }
 
@@ -470,7 +472,9 @@ public final class XVisibleTextReader {
                 clipped = true;
         }
 
-        return new XAuthorInfo(best.text, best.bounds, avatar, clipped);
+        boolean composite=XAuthorNameHeuristics.looksCompositeHeader(best.text);
+        String name=composite?best.text.substring(0,best.text.indexOf('@')).trim():best.text;
+        return new XAuthorInfo(name, best.bounds, avatar, clipped,!composite);
     }
 
     private static final class PostCard {

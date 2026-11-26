@@ -143,6 +143,10 @@ public final class AccessibilityOverlayRenderer {
         }
     }
 
+    public void setActiveTranslations(java.util.Set<String> ids) {
+        if (automaticMode) autoInline.setActiveTranslations(ids);
+    }
+
     public void showAutoTranslation(TextCandidate candidate, String translation) {
         if (automaticMode) autoInline.show(candidate, translation);
     }

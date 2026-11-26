@@ -59,6 +59,14 @@ final class AutoOverlaySceneController {
                 }
             };
     private final Map<String, Controls> controls = new HashMap<>();
+    private final Set<String> activeTranslations = new HashSet<>();
+
+    void setActiveTranslations(Set<String> ids) {
+        if(destroyed || activeTranslations.equals(ids))return;
+        activeTranslations.clear();
+        activeTranslations.addAll(ids);
+        frames.request();
+    }
     private final AutoSceneSurfaceManager surfaces;
     private String lastError = "";
     private int visibleCount;
@@ -114,17 +122,17 @@ final class AutoOverlaySceneController {
             if(nameCount>=MAX_VISIBLE)break;
             if(!candidate.authorName || candidate.author==null || !seen.add(candidate.fingerprint))continue;
             boolean foreign=AutoTranslationEligibilityService.accepts(candidate,preferences.targetLanguage());
-            if(!foreign&&!candidate.author.truncated)continue;
+            if(!foreign || !candidate.author.inlineSafe)continue;
             Rect n=candidate.bounds, avatar=candidate.avatarBounds;
             AutoDetailsPlacementService.Placement badge=AutoDetailsPlacementService.locateName(
                     n.left,n.top,n.right,n.bottom,n.left,n.top,n.right,n.bottom,false,
                     avatar.left,avatar.top,avatar.right,avatar.bottom,
                     screen.widthPixels,screen.heightPixels,screen.density);
-            if(badge!=null){
-                AutoInlinePlacementService.Placement anchor=new AutoInlinePlacementService.Placement(
-                        badge.x,badge.y,badge.width,badge.height);
+            AutoInlinePlacementService.Placement nameRect=AutoInlinePlacementService.locate(
+                    n.left,n.top,n.right,n.bottom,screen.widthPixels,screen.heightPixels,screen.density);
+            if(nameRect!=null){
                 observations.add(new AutoOverlayPositionStore.Observation(candidate.fingerprint,
-                        anchor,null,badge,candidate.text));
+                        nameRect,null,badge,candidate.text));
                 nameCount++;
             }
         }
@@ -218,40 +226,39 @@ final class AutoOverlaySceneController {
         AutoInlineThemeService.Palette palette = AutoInlineThemeService.resolve(
                 context, preferences.inlineTheme());
 
-        // Shared canvas paints ONLY the source bodies. Names/avatars and
-        // action badges remain separate semantic roles.
+        int translatedCount=0;
         for (AutoOverlayPositionStore.Located item : located) {
-            if (item.nameDetails != null && item.authorName != null) {
-                present.add(item.id);
-                TranslationState nameState=translations.get(item.id);
-                String nameText=item.authorName;
-                if(nameState!=null && nameState.translation!=null
-                        && !nameState.translation.equals(nameText))
-                    nameText+="\n\n"+nameState.translation;
-                ensureNameAction(item.id, nameText, item.nameDetails, palette);
-            } else {
+            boolean name=item.id.startsWith("name:");
+            TranslationState state=translations.get(item.id);
+            if(state==null || state.translation==null){
                 removeNameAction(item.id);
-            }
-
-            // Name translations belong to the left details control, not
-            // the body canvas.
-            if(item.id.startsWith("name:"))continue;
-            TranslationState state = translations.get(item.id);
-            if (state == null || state.translation == null) {
                 removeTweetAction(item.id);
+                if(preferences.showTranslationActivity() && activeTranslations.contains(item.id)){
+                    // A tiny touch-through dot inside the current source rectangle.
+                    int size=Math.min(dp(7),Math.min(item.rectangle.width,item.rectangle.height));
+                    if(size>0)painted.add(new AutoOverlaySceneView.TextItem(
+                        item.rectangle.x+item.rectangle.width-size,
+                        item.rectangle.y,size,size,0xFF52A9E8,null));
+                }
                 continue;
             }
-            state.prepareLayout(item.rectangle, palette);
+            state.prepareLayout(item.rectangle,palette);
             present.add(item.id);
             painted.add(new AutoOverlaySceneView.TextItem(
-                    item.rectangle.x, item.rectangle.y,
-                    item.rectangle.width, item.rectangle.height,
-                    palette.background, state.inlineLayout));
-
-            if (state.needsMore && item.details != null)
-                ensureTweetAction(item.id, item.details, palette);
-            else
+                    item.rectangle.x,item.rectangle.y,item.rectangle.width,item.rectangle.height,
+                    palette.background,state.inlineLayout));
+            translatedCount++;
+            if(name){
                 removeTweetAction(item.id);
+                if(state.needsMore && item.nameDetails!=null)
+                    ensureNameAction(item.id,state.translation,item.nameDetails,palette);
+                else removeNameAction(item.id);
+            }else{
+                removeNameAction(item.id);
+                if(state.needsMore && item.details!=null)
+                    ensureTweetAction(item.id,item.details,palette);
+                else removeTweetAction(item.id);
+            }
         }
 
         // The scene is one touchless window-attached GPU surface (API 34+),
@@ -260,7 +267,7 @@ final class AutoOverlaySceneController {
         for (String key : new HashSet<>(controls.keySet())) {
             if (!present.contains(key)) removeControls(key);
         }
-        visibleCount = painted.size();
+        visibleCount = translatedCount;
     }
 
     private Controls controlsFor(String id) {
@@ -467,6 +474,7 @@ final class AutoOverlaySceneController {
         main.removeCallbacks(pruneMissing);
         expanded.hide();
         positions.clear();
+        activeTranslations.clear();
         for (String id : new HashSet<>(controls.keySet())) removeControls(id);
         visibleCount = 0;
         surfaces.clear();
@@ -504,11 +512,13 @@ final class AutoOverlaySceneController {
                 return;
 
             TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-            paint.setTextSize(sp(15));
+            boolean name=id.startsWith("name:");
+            paint.setTextSize(name ? Math.min(sp(16),p.height*0.78f) : sp(15));
+            paint.setFakeBoldText(name);
             paint.setColor(palette.foreground);
 
             int fullWidth = Math.max(1, p.width - dp(4));
-            int maxLines = Math.max(1, p.height / dp(18));
+            int maxLines = name ? 1 : Math.max(1, p.height / dp(18));
             StaticLayout full = StaticLayout.Builder.obtain(
                         translation, 0, translation.length(), paint, fullWidth)
                     .setIncludePad(false)
@@ -517,7 +527,7 @@ final class AutoOverlaySceneController {
                     .build();
             needsMore = full.getHeight() > p.height || full.getLineCount() > maxLines;
             // Reserve the right thumb-side control without obscuring text.
-            int displayWidth = Math.max(1, fullWidth - (needsMore ? dp(41) : 0));
+            int displayWidth = Math.max(1, fullWidth - (needsMore && !name ? dp(41) : 0));
             inlineLayout = StaticLayout.Builder.obtain(
                         translation, 0, translation.length(), paint, displayWidth)
                     .setIncludePad(false)

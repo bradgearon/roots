@@ -159,6 +159,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                     (source!=null&&source.matches("[a-z]{2,3}")?"<|plamo:key|>lang<|plamo:val|>"+source:"")+
                     "<|plamo:msg|>"+text+"<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>"+target+"<|plamo:msg|>";
                 stage="inference";
+                callback.started();
                 long inferenceStart=SystemClock.elapsedRealtime();
                 trace(app,stage,"start",inferenceStart,"runtime="+revision+" requested_backend="+requestedBackend+" requested_threads="+threads,null,queueMs);
                 long[] stats=new long[8];

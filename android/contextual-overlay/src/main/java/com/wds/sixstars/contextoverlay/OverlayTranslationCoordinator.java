@@ -41,6 +41,7 @@ public final class OverlayTranslationCoordinator {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Map<String, Pending> pool = new LinkedHashMap<>();
     private final Set<String> visible = new HashSet<>();
+    private final Set<String> executing = new HashSet<>();
     private String poolTarget;
     private static final int MAX_PENDING = 256;
     private static final long RETAIN_MS = 120_000;
@@ -120,7 +121,18 @@ public final class OverlayTranslationCoordinator {
             }
         }
 
+        publishActivity();
         pump();
+    }
+
+    private void publishActivity(){
+        Set<String> ids=new HashSet<>();
+        if(active && preferences.autoPreview() && preferences.showTranslationActivity()){
+            String target=preferences.targetLanguage();
+            for(TextCandidate candidate:latestCandidates)
+                if(executing.contains(key(candidate,target)))ids.add(candidate.fingerprint);
+        }
+        renderer.setActiveTranslations(ids);
     }
 
     private static boolean shouldTranslateAutomatically(TextCandidate c, String target) {
@@ -213,9 +225,19 @@ public final class OverlayTranslationCoordinator {
         if(!admission.tryAcquire(k,preferences.translationRequestLimit()))return;
         long epoch=consentEpoch;
         java.util.concurrent.atomic.AtomicBoolean delivered=new java.util.concurrent.atomic.AtomicBoolean();
-        TranslationProvider.Result callback=(translated,error)->{
+        TranslationProvider.Result callback=new TranslationProvider.Result(){
+            @Override public void started(){
+                main.post(()->{
+                    if(destroyed || delivered.get() || epoch!=consentEpoch)return;
+                    executing.add(k);
+                    publishActivity();
+                });
+            }
+            @Override public void completed(String translated,String error){
             if(!delivered.compareAndSet(false,true))return;
             main.post(()->{
+            executing.remove(k);
+            publishActivity();
             // Always release the actual outstanding request, including on
             // scroll, mode changes and X exit. Duplicate callbacks are ignored.
             if(!admission.release(k))return;
@@ -242,7 +264,7 @@ public final class OverlayTranslationCoordinator {
                     renderer.showDetail(current,ok?translated:"Translation unavailable: "+(error==null?"No translation returned.":error));
             }
             refresh(latestCandidates,Collections.emptyList(),false,false);
-        });};
+        });}};
         try {
             provider.translate(candidate.text,candidate.languageHint,target,callback);
         }catch(RuntimeException ex){
@@ -283,6 +305,7 @@ public final class OverlayTranslationCoordinator {
         latestCandidates = Collections.emptyList();
         main.removeCallbacks(retryWake);
         pool.clear(); visible.clear(); poolTarget=null;
+        if(!preferences.enabled() || destroyed)executing.clear();
         changeReactor.clear();
     }
 

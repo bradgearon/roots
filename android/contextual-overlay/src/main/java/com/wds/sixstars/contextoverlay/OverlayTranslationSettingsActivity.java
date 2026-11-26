@@ -246,6 +246,12 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
         content.addView(requests);
+        CheckBox activity = new CheckBox(this);
+        activity.setText("Show translation activity dot");
+        activity.setTextColor(0xFFE5EFF4);
+        activity.setChecked(prefs.showTranslationActivity());
+        activity.setOnCheckedChangeListener((button,checked)->prefs.setShowTranslationActivity(checked));
+        content.addView(activity);
         content.addView(text("One at a time waits for the actual provider callback before submitting another request, even when scrolling. Higher values allow a bounded queue, not extra native inference contexts. Manual requests take the next available slot.", 12, 0xFFAAC8D4));
         content.addView(text("Auto inline appearance (match your X theme)", 13, 0xFFAAC8D4));
         inlineAppearance = new Spinner(this);

@@ -92,6 +92,8 @@ public final class OverlayPreferences {
         if(n<1||n>4)throw new IllegalArgumentException("Unsupported request limit");
         prefs.edit().putInt("translation_request_limit",n).apply();
     }
+    public boolean showTranslationActivity() { return prefs.getBoolean("show_translation_activity", true); }
+    public void setShowTranslationActivity(boolean value) { prefs.edit().putBoolean("show_translation_activity",value).apply(); }
     public boolean autoPreview() { return prefs.getBoolean(AUTO_PREVIEW, false); }
     public void setAutoPreview(boolean value) { prefs.edit().putBoolean(AUTO_PREVIEW, value).apply(); }
     public String targetLanguage() { return prefs.getString(TARGET, "en"); }

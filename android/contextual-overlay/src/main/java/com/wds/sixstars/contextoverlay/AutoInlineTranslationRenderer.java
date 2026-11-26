@@ -53,6 +53,8 @@ public final class AutoInlineTranslationRenderer {
         scene.uncertainScroll();
     }
 
+    public void setActiveTranslations(java.util.Set<String> ids) { scene.setActiveTranslations(ids); }
+
     public void clear() { scene.clear(); }
 
     public void destroy() { scene.destroy(); }

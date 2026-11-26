@@ -12,6 +12,8 @@ public interface TranslationProvider {
     void translate(String text, String sourceLanguageHint, String targetLanguage, Result callback);
 
     interface Result {
+        /** Local inference begins, or remote dispatch begins (not remote GPU execution). */
+        default void started() {}
         void completed(String translation, String error);
     }
 

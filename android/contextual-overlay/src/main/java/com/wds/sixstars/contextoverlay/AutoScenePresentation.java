@@ -35,7 +35,13 @@ interface AutoScenePresentation {
             int root = canvas.save();
             canvas.translate(-originX, -originY);
             for (AutoOverlaySceneView.TextItem item : items) {
-                if (item.layout == null || item.width <= 0 || item.height <= 0) continue;
+                if (item.width <= 0 || item.height <= 0) continue;
+                if(item.layout==null){
+                    background.setColor(item.fillColor);
+                    canvas.drawCircle(item.x+item.width/2f,item.y+item.height/2f,
+                            Math.min(item.width,item.height)/2f,background);
+                    continue;
+                }
                 int saved = canvas.save();
                 canvas.clipRect(item.x, item.y, item.x + item.width,
                         item.y + item.height);

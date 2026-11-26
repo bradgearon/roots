@@ -103,6 +103,7 @@ public final class LanPLaMoTranslationProvider implements TranslationProvider {
                 // Default: one authenticated, long-lived WebSocket for all X posts.
                 // If its handshake never succeeded (old bridge / offline route),
                 // and NO translation was sent, use the existing HTTP endpoint.
+                callback.started();
                 PersistentMobileTranslationSocket.Reply websocket =
                         PersistentMobileTranslationSocket.instance()
                                 .translate(wifi, base, key, payload);
