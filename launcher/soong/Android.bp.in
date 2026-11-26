@@ -1,7 +1,14 @@
 // Copyright (c) 2026 We Develop Software LLC. All rights reserved.
 // Generated into a separate vendor module. No upstream files are edited.
 package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_applicable_licenses: ["roots_launcher_license", "Android-Apache-2.0"],
+}
+
+license {
+    name: "roots_launcher_license",
+    visibility: [":__subpackages__"],
+    license_kinds: ["legacy_proprietary"],
+    license_text: ["LICENSE"],
 }
 
 android_app {
