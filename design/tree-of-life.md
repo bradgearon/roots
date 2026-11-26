@@ -57,6 +57,10 @@ Native web scope: optional member identities, linked accounts, public or scoped 
 
 See [Garden participation](garden.md), [Honeycomb and Whirlwind](honeycomb-whirlwind.md) and [Architecture](architecture.md).
 
+## Restoration and service as a developmental pattern
+
+The Tree of Life values preservation of useful knowledge, correction of established harm, restitution and restoration through demonstrated fruit. In an illustrative leadership case, a person who has lost authority after established serious professional wrongdoing may choose meaningful frontline service and mentorship, cultivating others while rebuilding trust. This is not a mandatory employment sanction, public shaming, coerced prayer or a promise of reinstatement. Authority, personal dignity, accountability and mercy remain distinct; professional consequences must be proportionate to actual wrongdoing, and the safety and needs of affected people come first. The useful architectural analogy is that correcting one branch can nourish other branches when development is consensual, beneficial and evidenced.
+
 ## Acceptance
 
 - Terminology and UI distinguish the Tree of Life from the underlying storage graph.
