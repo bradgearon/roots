@@ -50,7 +50,11 @@ try {
     }
     $kai=if($NoKleidiAI){'OFF'}else{'ON'}
     $gpu=if($Vulkan){'ON'}else{'OFF'}
-    $profile="arm64-v8a-kai-$kai-vulkan-$gpu-ndk-$(Split-Path $Ndk -Leaf)"
+    # Vulkan 1.1 entry points such as vkGetPhysicalDeviceFeatures2
+    # are exported by Android's loader starting at API 28.
+    $api=if($Vulkan){28}else{26}
+    # Keep the Vulkan build path short for KleidiAI's long kernel filenames.
+    $profile=if($Vulkan){"vk$api-kai-$kai-$(Split-Path $Ndk -Leaf)"}else{"arm64-v8a-kai-$kai-vulkan-$gpu-ndk-$(Split-Path $Ndk -Leaf)"}
     $work=Join-Path $cache "build\$profile"
     $out=Join-Path $work 'lib'
     New-Item -ItemType Directory -Force -Path $out | Out-Null
@@ -67,7 +71,7 @@ try {
     $jniHash=JniHash
     $configure=@('-S',$native,'-B',$work,'-G','Ninja',
         "-DCMAKE_MAKE_PROGRAM=$ninja","-DCMAKE_TOOLCHAIN_FILE=$toolchain",
-        '-DANDROID_ABI=arm64-v8a','-DANDROID_PLATFORM=android-26','-DANDROID_STL=c++_static',
+        '-DANDROID_ABI=arm64-v8a',"-DANDROID_PLATFORM=android-$api",'-DANDROID_STL=c++_static',
         '-DCMAKE_BUILD_TYPE=Release',"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=$out",
         "-DROOTS_ENABLE_KLEIDIAI=$kai","-DROOTS_ENABLE_VULKAN=$gpu")
     if ($Vulkan) {
@@ -79,6 +83,7 @@ try {
     Write-Host "Building $profile (native Release, independent of Gradle)"
     Write-Host "SDK: $Sdk"
     Write-Host "NDK: $Ndk"
+    Write-Host "Android native API: $api"
     & $cmake @configure
     if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
     if ($Jobs -le 0) { $Jobs=[Math]::Max(1,[Math]::Min(8,[Environment]::ProcessorCount)) }
@@ -95,7 +100,7 @@ try {
     $dest=Join-Path $stage 'libroots_plamo.so'
     Copy-Item -LiteralPath $lib -Destination "$dest.tmp" -Force
     Move-Item -LiteralPath "$dest.tmp" -Destination $dest -Force
-    @("format=1","abi=arm64-v8a","kleidiai=$kai","vulkan=$gpu","cmake_sha256=$cmakeHash","cpp_sha256=$cppHash","jni_sha256=$jniHash","library_sha256=$(Sha $dest)") | Set-Content -LiteralPath "$manifest.tmp" -Encoding ASCII
+    @("format=1","abi=arm64-v8a","android_api=$api","kleidiai=$kai","vulkan=$gpu","cmake_sha256=$cmakeHash","cpp_sha256=$cppHash","jni_sha256=$jniHash","library_sha256=$(Sha $dest)") | Set-Content -LiteralPath "$manifest.tmp" -Encoding ASCII
     Move-Item -LiteralPath "$manifest.tmp" -Destination $manifest -Force
     Write-Host "Native brain cached: $dest"
     Write-Host 'Run build-android.cmd :app:installDebug; Gradle will reuse this binary.'
