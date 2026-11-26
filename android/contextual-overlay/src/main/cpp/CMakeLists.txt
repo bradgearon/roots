@@ -12,10 +12,13 @@ set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(llama GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git GIT_TAG b10724 GIT_SHALLOW TRUE)
+# b10724 lacks the plamo3 tokenizer; PFN's tested PLaMo 3 runtime is b11960.
+set(ROOTS_PLAMO_LLAMA_REVISION b11960)
+FetchContent_Declare(llama GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git GIT_TAG ${ROOTS_PLAMO_LLAMA_REVISION} GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(llama)
 add_library(roots_plamo SHARED roots_plamo.cpp)
 target_link_libraries(roots_plamo PRIVATE llama android log)
+target_compile_definitions(roots_plamo PRIVATE ROOTS_PLAMO_LLAMA_REVISION="${ROOTS_PLAMO_LLAMA_REVISION}")
 
 # Optional until the native Tree and its approved SQLite dependency are enabled.
 option(ROOTS_ENABLE_TREE "Build the shared native Tree Core" OFF)
