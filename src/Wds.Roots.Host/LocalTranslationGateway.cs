@@ -75,6 +75,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         // of the paired key; encrypted requests are replay-checked.
         var secureRoute = new SecureComputeRoute(secret, _translator);
         app.MapPost("/api/compute/v1/exchange", secureRoute.ExchangeAsync);
+        app.MapGet("/api/compute/v1/socket", secureRoute.RunSocketAsync);
 
         app.MapPost("/api/translation/v1/detect", async (HttpContext context) =>
         {

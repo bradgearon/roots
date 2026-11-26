@@ -16,23 +16,65 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Capability-based routing. Wi-Fi availability is only a transport hint.
  * Identity is possession of the paired key, proven by an encrypted response. */
 final class FastestComputeRouter implements TranslationProvider {
-    private static FastestComputeRouter instance;
+    private static volatile FastestComputeRouter instance;
     private static volatile String status="On-device PLaMo";
     private static final java.util.concurrent.atomic.AtomicLong generation=new java.util.concurrent.atomic.AtomicLong();
+    private final SecureComputeSocket socket=new SecureComputeSocket();
+    private final java.util.concurrent.ScheduledExecutorService maintenance=
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(task->{
+            Thread thread=new Thread(task,"RootsComputeHeartbeat");thread.setDaemon(true);return thread;
+        });
+    private java.util.concurrent.ScheduledFuture<?> heartbeat;
+    private volatile boolean maintaining;
+    private volatile String connection="Not connected";
     private final Context app;
     private final OverlayPreferences prefs;
     private final LocalPLaMoTranslationProvider local;
     private final ThreadPoolExecutor routes=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(3));
     private final Map<String,Estimate> timings=new HashMap<>();
-    private Network verifiedNetwork;private String verifiedBase="",verifiedKey="";
-    private long verifiedUntil,probeAfter,proofGeneration=-1;
     private static final class Estimate {double ms;long at;int count;}
     static synchronized FastestComputeRouter get(Context context){
         if(instance==null)instance=new FastestComputeRouter(context.getApplicationContext());
         return instance;
     }
-    static String status(){return status;}
-    static void invalidate(){generation.incrementAndGet();status="On-device PLaMo · checking paired compute when needed";}
+    static String status(){
+        FastestComputeRouter router=instance;
+        return status+(router==null?"":" · "+router.connection);
+    }
+    static synchronized void invalidate(){
+        generation.incrementAndGet();status="On-device PLaMo";
+        if(instance!=null){instance.socket.disconnect();instance.connection="Pairing changed";}
+    }
+    synchronized void startBackground(){
+        if(maintaining)return;
+        maintaining=true;
+        heartbeat=maintenance.scheduleWithFixedDelay(this::maintain,0,4,TimeUnit.SECONDS);
+    }
+    synchronized void stopBackground(){
+        maintaining=false;generation.incrementAndGet();
+        if(heartbeat!=null){heartbeat.cancel(true);heartbeat=null;}
+        socket.disconnect();connection="Compute connection stopped";
+    }
+    private void maintain(){
+        if(!maintaining)return;
+        long epoch=generation.get();
+        try{
+            if(!prefs.enabled()||!prefs.desktopTranslationEnabled()){
+                socket.disconnect();connection="Paired compute disabled";return;
+            }
+            Network network=wifi();
+            String base=prefs.bridgeUrl(),key=OverlayTranslationKeyStore.read(app);
+            if(network==null||key.isEmpty()){
+                socket.disconnect();connection=network==null?"No active Wi-Fi":"Pairing required";return;
+            }
+            if(!maintaining||epoch!=generation.get()||!authorized(base,key))return;
+            socket.maintain(network,base,key);
+            if(!maintaining||epoch!=generation.get()||!authorized(base,key)){
+                socket.disconnect();return;
+            }
+            connection=socket.ready(network,base,key)?"Paired desktop connected":"Desktop unavailable · local ready";
+        }catch(Exception e){socket.disconnect();connection="Compute reconnect pending";}
+    }
     private FastestComputeRouter(Context app){this.app=app;prefs=new OverlayPreferences(app);local=new LocalPLaMoTranslationProvider(app);}
     private Network wifi(){
         ConnectivityManager cm=(ConnectivityManager)app.getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -42,20 +84,6 @@ final class FastestComputeRouter implements TranslationProvider {
     }
     private boolean authorized(String base,String key){
         return prefs.enabled()&&prefs.desktopTranslationEnabled()&&base.equals(prefs.bridgeUrl())&&key.equals(OverlayTranslationKeyStore.read(app));
-    }
-    private boolean available(Network network,String base,String key){
-        long now=SystemClock.elapsedRealtime(),epoch=generation.get();
-        boolean same=network.equals(verifiedNetwork)&&base.equals(verifiedBase)&&key.equals(verifiedKey)&&proofGeneration==epoch;
-        if(same&&now<verifiedUntil)return true;
-        if(same&&now<probeAfter)return false;
-        verifiedNetwork=network;verifiedBase=base;verifiedKey=key;proofGeneration=epoch;verifiedUntil=0;
-        try{
-            if(!authorized(base,key))return false;
-            JSONObject reply=SecureLanCompute.exchange(network,base,key,new JSONObject().put("kind","probe"),true);
-            boolean ok=reply.optBoolean("ok")&&reply.optInt("protocol")==1&&"translate".equals(reply.optString("capability"))&&"plamo-3-translate".equals(reply.optString("model"));
-            if(ok){verifiedUntil=SystemClock.elapsedRealtime()+15000;probeAfter=0;return true;}
-        }catch(Exception ignored){}
-        probeAfter=SystemClock.elapsedRealtime()+8000;return false;
     }
     private String localProfile(){return "local:"+(prefs.localVulkanEnabled()?"vulkan:":"cpu:")+prefs.localThreads();}
     private static String bucket(String route,int chars){return route+":"+(chars<=40?0:chars<=160?1:chars<=400?2:3);}
@@ -86,7 +114,7 @@ final class FastestComputeRouter implements TranslationProvider {
             String phone=localProfile();
             Network network=prefs.desktopTranslationEnabled()?wifi():null;
             String base=prefs.bridgeUrl(),key=network==null?"":OverlayTranslationKeyStore.read(app);
-            boolean remote=network!=null&&!key.isEmpty()&&available(network,base,key);
+            boolean remote=network!=null&&!key.isEmpty()&&socket.ready(network,base,key);
             String desktop="desktop:"+base;
             if(remote&&preferRemote(desktop,phone,text.length())){
                 if(remoteTranslate(network,base,key,desktop,text,source,target,callback,finished))return;
@@ -121,16 +149,14 @@ final class FastestComputeRouter implements TranslationProvider {
             JSONObject input=new JSONObject().put("text",text).put("targetLang",target).put("maxTokens",768);
             if(source!=null&&source.matches("[a-z]{2,3}"))input.put("sourceLang",source);
             status="Paired desktop PLaMo · encrypted";
-            callback.started();
-            JSONObject reply=SecureLanCompute.exchange(network,base,key,new JSONObject().put("kind","translate").put("request",input),false);
+            JSONObject reply=socket.translate(network,base,key,new JSONObject().put("kind","translate").put("request",input),callback::started);
             String translated=reply.optString("translation","").trim();
             if(translated.isEmpty())throw new IllegalStateException("Empty translation");
             if(!authorized(base,key)){finish(callback,finished,null,"Desktop compute permission changed.");return true;}
             observe(route,text.length(),SystemClock.elapsedRealtime()-start);
             finish(callback,finished,translated,null);return true;
         }catch(Exception e){
-            verifiedUntil=0;probeAfter=SystemClock.elapsedRealtime()+8000;
-            status="Paired desktop unavailable · falling back to phone";return false;
+            status="Desktop route unavailable · falling back to phone";return false;
         }
     }
     private static void finish(Result callback,AtomicBoolean finished,String value,String error){

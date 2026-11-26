@@ -203,6 +203,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                     .setNegativeButton("Not now", null)
                     .setPositiveButton("I consent to desktop translation", (dialog, which) -> {
                         prefs.setDesktopTranslationEnabled(true);
+                        TranslationRuntime.startCompute(this);
                         desktopTranslation.setChecked(true);
                         refreshStatus();
                     })
@@ -396,6 +397,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             String[] codes = { "en", "ja", "es", "fr", "de" };
             prefs.setTargetLanguage(codes[targetLanguage.getSelectedItemPosition()]);
             TranslationRuntime.disconnect(); // key, URL or language may have changed
+            TranslationRuntime.startCompute(this);
             refreshStatus();
             status.setText(status.getText() + "\nTranslation connection saved.");
         } catch (Exception error) {
@@ -423,6 +425,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if(prefs.enabled()&&prefs.desktopTranslationEnabled())TranslationRuntime.startCompute(this);
         refreshStatus();
     }
 

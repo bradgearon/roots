@@ -70,6 +70,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 : "Accessibility service connected; enable consent inside Roots",
                 0, 0, 0, 0, "");
         treeRuntime=NativeTree.available()?TreeRuntime.get(this):null;
+        TranslationRuntime.startCompute(this);
         scheduleScan();scheduleSettledScan();
     }
 
@@ -80,6 +81,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
             coordinator.clear();
+            TranslationRuntime.stopCompute(this);
             TranslationRuntime.disconnect();
             OverlayDiagnostics.record(this,
                     "Accessibility enabled, but in-app consent is OFF",
@@ -87,6 +89,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             return;
         }
 
+        TranslationRuntime.startCompute(this);
         CharSequence pkg = event.getPackageName();
         int kind = event.getEventType();
         if (pkg != null && getPackageName().contentEquals(pkg)) {
@@ -151,7 +154,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         scrollSinceLastScan = false;
         scrollTracker.reset();
         coordinator.clear();
-        TranslationRuntime.disconnect();
+        // Keep the paired compute socket alive across foreground apps.
         OverlayDiagnostics.record(this, "Outside X; overlays hidden",
                 0, 0, 0, 0, "");
     }
@@ -308,6 +311,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         scanScheduled = false;
         if (coordinator != null) coordinator.clear();
         scrollTracker.reset();
+        TranslationRuntime.stopCompute(this);
         TranslationRuntime.disconnect();
     }
 
@@ -319,6 +323,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         scanScheduled = false;
         if (coordinator != null) coordinator.destroy();
         if (renderer != null) renderer.destroy();
+        TranslationRuntime.stopCompute(this);
         TranslationRuntime.disconnect();
         OverlayDiagnostics.record(this, "Accessibility service stopped",
                 0, 0, 0, 0, "");

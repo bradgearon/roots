@@ -16,6 +16,9 @@ public final class TranslationRuntime {
         return FastestComputeRouter.status();
     }
 
+    /** Service-owned connection survives leaving X, not disabling permission. */
+    public static void startCompute(Context context){FastestComputeRouter.get(context).startBackground();}
+    public static void stopCompute(Context context){FastestComputeRouter.get(context).stopBackground();}
     public static void disconnect() {
         PersistentMobileTranslationSocket.instance().disconnect();
         FastestComputeRouter.invalidate();
