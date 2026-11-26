@@ -19,7 +19,8 @@ import okhttp3.*;
 public final class LocalPLaMoTranslationProvider implements TranslationProvider {
     private static final String FILE = "plamo-3-translate-0.8b-Q4_0.gguf";
     private static final String URL = "https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF/resolve/7de4409/plamo-3-translate-0.8b-Q4_0.gguf";
-    private static final ThreadPoolExecutor WORK = new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(3));
+    // One bounded inference queue shared with the function model.
+    static final ThreadPoolExecutor WORK = new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(3));
     private static long verifiedLength=-1, verifiedModified=-1;
     private static String loadedPath;
     private static boolean loadedVulkan;
@@ -174,7 +175,8 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
             }
         });}catch(Exception busy){callback.completed(null,"Translation queue is busy.");}
     }
-    private static class Native {
+    // Keep all JNI declarations here so the separate brain build validates its complete ABI.
+    static class Native {
         static { System.loadLibrary("roots_plamo"); }
         static void ensure(){}
         static native String revision();
@@ -183,5 +185,8 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         static native void load(String path,boolean useVulkan);
         static native void unload();
         static native byte[] generate(byte[] prompt,long[] stats,int threads);
+        static native void loadFunction(String path);
+        static native void unloadFunction();
+        static native byte[] generateFunction(byte[] prompt,long[] stats,int threads);
     }
 }
