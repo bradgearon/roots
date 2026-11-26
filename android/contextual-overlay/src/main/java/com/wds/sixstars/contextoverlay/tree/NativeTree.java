@@ -62,6 +62,35 @@ public final class NativeTree implements AutoCloseable {
     public long compile(String path){return use(h->nCompile(h,utf8(path)));}
     public void clear(){use(h->{nClear(h);return null;});}
     @Override public void close(){life.writeLock().lock();try{if(handle!=0){nClose(handle);handle=0;}}finally{life.writeLock().unlock();}}
+    public enum WorkState { PENDING, RUNNING, COMPLETED, FAILED, CANCELLED }
+    public record Work(long id,long fragment,long priority,long deadline,long leaseUntil,long token,long attempts,
+                       long ready,WorkState state,String operation,String profile,String worker,String output){}
+    private static Work work(byte[][] a){
+        if(a.length==0)return null;
+        return new Work(Long.parseLong(text(a[0])),Long.parseLong(text(a[1])),Long.parseLong(text(a[2])),
+            Long.parseLong(text(a[3])),Long.parseLong(text(a[4])),Long.parseLong(text(a[5])),Long.parseLong(text(a[6])),
+            Long.parseLong(text(a[7])),WorkState.values()[Integer.parseInt(text(a[8]))],text(a[9]),text(a[10]),text(a[11]),text(a[12]));
+    }
+    public long requestWork(long fragment,String operation,String profile,long priority,long deadline){
+        return use(h->nWorkRequest(h,fragment,utf8(operation),utf8(profile),priority,deadline));
+    }
+    public Work readWork(long id){return use(h->work(nWorkRead(h,id)));}
+    public Work claimWork(String operation,String worker,long now,long duration){
+        return use(h->work(nWorkClaim(h,utf8(operation),utf8(worker),now,duration)));
+    }
+    public boolean finishWork(Work job,String worker,long now,WorkState state,String output,long retry){
+        return use(h->nWorkFinish(h,job.id(),job.token(),utf8(worker),now,state.ordinal(),utf8(output),retry));
+    }
+    public boolean renewWork(Work job,String worker,long now,long duration){
+        return use(h->nWorkRenew(h,job.id(),job.token(),utf8(worker),now,duration));
+    }
+    public boolean cancelWork(long id){return use(h->nWorkCancel(h,id));}
+    private static native long nWorkRequest(long h,long fragment,byte[] op,byte[] profile,long priority,long deadline);
+    private static native byte[][] nWorkRead(long h,long id);
+    private static native byte[][] nWorkClaim(long h,byte[] op,byte[] worker,long now,long duration);
+    private static native boolean nWorkFinish(long h,long id,long token,byte[] worker,long now,int state,byte[] output,long retry);
+    private static native boolean nWorkRenew(long h,long id,long token,byte[] worker,long now,long duration);
+    private static native boolean nWorkCancel(long h,long id);
     private static native int nAbi();
     private static native long nOpen(byte[] path);
     private static native void nClose(long h);

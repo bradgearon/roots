@@ -63,6 +63,13 @@ int agents(void *user,int64_t id,const char *name,const char *term) {
     try{f.data.insert(f.data.end(),{std::to_string(id),name,term});return 0;}
     catch(...){f.failed=true;return 1;}
 }
+int work_fields(void *user,const roots_work *w){
+    auto &f=*static_cast<Fields*>(user);
+    try{f.data.insert(f.data.end(),{std::to_string(w->id),std::to_string(w->fragment),std::to_string(w->priority),
+        std::to_string(w->deadline_ms),std::to_string(w->lease_until_ms),std::to_string(w->token),std::to_string(w->attempts),
+        std::to_string(w->ready_ms),std::to_string(w->state),w->operation,w->profile,w->worker,w->output});return 0;}
+    catch(...){f.failed=true;return 1;}
+}
 }
 #define JNI_TREE(name) Java_com_wds_sixstars_contextoverlay_tree_NativeTree_##name
 extern "C" {
@@ -116,5 +123,26 @@ JNIEXPORT jlong JNICALL JNI_TREE(nCompile)(JNIEnv *e,jclass,jlong h,jbyteArray p
 }
 JNIEXPORT void JNICALL JNI_TREE(nClear)(JNIEnv *e,jclass,jlong h) {
     guard<int>(e,0,[&]{checked(roots_tree_clear(ptr(h)));return 0;});
+}
+}
+
+extern "C" {
+JNIEXPORT jlong JNICALL JNI_TREE(nWorkRequest)(JNIEnv *e,jclass,jlong h,jlong fragment,jbyteArray op,jbyteArray profile,jlong priority,jlong deadline){
+    return guard<jlong>(e,0,[&]{auto o=bytes(e,op),p=bytes(e,profile);int64_t id=0;checked(roots_work_request(ptr(h),fragment,o.c_str(),p.c_str(),priority,deadline,&id));return static_cast<jlong>(id);});
+}
+JNIEXPORT jobjectArray JNICALL JNI_TREE(nWorkRead)(JNIEnv *e,jclass,jlong h,jlong id){
+    return guard<jobjectArray>(e,nullptr,[&]{Fields f;checked(roots_work_read(ptr(h),id,work_fields,&f));if(f.failed)throw std::runtime_error("work collection");return output(e,f.data);});
+}
+JNIEXPORT jobjectArray JNICALL JNI_TREE(nWorkClaim)(JNIEnv *e,jclass,jlong h,jbyteArray op,jbyteArray worker,jlong now,jlong duration){
+    return guard<jobjectArray>(e,nullptr,[&]{auto o=bytes(e,op),w=bytes(e,worker);Fields f;checked(roots_work_claim(ptr(h),o.c_str(),w.c_str(),now,duration,work_fields,&f));if(f.failed)throw std::runtime_error("work collection");return output(e,f.data);});
+}
+JNIEXPORT jboolean JNICALL JNI_TREE(nWorkFinish)(JNIEnv *e,jclass,jlong h,jlong id,jlong token,jbyteArray worker,jlong now,jint state,jbyteArray out,jlong retry){
+    return guard<jboolean>(e,JNI_FALSE,[&]{auto w=bytes(e,worker),o=bytes(e,out);auto r=roots_work_finish(ptr(h),id,token,w.c_str(),now,state,o.c_str(),retry);if(r==ROOTS_TREE_STALE)return JNI_FALSE;checked(r);return JNI_TRUE;});
+}
+JNIEXPORT jboolean JNICALL JNI_TREE(nWorkRenew)(JNIEnv *e,jclass,jlong h,jlong id,jlong token,jbyteArray worker,jlong now,jlong duration){
+    return guard<jboolean>(e,JNI_FALSE,[&]{auto w=bytes(e,worker);auto r=roots_work_renew(ptr(h),id,token,w.c_str(),now,duration);if(r==ROOTS_TREE_STALE)return JNI_FALSE;checked(r);return JNI_TRUE;});
+}
+JNIEXPORT jboolean JNICALL JNI_TREE(nWorkCancel)(JNIEnv *e,jclass,jlong h,jlong id){
+    return guard<jboolean>(e,JNI_FALSE,[&]{auto r=roots_work_cancel(ptr(h),id);if(r==ROOTS_TREE_STALE)return JNI_FALSE;checked(r);return JNI_TRUE;});
 }
 }

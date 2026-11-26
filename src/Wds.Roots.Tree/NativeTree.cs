@@ -114,6 +114,38 @@ public sealed class NativeTree : IDisposable
     public long Compile(string newPath) { Validate(newPath); Check(N.Compile(_handle, Path.GetFullPath(newPath), out var n)); return n; }
     public void Clear() => Check(N.Clear(_handle));
 
+    public enum WorkState { Pending, Running, Completed, Failed, Cancelled }
+    public sealed record Work(long Id,long Fragment,long Priority,long Deadline,long LeaseUntil,long Token,long Attempts,long Ready,
+        WorkState State,string Operation,string Profile,string Worker,string Output);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeWork { public long Id,Fragment,Priority,Deadline,LeaseUntil,Token,Attempts,Ready; public int State; public IntPtr Operation,Profile,Worker,Output; }
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int WorkCallback(IntPtr user,IntPtr work);
+    private Work? ReceiveWork(Func<WorkCallback,int> call){
+        Work? result=null; Exception? failure=null;
+        WorkCallback cb=(_,p)=>{
+            try{var w=Marshal.PtrToStructure<NativeWork>(p);result=new Work(w.Id,w.Fragment,w.Priority,w.Deadline,w.LeaseUntil,w.Token,w.Attempts,w.Ready,(WorkState)w.State,Decode(w.Operation),Decode(w.Profile),Decode(w.Worker),Decode(w.Output));return 0;}
+            catch(Exception e){failure=e;return 1;}
+        };
+        Check(call(cb)); GC.KeepAlive(cb);
+        if(failure!=null)ExceptionDispatchInfo.Capture(failure).Throw();
+        return result;
+    }
+    public long RequestWork(long fragment,string operation,string profile,long priority,long deadline=0){
+        Validate(operation);Validate(profile);Check(N.WorkRequest(_handle,fragment,operation,profile,priority,deadline,out var id));return id;
+    }
+    public Work? ReadWork(long id)=>ReceiveWork(cb=>N.WorkRead(_handle,id,cb,IntPtr.Zero));
+    public Work? ClaimWork(string operation,string worker,long now,long duration){
+        Validate(operation);Validate(worker);return ReceiveWork(cb=>N.WorkClaim(_handle,operation,worker,now,duration,cb,IntPtr.Zero));
+    }
+    private static bool WorkChanged(int code){if(code==4)return false;Check(code);return true;}
+    public bool FinishWork(Work job,string worker,long now,WorkState state,string output="",long retry=0){
+        Validate(worker);Validate(output);return WorkChanged(N.WorkFinish(_handle,job.Id,job.Token,worker,now,(int)state,output,retry));
+    }
+    public bool RenewWork(Work job,string worker,long now,long duration){
+        Validate(worker);return WorkChanged(N.WorkRenew(_handle,job.Id,job.Token,worker,now,duration));
+    }
+    public bool CancelWork(long id)=>WorkChanged(N.WorkCancel(_handle,id));
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeObservation { public IntPtr Source, ExternalId, Body, Language; public long ObservedMs; }
     [StructLayout(LayoutKind.Sequential)]
@@ -129,6 +161,12 @@ public sealed class NativeTree : IDisposable
     }
     private static class N
     {
+        [DllImport(Lib, EntryPoint="roots_work_request", CallingConvention=CallingConvention.Cdecl)] internal static extern int WorkRequest(TreeHandle h,long fragment,[MarshalAs(UnmanagedType.LPUTF8Str)] string operation,[MarshalAs(UnmanagedType.LPUTF8Str)] string profile,long priority,long deadline,out long id);
+        [DllImport(Lib, EntryPoint="roots_work_read", CallingConvention=CallingConvention.Cdecl)] internal static extern int WorkRead(TreeHandle h,long id,WorkCallback cb,IntPtr user);
+        [DllImport(Lib, EntryPoint="roots_work_claim", CallingConvention=CallingConvention.Cdecl)] internal static extern int WorkClaim(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string operation,[MarshalAs(UnmanagedType.LPUTF8Str)] string worker,long now,long duration,WorkCallback cb,IntPtr user);
+        [DllImport(Lib, EntryPoint="roots_work_finish", CallingConvention=CallingConvention.Cdecl)] internal static extern int WorkFinish(TreeHandle h,long id,long token,[MarshalAs(UnmanagedType.LPUTF8Str)] string worker,long now,int state,[MarshalAs(UnmanagedType.LPUTF8Str)] string output,long retry);
+        [DllImport(Lib, EntryPoint="roots_work_renew", CallingConvention=CallingConvention.Cdecl)] internal static extern int WorkRenew(TreeHandle h,long id,long token,[MarshalAs(UnmanagedType.LPUTF8Str)] string worker,long now,long duration);
+        [DllImport(Lib, EntryPoint="roots_work_cancel", CallingConvention=CallingConvention.Cdecl)] internal static extern int WorkCancel(TreeHandle h,long id);
         [DllImport(Lib, EntryPoint="roots_tree_abi_version", CallingConvention=CallingConvention.Cdecl)] internal static extern uint Abi();
         [DllImport(Lib, EntryPoint="roots_tree_open", CallingConvention=CallingConvention.Cdecl)] internal static extern int Open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out IntPtr h);
         [DllImport(Lib, EntryPoint="roots_tree_close", CallingConvention=CallingConvention.Cdecl)] internal static extern void Close(IntPtr h);

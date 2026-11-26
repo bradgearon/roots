@@ -139,6 +139,8 @@ roots_tree_result roots_tree_open(const char *path,roots_tree **out){
                    "CREATE TABLE IF NOT EXISTS agents(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,term TEXT NOT NULL);"
                    "CREATE TABLE IF NOT EXISTS branch_members(agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,fragment_seq INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,PRIMARY KEY(agent_id,fragment_seq));"
                    "CREATE INDEX IF NOT EXISTS branch_fragment ON branch_members(fragment_seq);"
+                   "CREATE TABLE IF NOT EXISTS work_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,fragment INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,operation TEXT NOT NULL,profile TEXT NOT NULL,priority INTEGER NOT NULL,deadline INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,state INTEGER NOT NULL DEFAULT 0,worker TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,token INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,output TEXT NOT NULL DEFAULT '',UNIQUE(fragment,operation,profile));"
+                   "CREATE INDEX IF NOT EXISTS work_dispatch ON work_jobs(operation,state,priority DESC,deadline,id);"
                    "PRAGMA user_version=1;");
         tx.commit();*out=t.release();
     });
@@ -254,7 +256,102 @@ roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out
         }catch(...){std::error_code ec;std::filesystem::remove(dest,ec);throw;}
     });
 }
+
 roots_tree_result roots_tree_clear(roots_tree *t){
     return guard([&]{require(t);std::lock_guard<std::mutex> lock(t->mutex);transaction tx(t->db);exec(t->db,"DELETE FROM agents; DELETE FROM fragments;");advance(t->db);tx.commit();});
+}
+}
+
+namespace {
+struct work_row {
+    int64_t id=0, fragment=0, priority=0, deadline=0, until=0, token=0, attempts=0, ready=0;
+    int32_t state=0;
+    std::string operation,profile,worker,output;
+    void deliver(roots_work_callback cb,void *user) const {
+        if(!id)return;
+        roots_work w{id,fragment,priority,deadline,until,token,attempts,ready,state,
+            operation.c_str(),profile.c_str(),worker.c_str(),output.c_str()};
+        cb(user,&w);
+    }
+};
+work_row work_get(sqlite3 *db,int64_t id) {
+    statement q(db,"SELECT id,fragment,priority,deadline,lease_until,token,attempts,ready,state,operation,profile,worker,output FROM work_jobs WHERE id=?");
+    q.number(1,id);if(!q.next())return {};
+    return {q.integer(0),q.integer(1),q.integer(2),q.integer(3),q.integer(4),q.integer(5),q.integer(6),q.integer(7),
+        static_cast<int32_t>(q.integer(8)),q.str(9),q.str(10),q.str(11),q.str(12)};
+}
+bool lease_valid(int64_t now,int64_t duration){
+    return now>=0&&duration>0&&duration<=3600000&&now<=std::numeric_limits<int64_t>::max()-duration;
+}
+}
+extern "C" {
+roots_tree_result roots_work_request(roots_tree *t,int64_t fragment,const char *operation,const char *profile,int64_t priority,int64_t deadline,int64_t *id){
+    if(id)*id=0;
+    return guard([&]{
+        require(t&&id&&fragment>0&&priority>=0&&priority<=1000&&deadline>=0);
+        bounded(operation,64,true);bounded(profile,256,true);
+        std::lock_guard<std::mutex> lock(t->mutex);transaction tx(t->db);
+        statement exists(t->db,"SELECT 1 FROM fragments WHERE seq=?");exists.number(1,fragment);require(exists.next());
+        statement existing(t->db,"SELECT id FROM work_jobs WHERE fragment=? AND operation=? AND profile=?");
+        existing.number(1,fragment);existing.text(2,operation);existing.text(3,profile);
+        if(existing.next()) {
+            *id=existing.integer(0);
+            statement u(t->db,"UPDATE work_jobs SET priority=max(priority,?),deadline=CASE WHEN deadline=0 THEN ? WHEN ?=0 THEN deadline ELSE min(deadline,?) END WHERE id=? AND state IN (0,1)");
+            u.number(1,priority);u.number(2,deadline);u.number(3,deadline);u.number(4,deadline);u.number(5,*id);u.next();
+        }else{
+            if(scalar(t->db,"SELECT count(*) FROM work_jobs")>=40000)throw quota("work capacity");
+            statement ins(t->db,"INSERT INTO work_jobs(fragment,operation,profile,priority,deadline) VALUES(?,?,?,?,?)");
+            ins.number(1,fragment);ins.text(2,operation);ins.text(3,profile);ins.number(4,priority);ins.number(5,deadline);ins.next();
+            *id=sqlite3_last_insert_rowid(t->db);
+        }
+        tx.commit();
+    });
+}
+roots_tree_result roots_work_read(roots_tree *t,int64_t id,roots_work_callback cb,void *user){
+    return guard([&]{require(t&&id>0&&cb);work_row row;{std::lock_guard<std::mutex> lock(t->mutex);row=work_get(t->db,id);}row.deliver(cb,user);});
+}
+roots_tree_result roots_work_claim(roots_tree *t,const char *operation,const char *worker,int64_t now,int64_t duration,roots_work_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&lease_valid(now,duration));bounded(operation,64,true);bounded(worker,128,true);work_row row;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);transaction tx(t->db);
+            statement q(t->db,"SELECT id FROM work_jobs WHERE operation=? AND ((state=0 AND ready<=?) OR (state=1 AND lease_until<=?)) ORDER BY priority DESC,CASE WHEN deadline=0 THEN 9223372036854775807 ELSE deadline END,id LIMIT 1");
+            q.text(1,operation);q.number(2,now);q.number(3,now);
+            if(q.next()){
+                auto id=q.integer(0);
+                statement u(t->db,"UPDATE work_jobs SET state=1,worker=?,lease_until=?,token=token+1,attempts=attempts+1 WHERE id=?");
+                u.text(1,worker);u.number(2,now+duration);u.number(3,id);u.next();row=work_get(t->db,id);
+            }
+            tx.commit();
+        }
+        row.deliver(cb,user);
+    });
+}
+roots_tree_result roots_work_finish(roots_tree *t,int64_t id,int64_t token,const char *worker,int64_t now,int32_t state,const char *output,int64_t retry){
+    bool changed=false;
+    auto r=guard([&]{
+        require(t&&id>0&&token>0&&now>=0&&(state==ROOTS_WORK_PENDING||state==ROOTS_WORK_COMPLETED||state==ROOTS_WORK_FAILED));
+        require(state!=ROOTS_WORK_PENDING||retry>=now);bounded(worker,128,true);bounded(output,32768);
+        std::lock_guard<std::mutex> lock(t->mutex);
+        statement u(t->db,"UPDATE work_jobs SET state=?,output=?,ready=?,worker='',lease_until=0 WHERE id=? AND token=? AND worker=? AND state=1 AND lease_until>?");
+        u.number(1,state);u.text(2,state==ROOTS_WORK_PENDING?"":output);u.number(3,state==ROOTS_WORK_PENDING?retry:0);
+        u.number(4,id);u.number(5,token);u.text(6,worker);u.number(7,now);u.next();changed=sqlite3_changes(t->db)==1;
+    });
+    return r==ROOTS_TREE_OK&&!changed?ROOTS_TREE_STALE:r;
+}
+roots_tree_result roots_work_renew(roots_tree *t,int64_t id,int64_t token,const char *worker,int64_t now,int64_t duration){
+    bool changed=false;
+    auto r=guard([&]{require(t&&id>0&&token>0&&lease_valid(now,duration));bounded(worker,128,true);
+        std::lock_guard<std::mutex> lock(t->mutex);
+        statement u(t->db,"UPDATE work_jobs SET lease_until=max(lease_until,?) WHERE id=? AND token=? AND worker=? AND state=1 AND lease_until>?");
+        u.number(1,now+duration);u.number(2,id);u.number(3,token);u.text(4,worker);u.number(5,now);u.next();changed=sqlite3_changes(t->db)==1;
+    });
+    return r==ROOTS_TREE_OK&&!changed?ROOTS_TREE_STALE:r;
+}
+roots_tree_result roots_work_cancel(roots_tree *t,int64_t id){
+    bool changed=false;auto r=guard([&]{require(t&&id>0);std::lock_guard<std::mutex> lock(t->mutex);
+        statement u(t->db,"UPDATE work_jobs SET state=4,worker='',lease_until=0,output='' WHERE id=? AND state IN (0,1)");
+        u.number(1,id);u.next();changed=sqlite3_changes(t->db)==1;
+    });return r==ROOTS_TREE_OK&&!changed?ROOTS_TREE_STALE:r;
 }
 }

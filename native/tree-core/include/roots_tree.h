@@ -76,6 +76,31 @@ ROOTS_TREE_API roots_tree_result roots_tree_revision(roots_tree *tree, int64_t *
 /* Logical deletion; caller must stop intake and remove any exported snapshots.
  * For physical disposal, close and remove the private DB and sidecar files. */
 ROOTS_TREE_API roots_tree_result roots_tree_clear(roots_tree *tree);
+/* Durable work references a consented fragment. One job per fragment,
+ * operation and profile (e.g. target language/model revision). Unix ms from
+ * the database owner, never an untrusted peer's clock. 0 deadline = none.
+ * A monotonically increasing lease token fences late worker completions.
+ * Callbacks borrow fields only during invocation, outside the database mutex.
+ * No row on successful claim/read is represented by no callback invocation. */
+typedef enum roots_work_state { ROOTS_WORK_PENDING=0, ROOTS_WORK_RUNNING=1,
+    ROOTS_WORK_COMPLETED=2, ROOTS_WORK_FAILED=3, ROOTS_WORK_CANCELLED=4 } roots_work_state;
+typedef struct roots_work {
+    int64_t id, fragment, priority, deadline_ms, lease_until_ms, token, attempts;
+    int64_t ready_ms;
+    int32_t state;
+    const char *operation, *profile, *worker, *output;
+} roots_work;
+typedef int (*roots_work_callback)(void *user,const roots_work *work);
+ROOTS_TREE_API roots_tree_result roots_work_request(roots_tree*,int64_t fragment,
+    const char *operation,const char *profile,int64_t priority,int64_t deadline_ms,int64_t *id);
+ROOTS_TREE_API roots_tree_result roots_work_read(roots_tree*,int64_t id,roots_work_callback,void*);
+ROOTS_TREE_API roots_tree_result roots_work_claim(roots_tree*,const char *operation,
+    const char *worker,int64_t now_ms,int64_t lease_ms,roots_work_callback,void*);
+ROOTS_TREE_API roots_tree_result roots_work_finish(roots_tree*,int64_t id,int64_t token,
+    const char *worker,int64_t now_ms,int32_t state,const char *output,int64_t retry_at_ms);
+ROOTS_TREE_API roots_tree_result roots_work_renew(roots_tree*,int64_t id,int64_t token,
+    const char *worker,int64_t now_ms,int64_t lease_ms);
+ROOTS_TREE_API roots_tree_result roots_work_cancel(roots_tree*,int64_t id);
 #ifdef __cplusplus
 }
 #endif
