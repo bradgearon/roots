@@ -1,0 +1,41 @@
+category	split	question	correct	wrong
+english_grammar	discovery	Which is grammatically correct?	The children were playing.	The children was playing.
+english_grammar	discovery	Which is grammatically correct?	Neither of the answers is correct.	Neither of the answers are correct.
+english_grammar	holdout	Which is grammatically correct?	The dogs in the yard are barking.	The dogs in the yard is barking.
+english_grammar	holdout	Which is grammatically correct?	She has written a letter.	She has wrote a letter.
+english_vocabulary	discovery	Which pair has similar meanings?	tiny / small	tiny / enormous
+english_vocabulary	discovery	Which pair has similar meanings?	swift / fast	swift / slow
+english_vocabulary	holdout	Which pair has similar meanings?	conceal / hide	conceal / reveal
+english_vocabulary	holdout	Which pair has similar meanings?	tranquil / calm	tranquil / frantic
+basic_understanding	discovery	Mia put her key inside a blue cup. Where is the key?	In the blue cup.	Inside a red bag.
+basic_understanding	discovery	The store closes at five. It is six. Is the store open?	No.	Yes.
+basic_understanding	holdout	Lina gave her ticket to Ava. Who received it?	Ava.	Lina.
+basic_understanding	holdout	A cat is inside a closed room. The door opens. Can it leave through the doorway?	Yes.	No.
+relational_reasoning	discovery	A is taller than B, and B is taller than C. Who is shortest?	C	A
+relational_reasoning	discovery	All zibs are wugs. Naro is a zib. Is Naro a wug?	Yes.	No.
+relational_reasoning	holdout	K is older than L, and L is older than M. Who is youngest?	M	K
+relational_reasoning	holdout	No flims are trops. Javi is a flim. Is Javi a trop?	No.	Yes.
+poetry_sound	discovery	Which word rhymes with night?	light	cloud
+poetry_sound	discovery	Which word rhymes with sea?	tree	grass
+poetry_sound	holdout	Which word rhymes with flame?	name	voice
+poetry_sound	holdout	Which word rhymes with deep?	sleep	dusk
+poetry_displacement	discovery	Which description personifies the river?	The river whispered to the stones.	The river flowed past the stones.
+poetry_displacement	discovery	Which line uses a metaphor for grief?	Grief was an ocean without a shore.	Grief was a strong emotion.
+poetry_displacement	holdout	Which line personifies winter?	Winter stitched the fields in silver.	Winter brought frost to the fields.
+poetry_displacement	holdout	Which line uses a metaphor for hope?	Hope was a lantern in the dark.	Hope was a positive feeling.
+engineering_code	discovery	Which Python expression returns the square of x?	x * x	x + x
+engineering_code	discovery	Which C++ expression dereferences pointer p?	*p	&p
+engineering_code	holdout	Which Python expression obtains the length of list a?	len(a)	a.length()
+engineering_code	holdout	Which SQL clause restricts the returned rows to age above 18?	WHERE age > 18	ORDER BY age > 18
+engineering_reasoning	discovery	A FIFO queue receives 7 then 9. Which item is removed first?	7	9
+engineering_reasoning	discovery	Two threads update a shared counter. Which addresses a data race?	Synchronize access with a mutex.	Use a longer variable name.
+engineering_reasoning	holdout	A cache contains stale data after an update. What addresses the problem?	Invalidate or refresh the cached entry.	Increase the font size.
+engineering_reasoning	holdout	A network request may be retried after a timeout. Which reduces duplicate side effects?	An idempotency key.	A different background color.
+arithmetic_control	discovery	What is 7 plus 5?	12	13
+arithmetic_control	discovery	What is 9 minus 3?	6	7
+arithmetic_control	holdout	What is 4 times 3?	12	15
+arithmetic_control	holdout	What is 18 divided by 3?	6	5
+language_control	discovery	Which sentence means hello in Spanish?	Hola.	Gracias.
+language_control	discovery	Which sentence means thank you in French?	Merci.	Bonjour.
+language_control	holdout	Which Spanish word means water?	agua	fuego
+language_control	holdout	Which French word means bread?	pain	lait
