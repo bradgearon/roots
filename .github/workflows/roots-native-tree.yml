@@ -32,8 +32,9 @@ jobs:
       - name: JNI binding checks (host JVM, not Android device)
         run: |
           mkdir -p build/tree-jni-checks
-          javac -encoding UTF-8 -d build/tree-jni-checks android/contextual-overlay/src/main/java/com/wds/sixstars/contextoverlay/tree/NativeTree.java native/tree-core/tests/NativeTreeJniChecks.java
+          javac -encoding UTF-8 -d build/tree-jni-checks android/contextual-overlay/src/main/java/com/wds/sixstars/contextoverlay/tree/{NativeTree,KnowledgeGguf,KnowledgeWave}.java native/tree-core/tests/{NativeTreeJniChecks,KnowledgeWaveChecks}.java
           java -Djava.library.path="$PWD/build/tree-core" -cp build/tree-jni-checks NativeTreeJniChecks
+          java -cp build/tree-jni-checks KnowledgeWaveChecks
   windows:
     runs-on: windows-latest
     steps:

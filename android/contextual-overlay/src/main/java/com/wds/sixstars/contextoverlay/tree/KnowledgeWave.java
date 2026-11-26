@@ -148,8 +148,8 @@ public final class KnowledgeWave {
         for(int step=0;step<=STEPS;step++){
             double[] next=new double[n];
             for(int i=0;i<n;i++){
-                activation[i]=clamp(activation[i]+(1-PASS)*pulse[i]);
                 double sum=0;for(Neighbor edge:graph.get(i))sum+=edge.strength();
+                activation[i]=clamp(activation[i]+(sum<=0?1:1-PASS)*pulse[i]);
                 if(step==STEPS||sum<=0)continue;
                 for(Neighbor edge:graph.get(i))next[edge.index()]+=PASS*pulse[i]*edge.strength()/sum;
             }

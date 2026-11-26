@@ -89,15 +89,16 @@ public final class KnowledgeGguf {
             List<String> predicates=array(arrays,"roots.edge.predicate",subjects.size()),objects=array(arrays,"roots.edge.object",subjects.size());
             List<Edge> edges=new ArrayList<>(subjects.size());for(int i=0;i<subjects.size();i++)edges.add(new Edge(subjects.get(i),predicates.get(i),objects.get(i)));
             f.seek(offset);List<Node> nodes=new ArrayList<>();Set<String> nodeKeys=new HashSet<>();
+            byte[] rawVector=new byte[4*DIM];java.nio.ByteBuffer vectorBytes=java.nio.ByteBuffer.wrap(rawVector).order(java.nio.ByteOrder.LITTLE_ENDIAN);
             for(int i=0;i<n;i++){
                 String key=keys.get(i),source=sources.get(i),master=masters.get(i);
                 require(nodeKeys.add(key)&&key.matches("fragment:[0-9]+"),"invalid node key");
                 boolean include=master.startsWith("local:")&&source.startsWith("record.")&&
                     (source.endsWith(".body")||source.endsWith(".translation")||source.endsWith(".localized")||source.endsWith(".understanding"));
                 if(!include){skip(f,4L*DIM);continue;}
-                float[] v=new float[DIM];double norm=0;
+                float[] v=new float[DIM];double norm=0;f.readFully(rawVector);vectorBytes.rewind();
                 for(int j=0;j<DIM;j++){
-                    float x=Float.intBitsToFloat(u32(f));require(Float.isFinite(x)&&x>=0&&x<=1.001f,"invalid embedding");
+                    float x=vectorBytes.getFloat();require(Float.isFinite(x)&&x>=0&&x<=1.001f,"invalid embedding");
                     v[j]=x;norm+=x*x;
                 }
                 require(norm>0.99&&norm<1.01,"embedding norm");

@@ -1,4 +1,6 @@
 import com.wds.sixstars.contextoverlay.tree.NativeTree;
+import com.wds.sixstars.contextoverlay.tree.KnowledgeGguf;
+import com.wds.sixstars.contextoverlay.tree.KnowledgeWave;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -35,6 +37,12 @@ public final class NativeTreeJniChecks {
                 need(tree.compileLocalized(localized.toString(),"en")==tree.revision(),"localized revision");
                 String projection=new String(Files.readAllBytes(localized),java.nio.charset.StandardCharsets.ISO_8859_1);
                 need(projection.contains("LOCAL_TRANSLATION_SENTINEL")&&!projection.contains("PRIVATE_SOURCE_SENTINEL"),"localized JNI projection");
+                var graph=KnowledgeGguf.read(localized.toFile());
+                need(graph.language().equals("en")&&graph.nodes().size()==1&&graph.nodes().get(0).master().equals("local:x:translation"),"read compiled localized graph");
+                var wave=new KnowledgeWave();
+                var field=wave.update(graph,1000);
+                need(field.weights().size()==1&&field.weight("local:x:translation",1000)!=null,"GGUF to wave");
+                need(wave.update(graph,2000)==field,"same revision does not stimulate again");
             }
             try(NativeTree tree=new NativeTree(db.toString())){
                 need(tree.count()==5&&tree.query("",agent,0,10).size()==2,"persistence");
