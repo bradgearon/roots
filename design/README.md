@@ -28,3 +28,9 @@ Roots is a local-first, micro-cognitive social integration platform that converg
 - Preserve existing translation and Forge capabilities; new functionality is additive.
 
 Working names (Doxa, Gardens, Resonance, Poetic Field, Kairos and Tendrils) are proposals. Maintain decisions, assumptions, open questions and acceptance criteria here; mark behavior implemented only after code and verification exist.
+
+## Portable knowledge and listening extensions
+
+- [Portable knowledge](portable-knowledge.md): Network Brain, compiled GGUF tensors, typed graph search, snapshots/deltas, file/API exchange, offline cultivation and validation gates.
+- [Open architecture](openness.md): open Forge and Roots specifications, independent implementations, licensing decision pending.
+- [Accessible listening journeys](listening-journeys.md): launcher, deterministic browsing, TTS and Garden Radio.
