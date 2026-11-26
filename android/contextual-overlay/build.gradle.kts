@@ -19,6 +19,7 @@ val brainMode = providers.gradleProperty("rootsUsePrebuiltBrain").orElse("auto")
 require(brainMode in setOf("auto", "true", "false")) { "rootsUsePrebuiltBrain must be auto, true or false" }
 val usePrebuiltBrain = brainMode == "true" || (brainMode == "auto" && (brainManifest.exists() || brainLib.exists()))
 fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
+var nativeMinSdk = if (rootsVulkan.get().toBoolean()) 28 else 26
 if (usePrebuiltBrain) {
     val invalid = "Native brain cache is missing/stale. Run build-brain.cmd or use -ProotsUsePrebuiltBrain=false."
     require(brainManifest.isFile && brainLib.isFile) { invalid }
@@ -31,6 +32,9 @@ if (usePrebuiltBrain) {
         manifest.getProperty("cpp_sha256") == sha256(source.resolve("roots_plamo.cpp").readBytes()) &&
         manifest.getProperty("jni_sha256") == sha256(signatures.toByteArray(Charsets.UTF_8)) &&
         manifest.getProperty("library_sha256") == sha256(brainLib.readBytes())) { invalid }
+    val expectedApi = if (manifest.getProperty("vulkan") == "ON") 28 else 26
+    require(manifest.getProperty("android_api")?.toIntOrNull() == expectedApi) { invalid }
+    nativeMinSdk = expectedApi
     listOf("rootsEnableKleidiAI" to "kleidiai", "rootsEnableVulkan" to "vulkan").forEach { (property, key) ->
         providers.gradleProperty(property).orNull?.let { value ->
             require(manifest.getProperty(key) == if (value.toBoolean()) "ON" else "OFF") {
@@ -44,7 +48,7 @@ android {
     namespace = "com.wds.sixstars.contextoverlay"
     compileSdk = 36
     defaultConfig {
-        minSdk = 26
+        minSdk = nativeMinSdk
         ndk { abiFilters += listOf("arm64-v8a") }
         if (!usePrebuiltBrain) externalNativeBuild {
             cmake {
