@@ -1,12 +1,20 @@
 plugins {
     id("com.android.library")
 }
+val rootsTreeEnabled = providers.gradleProperty("rootsEnableTree").orElse("false")
+val rootsSqliteDir = providers.gradleProperty("rootsSqliteAmalgamationDir")
 android {
     namespace = "com.wds.sixstars.contextoverlay"
     compileSdk = 36
     defaultConfig {
         minSdk = 26
         ndk { abiFilters += listOf("arm64-v8a") }
+        externalNativeBuild {
+            cmake {
+                arguments += "-DROOTS_ENABLE_TREE=${if (rootsTreeEnabled.get().toBoolean()) "ON" else "OFF"}"
+                rootsSqliteDir.orNull?.let { arguments += "-DROOTS_SQLITE_AMALGAMATION_DIR=${file(it).absolutePath}" }
+            }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
