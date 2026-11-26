@@ -113,6 +113,70 @@ public final class LocalFunctionGemmaProvider {
             catch(Exception|LinkageError e){result.completed(null,"Could not release FunctionGemma: "+e.getClass().getSimpleName());}
         });}catch(java.util.concurrent.RejectedExecutionException e){result.completed(null,"Local inference queue is busy.");}
     }
+    /** Two bounded, fresh-context calls on the existing shared local inference queue. */
+    public interface MovementResult {
+        void progress(String stage,String message);
+        void completed(PoeticMovement.Run run,String error);
+    }
+    public static void testMovement(Context context,PoeticMovement.Input input,MovementResult result){
+        Context app=context.getApplicationContext();
+        long submitted=SystemClock.elapsedRealtime();
+        try{LocalPLaMoTranslationProvider.WORK.execute(()->{
+            String stage="verify_model";
+            long start=SystemClock.elapsedRealtime();
+            try{
+                File f=model(app);
+                DownloadManager dm=(DownloadManager)app.getSystemService(Context.DOWNLOAD_SERVICE);
+                if(downloading(app,dm))throw new IllegalStateException("FunctionGemma is still downloading.");
+                if(!f.isFile()||f.length()!=verifiedLength||f.lastModified()!=verifiedModified){
+                    unload();verifiedLength=-1;verifiedModified=-1;
+                    if(!verify(f))throw new IllegalStateException("Download the verified FunctionGemma model first.");
+                    verifiedLength=f.length();verifiedModified=f.lastModified();
+                }
+                stage="model_load";
+                if(!loaded){
+                    long loadStart=SystemClock.elapsedRealtime();
+                    LocalPLaMoTranslationProvider.Native.loadFunction(f.getAbsolutePath());loaded=true;
+                    trace(app,stage,"ok",loadStart,null,start-submitted);
+                }
+                int threads=new OverlayPreferences(app).localThreads();
+                stage="movement_select";
+                result.progress(stage,"Request 1 / 2: selecting pairs and ordinary actions…");
+                String firstPrompt=PoeticMovement.selectionPrompt(input);
+                long[] firstStats=new long[8];
+                long firstStart=SystemClock.elapsedRealtime();
+                String first=movementGenerate(firstPrompt,firstStats,threads);
+                trace(app,stage,"ok",firstStart,firstStats,start-submitted);
+                java.util.List<PoeticMovement.Pair> pairs;
+                try{pairs=PoeticMovement.parseSelection(input,first);}
+                catch(IllegalArgumentException e){
+                    result.progress("invalid_selection",first);
+                    throw new IllegalArgumentException("Request 1 returned invalid selection: "+e.getMessage());
+                }
+                result.progress("selected",PoeticMovement.describe(pairs));
+                stage="movement_resolve";
+                result.progress(stage,"Request 2 / 2: replacing ordinary actions and resolving differences…");
+                long[] secondStats=new long[8];long secondStart=SystemClock.elapsedRealtime();
+                String second=movementGenerate(PoeticMovement.resolutionPrompt(input,pairs),secondStats,threads);
+                trace(app,stage,"ok",secondStart,secondStats,0);
+                java.util.List<PoeticMovement.Resolution> resolutions;
+                try{resolutions=PoeticMovement.parseResolution(input,second);}
+                catch(IllegalArgumentException e){
+                    result.progress("invalid_resolution",second);
+                    throw new IllegalArgumentException("Request 2 returned invalid resolution: "+e.getMessage());
+                }
+                result.completed(new PoeticMovement.Run(input,pairs,resolutions,firstStats,secondStats,SystemClock.elapsedRealtime()-submitted),null);
+            }catch(Exception|LinkageError e){
+                trace(app,stage,"error",start,null,start-submitted);
+                result.completed(null,e.getClass().getSimpleName()+": "+e.getMessage());
+            }
+        });}catch(java.util.concurrent.RejectedExecutionException e){result.completed(null,"Local inference queue is busy.");}
+    }
+    private static String movementGenerate(String prompt,long[] stats,int threads){
+        byte[] out=LocalPLaMoTranslationProvider.Native.generateFunction(prompt.getBytes(StandardCharsets.UTF_8),stats,threads);
+        if(out==null)throw new IllegalStateException("Native runtime returned no result.");
+        return new String(out,StandardCharsets.UTF_8);
+    }
     public static void propose(Context context,String request,Result result){
         final String prompt;
         try{prompt=FunctionGemmaProtocol.prompt(request);}catch(IllegalArgumentException e){result.completed(null,e.getMessage());return;}

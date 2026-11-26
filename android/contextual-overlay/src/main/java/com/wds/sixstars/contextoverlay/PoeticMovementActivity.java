@@ -1,0 +1,99 @@
+package com.wds.sixstars.contextoverlay;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.text.InputFilter;
+import android.text.InputType;
+
+public final class PoeticMovementActivity extends Activity {
+    private EditText seed,profile;
+    private CheckBox rate;
+    private TextView candidates,selected,resolved,status;
+    private Button run,random;
+    private boolean busy,closed;
+    @Override protected void onCreate(Bundle state){
+        super.onCreate(state);
+        LinearLayout shell=RootsUi.shell(this);
+        shell.addView(RootsUi.header(this,"Poetic Movement","Forge lab · two local inference requests"));
+        ScrollView scroll=new ScrollView(this);
+        LinearLayout content=RootsUi.column(this);int pad=RootsUi.dp(this,16);
+        content.setPadding(pad,0,pad,pad);scroll.addView(content);
+        shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout prep=RootsUi.card(this,content);
+        prep.addView(RootsUi.text(this,"Preparation",18,RootsUi.TEXT,true));
+        prep.addView(RootsUi.text(this,"Seeded noun and verb lists. Same seed reproduces the same lists. FunctionGemma selects five pairs and resolves them locally; nothing is saved or shared.",13,RootsUi.MUTED,false));
+        seed=new EditText(this);seed.setSingleLine(true);seed.setText(PoeticMovement.newSeed());
+        seed.setFilters(new InputFilter[]{new InputFilter.LengthFilter(32)});prep.addView(seed);
+        random=button("New cryptographic seed",()->{seed.setText(PoeticMovement.newSeed());preview();});prep.addView(random);
+        prep.addView(RootsUi.text(this,"Profile",14,RootsUi.TEXT,true));
+        profile=new EditText(this);profile.setSingleLine(true);profile.setFilters(new InputFilter[]{new InputFilter.LengthFilter(160)});
+        profile.setText("Depth, beauty, novelty, coherence");prep.addView(profile);
+        rate=new CheckBox(this);rate.setText("Rate each resolution in request 2");rate.setChecked(true);prep.addView(rate);
+        candidates=RootsUi.text(this,"",14,RootsUi.MUTED,false);candidates.setTextIsSelectable(true);prep.addView(candidates);
+        prep.addView(button("Preview seed lists",this::preview));
+        run=button("Run two requests",this::run);prep.addView(run);
+        status=RootsUi.text(this,"Ready",13,RootsUi.ACCENT,true);prep.addView(status);
+        LinearLayout first=RootsUi.card(this,content);
+        first.addView(RootsUi.text(this,"1 · Selection and ordinary action",17,RootsUi.TEXT,true));
+        selected=RootsUi.text(this,"Not run",15,RootsUi.TEXT,false);selected.setTextIsSelectable(true);first.addView(selected);
+        LinearLayout second=RootsUi.card(this,content);
+        second.addView(RootsUi.text(this,"2 · Displacement and resolution",17,RootsUi.TEXT,true));
+        resolved=RootsUi.text(this,"Not run",15,RootsUi.TEXT,false);resolved.setTextIsSelectable(true);second.addView(resolved);
+        shell.addView(RootsUi.action(this,"‹ Back",this::finish));
+        RootsUi.styleInputs(this,shell);setContentView(shell);preview();
+    }
+    private Button button(String title,Runnable action){
+        Button b=new Button(this);b.setText(title);b.setAllCaps(false);b.setTextColor(RootsUi.TEXT);
+        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF164B50));
+        b.setOnClickListener(v->action.run());return b;
+    }
+    private PoeticMovement.Input input(){return PoeticMovement.input(seed.getText().toString().trim(),profile.getText().toString(),rate.isChecked());}
+    private void preview(){
+        if(busy)return;
+        try{showCandidates(input());status.setText("Ready");}
+        catch(IllegalArgumentException e){status.setText(e.getMessage());}
+    }
+    private void showCandidates(PoeticMovement.Input in){
+        candidates.setText("Nouns: "+String.join(", ",in.nouns())+"\n\nVerbs: "+String.join(", ",in.verbs()));
+    }
+    private void run(){
+        if(busy)return;
+        final PoeticMovement.Input in;
+        try{in=input();}catch(IllegalArgumentException e){status.setText(e.getMessage());return;}
+        showCandidates(in);busy=true;run.setEnabled(false);random.setEnabled(false);seed.setEnabled(false);profile.setEnabled(false);rate.setEnabled(false);
+        selected.setText("Waiting…");resolved.setText("Waiting…");status.setText("Queued on local inference engine…");
+        LocalFunctionGemmaProvider.testMovement(this,in,new LocalFunctionGemmaProvider.MovementResult(){
+            @Override public void progress(String stage,String message){runOnUiThread(()->{
+                if(closed)return;
+                switch(stage){
+                    case "selected":selected.setText(message);break;
+                    case "invalid_selection":selected.setText("Invalid model output:\n"+message);break;
+                    case "invalid_resolution":resolved.setText("Invalid model output:\n"+message);break;
+                    default:status.setText(message);
+                }
+            });}
+            @Override public void completed(PoeticMovement.Run result,String error){runOnUiThread(()->{
+                if(closed)return;
+                busy=false;run.setEnabled(true);random.setEnabled(true);seed.setEnabled(true);profile.setEnabled(true);rate.setEnabled(true);
+                if(error!=null){status.setText(error);return;}
+                StringBuilder b=new StringBuilder();
+                for(PoeticMovement.Resolution r:result.resolutions()){
+                    PoeticMovement.Pair p=result.pairs().get(r.index()-1);
+                    b.append(r.index()).append(". ").append(p.noun()).append(" · ").append(p.replacement()).append('\n')
+                     .append(r.expression()).append('\n');
+                    if(r.rating()!=null)b.append("Model self-rating: ").append(r.rating()).append("/10\n");
+                    b.append('\n');
+                }
+                resolved.setText(b.toString().trim());
+                status.setText("2 requests · "+result.elapsedMs()+" ms total\nSelection: "+result.firstStats()[6]+" tokens · resolution: "+result.secondStats()[6]+" tokens");
+            });}
+        });
+    }
+    @Override protected void onDestroy(){closed=true;super.onDestroy();}
+}

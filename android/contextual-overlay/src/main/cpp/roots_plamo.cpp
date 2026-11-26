@@ -193,7 +193,10 @@ static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings
         sampler.reset(llama_sampler_init_greedy());
         if(!sampler)throw std::runtime_error("Could not allocate sampler");
         std::string out;
-        const int max_output=functions?160:512;
+        // Five compact movement resolutions must fit in a single call.
+        // Ordinary function proposals retain their previous 160-token budget.
+        const bool movement=functions&&prompt.find("declaration:resolve_movements{")!=std::string::npos;
+        const int max_output=functions?(movement?384:160):512;
         for(int i=0;i<max_output;i++) {
             auto token=llama_sampler_sample(sampler.get(),ctx,-1);
             ++stats[6];

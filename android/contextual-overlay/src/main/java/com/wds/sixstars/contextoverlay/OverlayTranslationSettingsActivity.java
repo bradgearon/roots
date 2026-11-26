@@ -358,6 +358,9 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(functionRelease);
         functionRelease.setOnClickListener(v->LocalFunctionGemmaProvider.release(this,(message,error)->runOnUiThread(()->functionStatus.setText(error==null?message:error))));
         content.addView(functionStatus);
+        Button movement=button("Open Poetic Movement lab");
+        movement.setOnClickListener(view->startActivity(new Intent(this,PoeticMovementActivity.class)));
+        content.addView(movement);
 
         content.addView(text(
             "In Manual mode, tap the ⇄ button positioned next to each post body. " +
