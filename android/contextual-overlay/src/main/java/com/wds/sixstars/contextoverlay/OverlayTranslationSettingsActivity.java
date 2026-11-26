@@ -412,6 +412,36 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         movement.setOnClickListener(view->startActivity(new Intent(this,PoeticMovementActivity.class)));
         content.addView(movement);
 
+        content=RootsUi.section(this,sections,"Gemma flow analyzer","Observed model elements · optional dense inference profiling",false);
+        content.addView(text("Measures relative activation energy in 32-channel FFN, attention-output and residual groups during one prefill row and up to eight decode rows. Baselines are private, per exact model and task. Full dense inference is preserved. Profiling may slow generation.",13,0xFFAAC8D4));
+        android.widget.CheckBox observe=new android.widget.CheckBox(this);
+        observe.setText("Observe intelligence requests and advise hot FFN pages");observe.setTextColor(0xFFE5EFF4);
+        observe.setChecked(ElementFlow.enabled(this));
+        observe.setOnCheckedChangeListener((v,checked)->ElementFlow.setEnabled(this,checked));content.addView(observe);
+        TextView flowStatus=text("Select a model above and run a general intelligence or Poetic Movement request.",13,0xFFE5EFF4);
+        Button inspectFlow=button("Read selected model flow");
+        inspectFlow.setOnClickListener(v->{
+            IntelligenceModel chosen=IntelligenceModel.values()[intelligence.getSelectedItemPosition()];
+            inspectFlow.setEnabled(false);
+            java.util.concurrent.CompletableFuture.supplyAsync(()->ElementFlow.report(this,chosen)).whenComplete((result,error)->runOnUiThread(()->{
+                if(isDestroyed())return;inspectFlow.setEnabled(true);flowStatus.setText(error==null?result:"Flow report unavailable");
+            }));
+        });
+        content.addView(inspectFlow);
+        content.addView(flowStatus);
+        Button resetFlow=button("Clear selected model baseline");
+        resetFlow.setOnClickListener(v->{
+            IntelligenceModel chosen=IntelligenceModel.values()[intelligence.getSelectedItemPosition()];
+            new AlertDialog.Builder(this).setTitle("Clear measured flow?")
+                .setMessage("Clears aggregate observations for "+chosen.label+". Model weights and Tree are unchanged.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Clear",(d,w)->{
+                    try{LocalPLaMoTranslationProvider.WORK.execute(()->{
+                        try{ElementFlow.clear(this,chosen);runOnUiThread(()->{if(!isDestroyed())flowStatus.setText("Baseline cleared");});}
+                        catch(Exception e){runOnUiThread(()->{if(!isDestroyed())flowStatus.setText("Could not clear baseline");});}
+                    });}catch(java.util.concurrent.RejectedExecutionException e){flowStatus.setText("Local inference queue busy");}
+                }).show();
+        });content.addView(resetFlow);
+
         content=RootsUi.section(this,sections,"FunctionGemma","Specialized operation proposals",false);
         content.addView(text("FunctionGemma 270M selects a bounded operation and proposes arguments. It does not execute tools, modify the Tree, or establish facts. Text entered here is processed on this device; CPU is used independently of the translation GPU setting.",13,0xFFAAC8D4));
         Button functionDownload=button("Download FunctionGemma Q8 (~292 MB)");

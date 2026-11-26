@@ -286,7 +286,11 @@ final class MeshPeer {
     }
     record SyncResult(int peers,int wanted,int received,int failed){}
     SyncResult sync(List<Invite> invites,String interests,String language,java.util.function.Consumer<String> progress)throws Exception{
+        return sync(invites,interests,language,null,progress);
+    }
+    SyncResult sync(List<Invite> invites,String interests,String language,AxonSubscription axon,java.util.function.Consumer<String> progress)throws Exception{
         if(invites.isEmpty()||invites.size()>8)throw new IllegalArgumentException("Enter one to eight peer invitations.");
+        if(axon!=null&&!axon.accepts(invites))throw new IllegalArgumentException("Invitation identity is not bound to this Axon.");
         Network network=wifi();if(network==null)throw new IOException("Connect to Wi-Fi first.");
         final long epoch=tree.captureEpoch();
         Map<String,Offer> offers=new HashMap<>();int peers=0,failed=0;
@@ -321,7 +325,8 @@ final class MeshPeer {
         observedReplicas=java.util.Collections.unmodifiableMap(new HashMap<>(replicas));observedDemand=java.util.Collections.unmodifiableMap(new HashMap<>(demand));
         Set<String> known=new HashSet<>();
         List<String> terms=new ArrayList<>();
-        for(NativeTree.Master record:tree.allRecords("",10000)){
+        List<NativeTree.Master> records=tree.allRecords("",10000);
+        for(NativeTree.Master record:records){
             if(record.key().startsWith("local:mesh:"))known.add(record.key().substring(11));
             if(!record.latest("want").isEmpty()){
                 String topic=record.latest("topic");
@@ -340,6 +345,17 @@ final class MeshPeer {
         want.sort((a,b)->MeshPriority.compare(
             new MeshPriority.Score(a.id,a.interest,a.sources.size(),a.demand,a.language.equals(language)),
             new MeshPriority.Score(b.id,b.interest,b.sources.size(),b.demand,b.language.equals(language))));
+        int wanted=want.size();
+        if(axon!=null){
+            AxonSubscription.Allocation allocation=axon.allocation(app,tree,records,language);
+            List<AxonPlanner.Offer> candidates=new ArrayList<>();
+            for(Offer o:want)candidates.add(new AxonPlanner.Offer(o.id,o.topic,o.sources.size(),o.demand,o.language.equals(language)));
+            wanted=0;for(AxonPlanner.Offer o:candidates)if(!AxonPlanner.lane(o.topic(),allocation.shares()).isEmpty())wanted++;
+            List<String> ids=AxonPlanner.order(candidates,allocation.shares(),MAX_FETCH);
+            want=new ArrayList<>();
+            for(String id:ids)want.add(offers.get(id));
+            progress.accept(axon.describe(allocation));
+        }
         int received=0,attempted=0;
         for(Offer o:want){
             if(attempted++>=MAX_FETCH)break;
@@ -356,6 +372,6 @@ final class MeshPeer {
             }
             if(!ok)failed++;
         }
-        return new SyncResult(peers,want.size(),received,failed);
+        return new SyncResult(peers,wanted,received,failed);
     }
 }

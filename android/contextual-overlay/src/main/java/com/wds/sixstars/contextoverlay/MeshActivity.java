@@ -25,7 +25,8 @@ import java.util.concurrent.Executors;
 public final class MeshActivity extends Activity {
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsMeshUi");t.setDaemon(true);return t;});
     private MeshPeer mesh;
-    private TextView status,serve,copy,receive,stop;
+    private TextView status,serve,copy,receive,stop,axonStatus;
+    private android.widget.CheckBox useAxon;
     private EditText invitations,interests;
     private boolean busy;
     private int dp(int n){return RootsUi.dp(this,n);}
@@ -56,6 +57,19 @@ public final class MeshActivity extends Activity {
         invitations.setFilters(new InputFilter[]{new InputFilter.LengthFilter(8192)});inbound.addView(invitations);
         interests=new EditText(this);interests.setHint("Wanted topics, separated by commas (optional)");interests.setSingleLine(true);
         interests.setFilters(new InputFilter[]{new InputFilter.LengthFilter(512)});inbound.addView(interests);
+        useAxon=new android.widget.CheckBox(this);
+        useAxon.setText("Use saved .axon subscription");useAxon.setTextColor(RootsUi.TEXT);
+        useAxon.setChecked(new java.io.File(getNoBackupFilesDir(),"subscription.axon").isFile());
+        inbound.addView(useAxon);
+        inbound.addView(RootsUi.action(this,"Bind / edit .axon",this::editAxon));
+        inbound.addView(RootsUi.action(this,"View current flow allocation",this::showAxon));
+        inbound.addView(RootsUi.action(this,"Remove .axon binding",()->{
+            new AlertDialog.Builder(this).setTitle("Remove saved Axon?")
+                .setMessage("Removes the local subscription, not retained knowledge.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->{AxonSubscription.clear(this);useAxon.setChecked(false);axonStatus.setText("No saved Axon");}).show();
+        }));
+        axonStatus=RootsUi.text(this,"Bind one or more peer identities and select topics.",13,RootsUi.MUTED,false);
+        inbound.addView(axonStatus);
         receive=RootsUi.action(this,"Receive missing knowledge",this::receive);inbound.addView(receive);
         status=RootsUi.text(this,"",14,RootsUi.ACCENT,true);content.addView(status);
         shell.addView(RootsUi.action(this,"‹ Home",()->{startActivity(new Intent(this,RootsStreamActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));finish();}));
@@ -104,19 +118,70 @@ public final class MeshActivity extends Activity {
             .setMessage("Anyone holding this invitation on your local subnet can fetch the published collection until you stop listening.")
             .setNegativeButton("Cancel",null).setPositiveButton("Share",(d,w)->startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,invitation),"Roots Mesh invitation"))).show();
     }
+    private List<MeshPeer.Invite> parseInvitations()throws Exception{
+        List<MeshPeer.Invite> peers=new ArrayList<>();
+        for(String line:invitations.getText().toString().split("\\r?\\n"))if(!line.trim().isEmpty())peers.add(MeshPeer.Invite.parse(line));
+        if(peers.isEmpty()||peers.size()>8)throw new IllegalArgumentException("Enter one to eight invitations.");
+        return peers;
+    }
+    private void editAxon(){
+        if(busy)return;
+        final List<MeshPeer.Invite> peers;
+        final AxonSubscription old;
+        try{peers=parseInvitations();old=AxonSubscription.load(this);}
+        catch(Exception e){axonStatus.setText(e.getMessage());return;}
+        LinearLayout box=RootsUi.column(this);box.setPadding(dp(16),0,dp(16),0);box.setBackgroundColor(RootsUi.CARD);
+        box.addView(RootsUi.text(this,"One topic per line; optional FFN group addresses from the Gemma flow analyzer. Example: music | 7:12,8:2. Use * to receive other topics too. No automatic claim about an element's meaning.",13,RootsUi.MUTED,false));
+        android.widget.Spinner model=new android.widget.Spinner(this);RootsUi.styleSpinner(this,model,IntelligenceModel.labels());
+        model.setSelection((old==null?IntelligenceModel.selected(this):old.model).ordinal());box.addView(model);
+        android.widget.Spinner op=new android.widget.Spinner(this);RootsUi.styleSpinner(this,op,ElementFlow.OPERATIONS);
+        op.setSelection(old==null?0:java.util.Arrays.asList(ElementFlow.OPERATIONS).indexOf(old.operation));box.addView(op);
+        EditText lines=new EditText(this);lines.setMinLines(4);lines.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        lines.setFilters(new InputFilter[]{new InputFilter.LengthFilter(4096)});
+        lines.setHint("music\nscience | 7:12\n*");
+        lines.setText(old==null?interests.getText().toString().replace(',','\n'):old.lines());box.addView(lines);
+        RootsUi.styleInputs(this,box);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Bind .axon to "+peers.size()+" invited peer(s)").setView(box)
+            .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
+            try{
+                AxonSubscription next=AxonSubscription.create(peers,IntelligenceModel.values()[model.getSelectedItemPosition()],ElementFlow.OPERATIONS[op.getSelectedItemPosition()],lines.getText().toString());
+                next.save(this);useAxon.setChecked(true);dialog.dismiss();showAxon();
+            }catch(Exception e){lines.setError(e.getMessage());}
+        }));dialog.show();
+    }
+    private void showAxon(){
+        if(!NativeTree.available())return;
+        final AxonSubscription subscription;
+        try{subscription=AxonSubscription.load(this);if(subscription==null){axonStatus.setText("No saved .axon subscription");return;}}
+        catch(Exception e){axonStatus.setText(e.getMessage());return;}
+        final String lang=new OverlayPreferences(this).targetLanguage();
+        axonStatus.setText("Calculating local flow…");
+        WORK.execute(()->{
+            String message;
+            try{
+                TreeRuntime tree=TreeRuntime.get(this);
+                message=subscription.describe(subscription.allocation(this,tree,tree.allRecords("",10000),lang));
+            }catch(Exception|LinkageError e){message="Axon allocation unavailable: "+e.getClass().getSimpleName();}
+            final String result=message;runOnUiThread(()->{if(!isDestroyed())axonStatus.setText(result);});
+        });
+    }
     private void receive(){
         if(busy||!NativeTree.available())return;
-        final List<MeshPeer.Invite> peers=new ArrayList<>();
+        final List<MeshPeer.Invite> peers;
+        final AxonSubscription subscription;
         try{
-            for(String line:invitations.getText().toString().split("\\r?\\n"))if(!line.trim().isEmpty())peers.add(MeshPeer.Invite.parse(line));
-            if(peers.isEmpty()||peers.size()>8)throw new IllegalArgumentException("Enter one to eight invitations.");
+            peers=parseInvitations();
+            subscription=useAxon.isChecked()?AxonSubscription.load(this):null;
+            if(useAxon.isChecked()&&subscription==null)throw new IllegalArgumentException("Bind an Axon first.");
+            if(subscription!=null&&!subscription.accepts(peers))throw new IllegalArgumentException("This peer is not bound. Edit the Axon or disable it.");
         }catch(Exception e){status.setText(e.getMessage());return;}
         final String wanted=interests.getText().toString(),lang=new OverlayPreferences(this).targetLanguage();
         busy=true;refresh();status.setText("Reading peer inventories…");
         WORK.execute(()->{
             String message;
             try{
-                MeshPeer.SyncResult result=mesh.sync(peers,wanted,lang,progress->runOnUiThread(()->{if(!isDestroyed())status.setText(progress);}));
+                MeshPeer.SyncResult result=mesh.sync(peers,wanted,lang,subscription,progress->runOnUiThread(()->{if(!isDestroyed())status.setText(progress);}));
                 message="Received "+result.received()+" of "+result.wanted()+" missing items · "+result.peers()+" peers · "+result.failed()+" failures. Return Home to read.";
             }catch(Exception|LinkageError e){message="Receive failed: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
             String result=message;

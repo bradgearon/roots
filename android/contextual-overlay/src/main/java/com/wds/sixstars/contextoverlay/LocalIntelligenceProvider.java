@@ -167,6 +167,9 @@ final class LocalIntelligenceProvider {
         InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin("Phone · CPU",model.label,operation,"General intelligence · local generation");
         attempt.running("Running");
         try{
+            boolean observe=ElementFlow.enabled(app);
+            int[] prediction=observe?ElementFlow.prediction(app,model,operation):new int[0];
+            LocalPLaMoTranslationProvider.Native.configureFlow(observe,prediction);
             byte[] bytes=LocalPLaMoTranslationProvider.Native.generateIntelligence(
                 model.prompt(user).getBytes(StandardCharsets.UTF_8),stats,new OverlayPreferences(app).localThreads(),
                 prefix->partial.accept(StreamText.utf8Prefix(prefix)));
@@ -174,6 +177,10 @@ final class LocalIntelligenceProvider {
             contextWarm=true;
             String answer=new String(bytes,StandardCharsets.UTF_8).trim();
             if(answer.isEmpty())throw new IllegalStateException("Empty intelligence output.");
+            if(observe){
+                try{ElementFlow.record(app,model,operation,prediction,LocalPLaMoTranslationProvider.Native.flowReport());}
+                catch(Exception|LinkageError ignored){Log.w("RootsElementFlow","Could not retain aggregate profile");}
+            }
             attempt.finish(true,"Generation completed · separate validation");
             return answer;
         }catch(Exception|LinkageError e){contextWarm=false;attempt.finish(false,"Local intelligence generation failed");throw e;}
