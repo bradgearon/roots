@@ -101,7 +101,7 @@ public final class AccessibilityOverlayRenderer {
     private void reconcileMarkers(List<TextCandidate> candidates, ClickHandler clicks) {
         Set<String> present = new HashSet<>();
         for (TextCandidate c : candidates) {
-            if (!onScreen(c) || !present.add(c.fingerprint)) continue;
+            if (c.authorName || !onScreen(c) || !present.add(c.fingerprint)) continue;
             Marker marker = markers.get(c.fingerprint);
             if (marker == null) {
                 final Marker created = new Marker();

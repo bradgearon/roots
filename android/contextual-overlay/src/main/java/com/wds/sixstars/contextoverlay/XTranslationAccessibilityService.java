@@ -191,7 +191,9 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         scrollSinceLastScan = false;
         // Never treat a single empty accessibility snapshot as app exit.
         // A reply composer may briefly make X's virtual text tree empty.
-        coordinator.refresh(candidates, scrolling);
+        coordinator.refresh(candidates,
+                readerStatus.startsWith("X active;") ? reader.lastDiscovered() : Collections.emptyList(),
+                scrolling);
         boolean scannedX = readerStatus.startsWith("X");
         OverlayDiagnostics.record(this, readerStatus,
                 scannedX ? reader.lastVisitedNodes() : 0,

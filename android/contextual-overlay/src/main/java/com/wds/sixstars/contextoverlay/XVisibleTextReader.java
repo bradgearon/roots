@@ -8,6 +8,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Captures only X's foreground accessibility nodes. The reader extracts likely
@@ -28,6 +31,9 @@ public final class XVisibleTextReader {
     private int lastAuthorMatchCount;
     private int lastClippedNameCount;
     private boolean lastPostDetail;
+    // In-memory discovery snapshot, independent of the chosen render layout.
+    private List<TextCandidate> lastDiscovered = Collections.emptyList();
+    public List<TextCandidate> lastDiscovered() { return lastDiscovered; }
 
     public int lastVisitedNodes() { return lastVisited; }
     public int lastTextNodes() { return lastTextNodes; }
@@ -57,6 +63,7 @@ public final class XVisibleTextReader {
         lastAuthorMatchCount = 0;
         lastClippedNameCount = 0;
         lastPostDetail = false;
+        lastDiscovered = Collections.emptyList();
         if (root == null || root.getPackageName() == null
                 || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
 
@@ -149,8 +156,7 @@ public final class XVisibleTextReader {
                                     label, viewId, className, true))
                         authorSamples.add(new AuthorSample(label, bounds, knownAuthor));
                 }
-                // A recognized author name is never eligible for PLaMo's
-                // post-body translation pipeline.
+                // Author names are translated by their own role, not as bodies.
                 if (knownAuthor) continue;
 
                 int score = PostTextHeuristics.score(text, viewId, className, description,
@@ -186,15 +192,120 @@ public final class XVisibleTextReader {
         List<TextCandidate> selected =
                 spatial.locate(associated, width, height, detailScreen);
         lastPostDetail = detailScreen;
-        lastCandidateCount = selected.size();
+        List<TextCandidate> authorNames = independentAuthors(authorSamples, avatars,
+                selected, raw, width, scaledDensity);
+        Map<String, TextCandidate> work = new LinkedHashMap<>();
+        for (TextCandidate name : authorNames) work.put(name.fingerprint, name);
+        for (TextCandidate body : selected) work.put(body.fingerprint, body);
+        for (TextCandidate body : raw) {
+            if (body.languageHint.isEmpty() || body.fromDescription
+                    || !body.knownPostTextId && overlapsAuthor(body, authorNames))
+                continue;
+            boolean duplicateRegion = false;
+            for (TextCandidate chosen : selected) {
+                if (!body.fingerprint.equals(chosen.fingerprint)
+                        && Rect.intersects(body.bounds, chosen.bounds)) {
+                    duplicateRegion = true; break;
+                }
+            }
+            if (!duplicateRegion && work.size() < 256)
+                work.putIfAbsent(body.fingerprint, body);
+        }
+        lastDiscovered = Collections.unmodifiableList(new ArrayList<>(work.values()));
+        List<TextCandidate> scene = new ArrayList<>(selected);
+        scene.addAll(authorNames);
+        lastCandidateCount = scene.size();
         lastAvatarCount = avatars.size();
         lastAuthorSampleCount = authorSamples.size();
-        for (TextCandidate item : selected) {
-            if (item.author == null) continue;
-            lastAuthorMatchCount++;
+        for (TextCandidate item : authorNames) {
+            if (!item.avatarBounds.isEmpty()) lastAuthorMatchCount++;
             if (item.author.truncated) lastClippedNameCount++;
         }
-        return selected;
+        return scene;
+    }
+
+    private static boolean overlapsAuthor(TextCandidate body, List<TextCandidate> names) {
+        for (TextCandidate name : names)
+            if (Rect.intersects(body.bounds, name.bounds)) return true;
+        return false;
+    }
+
+    /** A name can be discovered without a body. An ambiguous header requires
+     * a matching avatar; strong IDs/composite headers may queue without one. */
+    private static List<TextCandidate> independentAuthors(List<AuthorSample> samples,
+            List<Rect> avatars, List<TextCandidate> selected, List<TextCandidate> raw,
+            int width, float density) {
+        Map<String, TextCandidate> names = new LinkedHashMap<>();
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setTextSize(18f * Math.max(1f, density));
+        paint.setFakeBoldText(true);
+        for (AuthorSample sample : samples) {
+            if (XAuthorNameHeuristics.looksLikeHandle(sample.text)) continue;
+            boolean composite = XAuthorNameHeuristics.looksCompositeHeader(sample.text);
+            boolean body = false;
+            for (TextCandidate candidate : raw)
+                if (candidate.knownPostTextId && candidate.bounds.equals(sample.bounds)) {
+                    body = true; break;
+                }
+            if (body) continue;
+            Rect avatar = new Rect();
+            int best = Integer.MAX_VALUE;
+            for (Rect a : avatars) {
+                int gap = sample.bounds.left - a.right;
+                int dy = Math.abs(sample.bounds.top - a.top);
+                if (gap < -Math.max(6, width/75) || gap > width/6
+                        || sample.bounds.top < a.top-a.height()/3
+                        || sample.bounds.top > a.top+a.height()/3
+                        || sample.bounds.height() > a.height()*4/5) continue;
+                int score = Math.abs(gap)+dy;
+                if (score < best) { best=score; avatar=new Rect(a); }
+            }
+            if (avatar.isEmpty() && !sample.knownNameId && !composite) continue;
+            String name = composite ? sample.text.substring(0,sample.text.indexOf('@')).trim() : sample.text;
+            if (name.isEmpty()) continue;
+            if (avatar.isEmpty() && sample.bounds.left >= width/7) {
+                int size=Math.min(Math.max(36,width/10),width/5);
+                int right=sample.bounds.left-Math.max(5,width/55);
+                int top=Math.max(0,sample.bounds.top-size/12);
+                if(right>=size) avatar=new Rect(right-size,top,right,top+size);
+            }
+            boolean clipped=XAuthorNameHeuristics.looksTruncated(sample.text,
+                    paint.measureText(sample.text),sample.bounds.width());
+            if (!sample.knownNameId && !composite) {
+                boolean selectedBody=false;
+                for(TextCandidate candidate:selected)
+                    if(candidate.bounds.equals(sample.bounds) && candidate.text.equals(sample.text)){
+                        selectedBody=true;break;
+                    }
+                if(selectedBody)continue;
+            }
+            for(AuthorSample other:samples) {
+                if(other==sample || !XAuthorNameHeuristics.looksLikeHandle(other.text))continue;
+                if(Math.abs(other.bounds.top-sample.bounds.top)<=Math.max(10,avatar.height()/2)
+                        && other.bounds.left>=sample.bounds.left
+                        && XAuthorNameHeuristics.hasVisibleEllipsis(other.text))clipped=true;
+            }
+            addAuthor(names,new XAuthorInfo(name,sample.bounds,avatar,clipped));
+        }
+        // Preserve verified associations as a fallback; they no longer gate
+        // name discovery. Do not duplicate a richer independent header.
+        for(TextCandidate candidate:selected) {
+            if(candidate.author==null)continue;
+            XAuthorInfo a=candidate.author;
+            boolean already=false;
+            for(TextCandidate name:names.values())
+                if(Rect.intersects(name.bounds,a.nameBounds)){already=true;break;}
+            if(!already)addAuthor(names,a);
+        }
+        return new ArrayList<>(names.values());
+    }
+
+    private static void addAuthor(Map<String, TextCandidate> names, XAuthorInfo info) {
+        TextCandidate c=TextCandidate.forAuthor(info,names.size());
+        TextCandidate existing=names.get(c.fingerprint);
+        if(existing==null || existing.avatarBounds.isEmpty() && !c.avatarBounds.isEmpty()
+                || !existing.author.truncated && info.truncated)
+            names.put(c.fingerprint,c);
     }
 
     private static PostCard findCard(AccessibilityNodeInfo node, Rect body, int width, int height) {

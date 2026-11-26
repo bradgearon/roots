@@ -5,7 +5,7 @@ import java.util.Map;
 
 /** Bounded private in-memory cache, no cross-session or persistent tweet storage. */
 public final class TranslationCache {
-    private static final int MAX_ENTRIES = 96;
+    private static final int MAX_ENTRIES = 512;
     private static final long TTL_MS = 30L * 60L * 1000L;
     private final LinkedHashMap<String, Entry> values = new LinkedHashMap<>(32, 0.75f, true);
 

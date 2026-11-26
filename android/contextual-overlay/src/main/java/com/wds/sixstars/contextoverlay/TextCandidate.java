@@ -5,6 +5,7 @@ import android.graphics.Rect;
 /** An immutable screen snapshot. Never retain an AccessibilityNodeInfo after a scan. */
 public final class TextCandidate {
     public final String fingerprint;
+    public final boolean authorName;
     public final String text;
     public final String languageHint;
     /** Bounds of just the selected post body, not the profile/header/actions. */
@@ -55,7 +56,23 @@ public final class TextCandidate {
                   int order, int bodyScore, boolean hasPostContainer,
                   boolean fromDescription, boolean knownPostTextId, Rect avatarBounds,
                   XAuthorInfo author) {
-        this.fingerprint = TextFingerprint.of(text);
+        this(text, languageHint, bounds, postBounds, order, bodyScore,
+                hasPostContainer, fromDescription, knownPostTextId, avatarBounds, author, false);
+    }
+
+    static TextCandidate forAuthor(XAuthorInfo author, int order) {
+        return new TextCandidate(author.displayName,
+                XVisibleTextReader.languageHint(author.displayName), author.nameBounds,
+                author.nameBounds, order, 0, false, false, false,
+                author.avatarBounds, author, true);
+    }
+
+    private TextCandidate(String text, String languageHint, Rect bounds, Rect postBounds,
+                  int order, int bodyScore, boolean hasPostContainer,
+                  boolean fromDescription, boolean knownPostTextId, Rect avatarBounds,
+                  XAuthorInfo author, boolean authorName) {
+        this.authorName = authorName;
+        this.fingerprint = (authorName ? "name:" : "") + TextFingerprint.of(text);
         this.text = text;
         this.languageHint = languageHint;
         this.bounds = new Rect(bounds);

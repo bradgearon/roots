@@ -41,7 +41,7 @@ import java.util.Set;
  * avatar-gutter details icon toggles the existing on-demand bottom sheet.
  */
 final class AutoOverlaySceneController {
-    private static final int MAX_STORED_TRANSLATIONS = 96;
+    private static final int MAX_STORED_TRANSLATIONS = 512;
     private static final int MAX_VISIBLE = 8;
 
     private final Context context;
@@ -107,19 +107,30 @@ final class AutoOverlaySceneController {
         DisplayMetrics screen = context.getResources().getDisplayMetrics();
         long nowMs = SystemClock.uptimeMillis();
         HashSet<String> seen = new HashSet<>();
+        // Names use their own observation IDs and anchor, independent of
+        // body placement or whether the body has finished translating.
+        for(TextCandidate candidate:candidates){
+            if(!candidate.authorName || candidate.author==null || !seen.add(candidate.fingerprint))continue;
+            boolean foreign=AutoTranslationEligibilityService.accepts(candidate,preferences.targetLanguage());
+            if(!foreign&&!candidate.author.truncated)continue;
+            Rect n=candidate.bounds, avatar=candidate.avatarBounds;
+            AutoDetailsPlacementService.Placement badge=AutoDetailsPlacementService.locateName(
+                    n.left,n.top,n.right,n.bottom,n.left,n.top,n.right,n.bottom,false,
+                    avatar.left,avatar.top,avatar.right,avatar.bottom,
+                    screen.widthPixels,screen.heightPixels,screen.density);
+            if(badge!=null){
+                AutoInlinePlacementService.Placement anchor=new AutoInlinePlacementService.Placement(
+                        badge.x,badge.y,badge.width,badge.height);
+                observations.add(new AutoOverlayPositionStore.Observation(candidate.fingerprint,
+                        anchor,null,badge,candidate.text));
+            }
+        }
+        int bodyCount=0;
         for (TextCandidate candidate : candidates) {
+            if(candidate.authorName)continue;
             boolean translatable = AutoTranslationEligibilityService.accepts(
                     candidate, preferences.targetLanguage());
-            boolean clippedName = candidate.author != null
-                    && candidate.author.truncated;
-            // A clipped author may need its left-side details badge even if
-            // the post body is already in the target language.
-            boolean previouslyVerifiedName =
-                    positions.hasTrackedAuthor(candidate.fingerprint, nowMs);
-            // A temporary X header omission must not make an already
-            // identified name disappear, even on an English/short tweet.
-            if ((!translatable && !clippedName && !previouslyVerifiedName
-                    && !translations.containsKey(candidate.fingerprint))
+            if ((!translatable && !translations.containsKey(candidate.fingerprint))
                     || !seen.add(candidate.fingerprint)) continue;
             AutoInlinePlacementService.Placement rectangle =
                     AutoInlinePlacementService.locate(
@@ -134,27 +145,10 @@ final class AutoOverlaySceneController {
                                 candidate.bounds.right, candidate.bounds.bottom,
                                 candidate.postBounds.right, screen.widthPixels,
                                 screen.heightPixels, screen.density);
-                AutoDetailsPlacementService.Placement nameDetails = null;
-                String fullName = null;
-                if (candidate.author != null && candidate.author.truncated) {
-                    fullName = candidate.author.displayName;
-                    nameDetails = AutoDetailsPlacementService.locateName(
-                            candidate.bounds.left, candidate.bounds.top,
-                            candidate.bounds.right, candidate.bounds.bottom,
-                            candidate.postBounds.left, candidate.postBounds.top,
-                            candidate.postBounds.right, candidate.postBounds.bottom,
-                            candidate.hasPostContainer,
-                            candidate.author.avatarBounds.left,
-                            candidate.author.avatarBounds.top,
-                            candidate.author.avatarBounds.right,
-                            candidate.author.avatarBounds.bottom,
-                            screen.widthPixels, screen.heightPixels, screen.density);
-                }
                 observations.add(new AutoOverlayPositionStore.Observation(
-                        candidate.fingerprint, rectangle, tweetDetails,
-                        nameDetails, fullName));
+                        candidate.fingerprint, rectangle, tweetDetails));
+                if (++bodyCount >= MAX_VISIBLE) break;
             }
-            if (observations.size() >= MAX_VISIBLE) break;
         }
 
         if (scrolling) expanded.hide();
@@ -226,11 +220,19 @@ final class AutoOverlaySceneController {
         for (AutoOverlayPositionStore.Located item : located) {
             if (item.nameDetails != null && item.authorName != null) {
                 present.add(item.id);
-                ensureNameAction(item.id, item.authorName, item.nameDetails, palette);
+                TranslationState nameState=translations.get(item.id);
+                String nameText=item.authorName;
+                if(nameState!=null && nameState.translation!=null
+                        && !nameState.translation.equals(nameText))
+                    nameText+="\n\n"+nameState.translation;
+                ensureNameAction(item.id, nameText, item.nameDetails, palette);
             } else {
                 removeNameAction(item.id);
             }
 
+            // Name translations belong to the left details control, not
+            // the body canvas.
+            if(item.id.startsWith("name:"))continue;
             TranslationState state = translations.get(item.id);
             if (state == null || state.translation == null) {
                 removeTweetAction(item.id);

@@ -96,7 +96,7 @@ final class PostTextHeuristics {
         if (text == null || isUiLabel(text, id, className)) return -1;
         boolean knownBody = isPostTextId(id);
         boolean foreign = languageHint != null && !languageHint.isEmpty();
-        int minChars = knownBody ? 3 : (foreign ? 4 : 12);
+        int minChars = knownBody ? 1 : (foreign ? 2 : 12);
         if (text.length() < minChars || text.length() > 1100 ||
                 width < 45 || height < 12) return -1;
         if (clickable && !knownBody && !foreign && text.length() < 65) return -1;

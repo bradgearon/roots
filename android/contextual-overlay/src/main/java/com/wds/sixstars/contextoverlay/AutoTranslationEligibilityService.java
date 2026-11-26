@@ -14,7 +14,12 @@ public final class AutoTranslationEligibilityService {
     private AutoTranslationEligibilityService() { }
 
     public static boolean accepts(TextCandidate candidate, String targetLanguage) {
-        return candidate != null && accepts(candidate.knownPostTextId,
+        if(candidate==null)return false;
+        if(candidate.authorName)
+            return candidate.text!=null && !candidate.text.trim().isEmpty()
+                && !candidate.languageHint.isEmpty()
+                && targetLanguage!=null && !candidate.languageHint.equalsIgnoreCase(targetLanguage);
+        return accepts(candidate.knownPostTextId,
                 candidate.hasPostContainer, candidate.fromDescription,
                 candidate.bodyScore, candidate.languageHint, targetLanguage,
                 candidate.text);
@@ -26,7 +31,7 @@ public final class AutoTranslationEligibilityService {
         // Keep the old successful automatic selection behavior: a visible
         // non-target-language text candidate is eligible regardless of whether
         // X exposed a stable view ID or a recognizable post container.
-        if (text == null || text.trim().length() < 3 || text.length() > 1100)
+        if (text == null || text.trim().length() < (recognizedBody ? 1 : 2) || text.length() > 1100)
             return false;
         if (source == null || source.isEmpty() || target == null ||
                 target.isEmpty() || source.equalsIgnoreCase(target))
