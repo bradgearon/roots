@@ -266,6 +266,31 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         system.setOnClickListener(v -> openAndroidSettings());
         content.addView(system);
 
+        content.addView(text("Local inference acceleration", 18, 0xFFFFFFFF));
+        boolean vulkanBuilt=LocalPLaMoTranslationProvider.vulkanBuilt();
+        CheckBox vulkan = new CheckBox(this);
+        vulkan.setText(vulkanBuilt ? "Vulkan GPU (experimental; compare latency and output)" : "Vulkan GPU (not included in this APK)");
+        vulkan.setTextColor(0xFFE5EFF4);
+        vulkan.setEnabled(vulkanBuilt);
+        if(!vulkanBuilt && prefs.localVulkanEnabled()) prefs.setLocalVulkanEnabled(false);
+        vulkan.setChecked(prefs.localVulkanEnabled());
+        vulkan.setOnCheckedChangeListener((button,checked)->prefs.setLocalVulkanEnabled(checked));
+        content.addView(vulkan);
+        content.addView(text("CPU thread count (also used for GPU fallback operations)", 13, 0xFFAAC8D4));
+        Spinner threads = new Spinner(this);
+        int[] threadValues={0,2,4,6,8};
+        String[] threadLabels={"Auto (up to 6)", "2 threads", "4 threads", "6 threads", "8 threads"};
+        ArrayAdapter<String> threadAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,threadLabels);
+        threadAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        threads.setAdapter(threadAdapter);
+        for(int i=0;i<threadValues.length;i++)if(threadValues[i]==prefs.localThreadSetting())threads.setSelection(i);
+        threads.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+            @Override public void onItemSelected(AdapterView<?> parent,View view,int position,long id){prefs.setLocalThreadSetting(threadValues[position]);}
+            @Override public void onNothingSelected(AdapterView<?> parent){}
+        });
+        content.addView(threads);
+        content.addView(text("ARM-optimized CPU kernels are enabled in the standard ARM64 build. Use the same sample twice or three times per setting; exclude first model load, and check the output. GPU is opt-in because driver compatibility and speed vary.",12,0xFFAAC8D4));
+
         content.addView(text("PLaMo translation connection test", 18, 0xFFFFFFFF));
         Button sample = button("Test actual PLaMo translation");
         content.addView(sample);
@@ -273,10 +298,16 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(preview);
         sample.setOnClickListener(v -> {
             preview.setText("Translating with PLaMo…");
+            sample.setEnabled(false);
+            long start=android.os.SystemClock.elapsedRealtime();
+            boolean local=!prefs.desktopTranslationEnabled();
+            String acceleration=local?(prefs.localVulkanEnabled()?"Vulkan requested":"CPU")+" / "+prefs.localThreads()+" threads":"Desktop";
             TranslationRuntime.provider(this).translate("Bonjour à tous!", "fr", prefs.targetLanguage(),
-                (result, error) -> runOnUiThread(() -> preview.setText(
-                    (error == null ? "PLaMo: " + result : "Cannot translate: " + error) +
-                    "\nTransport: " + TranslationRuntime.transportStatus())));
+                (result, error) -> runOnUiThread(() -> {
+                    sample.setEnabled(true);
+                    preview.setText((error == null ? "PLaMo: " + result : "Cannot translate: " + error) +
+                        "\nTransport: " + TranslationRuntime.transportStatus() + "\n" + acceleration + "\nElapsed: " + (android.os.SystemClock.elapsedRealtime()-start) + " ms");
+                }));
         });
 
         content.addView(text(
