@@ -1,5 +1,9 @@
 package com.wds.sixstars.contextoverlay;
 import android.app.DownloadManager;
+import android.os.SystemClock;
+import android.util.Log;
+import java.io.FileOutputStream;
+import org.json.JSONObject;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Environment;
@@ -19,6 +23,33 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
     private static long verifiedLength=-1, verifiedModified=-1;
     private static String loadedPath;
     private final Context app;
+    private static final String TAG = "RootsPLaMo";
+    // Targeted model lifecycle trace only. No prompts, translations, credentials or tweet text.
+    private static void trace(Context c,String stage,String status,long started,String detail) {
+        try {
+            File dir=new File(c.getFilesDir(),"diagnostics");
+            if(!dir.isDirectory()&&!dir.mkdirs())return;
+            File log=new File(dir,"plamo-lifecycle.jsonl");
+            if(log.length()>512*1024L){
+                File old=new File(dir,"plamo-lifecycle.previous.jsonl");
+                if(old.exists()&&!old.delete())return;
+                if(!log.renameTo(old))return;
+            }
+            JSONObject entry=new JSONObject();
+            entry.put("time_ms",System.currentTimeMillis());entry.put("component","local-plamo");
+            entry.put("stage",stage);entry.put("status",status);
+            entry.put("elapsed_ms",Math.max(0,SystemClock.elapsedRealtime()-started));
+            entry.put("detail",detail);
+            try(FileOutputStream stream=new FileOutputStream(log,true)){
+                stream.write((entry.toString()+"\n").getBytes(StandardCharsets.UTF_8));
+            }
+        } catch(Exception ignored) { Log.w(TAG,"Could not write lifecycle diagnostic"); }
+    }
+    private static String explain(Throwable error) {
+        String message=error.getMessage();
+        if(message==null||message.trim().isEmpty())return error.getClass().getSimpleName();
+        return error.getClass().getSimpleName()+": "+message.substring(0,Math.min(message.length(),2200));
+    }
     LocalPLaMoTranslationProvider(Context context) { app=context.getApplicationContext(); }
     private static File model(Context c) { return new File(c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), FILE); }
     private static String expected(Context c) { return c.getSharedPreferences("roots_models",0).getString("plamo_sha256",""); }
@@ -36,11 +67,14 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
     public static void downloadModel(Context context, Result callback) {
         Context c=context.getApplicationContext();
         try { WORK.execute(() -> {
+            long started=SystemClock.elapsedRealtime();
+            String stage="download_check";
             try {
                 DownloadManager dm=(DownloadManager)c.getSystemService(Context.DOWNLOAD_SERVICE);
                 if(downloading(c,dm)){callback.completed("Download already in progress.",null);return;}
                 File file=model(c);
                 if(file.isFile() && verify(c,file)) { callback.completed("Model is installed.",null); return; }
+                stage="publisher_digest";
                 try (Response response=new OkHttpClient.Builder().followRedirects(false).build().newCall(new Request.Builder().url(URL).head().build()).execute()) {
                     String digest=response.header("X-Linked-Etag","");
                     digest=digest.replace("\"","").trim();
@@ -51,10 +85,12 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                 if(loadedPath!=null) { Native.unload(); loadedPath=null; }
                 verifiedLength=-1; verifiedModified=-1;
                 if(file.exists()&&!file.delete()) throw new IllegalStateException("Cannot replace model.");
+                stage="download_enqueue";
                 long id=dm.enqueue(new DownloadManager.Request(Uri.parse(URL)).setTitle("Roots: PLaMo 0.8B").setAllowedOverMetered(false).setAllowedOverRoaming(false).setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setDestinationInExternalFilesDir(c,Environment.DIRECTORY_DOWNLOADS,FILE));
                 c.getSharedPreferences("roots_models",0).edit().putLong("plamo_download",id).apply();
+                trace(c,stage,"ok",started,"DownloadManager accepted model download");
                 callback.completed("Model download queued over Wi-Fi. Return after completion and test translation.",null);
-            } catch(Exception|LinkageError ex){callback.completed(null,"Model download unavailable: "+ex.getClass().getSimpleName());}
+            } catch(Exception|LinkageError ex){trace(c,stage,"error",started,ex.getClass().getSimpleName());callback.completed(null,"Model download unavailable at "+stage+": "+explain(ex));}
         }); } catch(Exception busy){callback.completed(null,"Translation queue is busy.");}
     }
     private static boolean verify(Context c, File file) throws Exception {
@@ -69,6 +105,8 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         if(!new OverlayPreferences(app).enabled()){callback.completed(null,"Grant X text processing consent first.");return;}
         if(text==null || text.trim().isEmpty() || text.length()>1200 || target==null || !target.matches("[a-z]{2,3}") || text.contains("<|plamo:")){callback.completed(null,"Invalid translation request.");return;}
         try{WORK.execute(()->{
+            long started=SystemClock.elapsedRealtime();
+            String stage="verify_model";
             try {
                 if(!new OverlayPreferences(app).enabled() || new OverlayPreferences(app).desktopTranslationEnabled()){callback.completed(null,"Translation mode changed.");return;}
                 File file=model(app);
@@ -78,21 +116,40 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                     verifiedLength=file.length();verifiedModified=file.lastModified();
                     if(loadedPath!=null){Native.unload();loadedPath=null;}
                 }
+                stage="native_library";
                 Native.ensure();
+                String revision=Native.revision();
                 String path=file.getAbsolutePath();
-                if(!path.equals(loadedPath)){Native.load(path);loadedPath=path;}
+                if(!path.equals(loadedPath)){
+                    stage="model_load";loadedPath=null;
+                    long loadStart=SystemClock.elapsedRealtime();
+                    trace(app,stage,"start",loadStart,"runtime="+revision+" bytes="+file.length());
+                    Native.load(path);loadedPath=path;
+                    trace(app,stage,"ok",loadStart,"runtime="+revision);
+                }
                 String prompt="<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input"+
                     (source!=null&&source.matches("[a-z]{2,3}")?"<|plamo:key|>lang<|plamo:val|>"+source:"")+
                     "<|plamo:msg|>"+text+"<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>"+target+"<|plamo:msg|>";
+                stage="inference";
+                long inferenceStart=SystemClock.elapsedRealtime();
+                trace(app,stage,"start",inferenceStart,"runtime="+revision);
                 byte[] result=Native.generate(prompt.getBytes(StandardCharsets.UTF_8));
+                if(result==null)throw new IllegalStateException("Native runtime returned no result buffer");
+                trace(app,stage,"ok",inferenceStart,"runtime="+revision+" result_bytes="+result.length);
                 String translated=new String(result,StandardCharsets.UTF_8).trim();
                 if(translated.isEmpty())callback.completed(null,"No translation returned.");else callback.completed(translated,null);
-            } catch(Exception|LinkageError ex){callback.completed(null,"Local inference unavailable: "+ex.getClass().getSimpleName());}
+            } catch(Exception|LinkageError ex){
+                // Native load/decode errors contain stage and return code, not source content.
+                trace(app,stage,"error",started,stage.equals("model_load")?explain(ex):ex.getClass().getSimpleName());
+                Log.w(TAG,"Local inference failed at "+stage+" ("+ex.getClass().getSimpleName()+")");
+                callback.completed(null,"Local inference unavailable at "+stage+": "+explain(ex));
+            }
         });}catch(Exception busy){callback.completed(null,"Translation queue is busy.");}
     }
     private static class Native {
         static { System.loadLibrary("roots_plamo"); }
         static void ensure(){}
+        static native String revision();
         static native void load(String path);
         static native void unload();
         static native byte[] generate(byte[] prompt);

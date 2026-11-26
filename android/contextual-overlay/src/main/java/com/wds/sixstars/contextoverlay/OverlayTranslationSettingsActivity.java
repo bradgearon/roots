@@ -269,7 +269,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             TranslationRuntime.provider(this).translate("Bonjour à tous!", "fr", prefs.targetLanguage(),
                 (result, error) -> runOnUiThread(() -> preview.setText(
                     (error == null ? "PLaMo: " + result : "Cannot translate: " + error) +
-                    "\\nTransport: " + TranslationRuntime.transportStatus())));
+                    "\nTransport: " + TranslationRuntime.transportStatus())));
         });
 
         content.addView(text(
