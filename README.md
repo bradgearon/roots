@@ -24,6 +24,10 @@ Roots preserves Resone's engine and model provisioning method, but keeps a separ
 
 Open chrome://extensions, enable developer mode, and load unpacked chrome-extension/roots-translate. Enter the Roots desktop token in the popup. Existing automatic translation of nearby foreign posts, original text, inline results, cancellation, caching and manual translation are retained.
 
+## Android launcher artifact
+
+See [Roots Launcher](launcher/README.md) for the independent AOSP Launcher3-derived HOME app, official upstream synchronization, isolated Soong extension module and source-locked artifact builds. The existing Android translation app below is unchanged.
+
 ## Android
 
 Windows command-line build (no Gradle on PATH required):
