@@ -16,3 +16,10 @@ FetchContent_Declare(llama GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.
 FetchContent_MakeAvailable(llama)
 add_library(roots_plamo SHARED roots_plamo.cpp)
 target_link_libraries(roots_plamo PRIVATE llama android log)
+
+# Optional until the native Tree and its approved SQLite dependency are enabled.
+option(ROOTS_ENABLE_TREE "Build the shared native Tree Core" OFF)
+if(ROOTS_ENABLE_TREE)
+    set(ROOTS_TREE_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../../native/tree-core" "${CMAKE_CURRENT_BINARY_DIR}/roots-tree-core")
+endif()
