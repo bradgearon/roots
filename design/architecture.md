@@ -142,3 +142,7 @@ The Tree Core is shared C++17 (`native/tree-core`), not duplicated in Java or C#
 ### Lily semantic growth
 
 [Lily Tendrils](tendrils.md) are the semantic recognition and relationship-development structures. Neuronal knowledge semantics/activation and Lily predicate/sensor weights are distinct but cooperative spaces. Higher-level agents coordinate Lily sensors; a bounded worker pool proposes development and independent judgment gates commits. The native v1 literal-interest branches remain a baseline, not an implemented Lily engine.
+
+### Native platform integration milestone
+
+Draft implementation: Android JNI adapter, bounded separate X Home capture thread, batch writer, revision-checked GGUF compiler and native-backed paginated Tree viewer; desktop C# P/Invoke binding and local CLI. Android Tree is a separate build option requiring an approved SQLite amalgamation and separate storage consent. Desktop CLI is independent of the translation host. No automatic desktop capture, native network endpoints, semantic Lily engine or weighted feed yet. Validate real device capture, Windows/Linux native and managed tests, and actual JNI build before release.
