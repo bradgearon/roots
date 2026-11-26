@@ -116,18 +116,56 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         Button download = button("Download local PLaMo model (~550 MB)");
         download.setOnClickListener(v -> LocalPLaMoTranslationProvider.downloadModel(this, (message, error) -> runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(error == null ? message : error).setPositiveButton("OK", null).show())));
         content.addView(download);
-        content=RootsUi.section(this,sections,"Desktop bridge","Connect to your trusted desktop",false);
-        content.addView(text("Desktop bridge address (http://YOUR-PC:8123)", 13, 0xFFAAC8D4));
+        content=RootsUi.section(this,sections,"Desktop bridge","Pair a desktop and remember familiar networks",false);
+        content.addView(text("Desktop bridge address (http://YOUR-PC:8223)", 13, 0xFFAAC8D4));
         bridgeAddress = new EditText(this);
         bridgeAddress.setSingleLine(true);
         bridgeAddress.setText(prefs.bridgeUrl());
         bridgeAddress.setTextColor(Color.WHITE);
-        bridgeAddress.setHint("http://192.168.1.100:8123");
+        bridgeAddress.setHint("http://192.168.1.100:8223");
         bridgeAddress.setHintTextColor(0xFF8AADB6);
         bridgeAddress.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         content.addView(bridgeAddress);
-
-        content.addView(text("Desktop translation access key", 13, 0xFFAAC8D4));
+        content.addView(text("Start the desktop with launch.cmd --lan --pair. Enter the one-time invitation below; Roots generates its own client key and registers it over the encrypted socket.",13,0xFFAAC8D4));
+        EditText invitation=new EditText(this);
+        invitation.setSingleLine(true);
+        invitation.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        invitation.setHint("One-time pairing invitation");
+        invitation.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(64)});
+        content.addView(invitation);
+        Button pair=button("Pair this phone");
+        content.addView(pair);
+        pair.setOnClickListener(v->{
+            final String code=invitation.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            if(!code.matches("[0-9a-f]{64}")){status.setText("Enter the desktop's 64-character one-time pairing invitation.");return;}
+            try{prefs.setBridgeUrl(bridgeAddress.getText().toString());}
+            catch(IllegalArgumentException e){status.setText(e.getMessage());return;}
+            pair.setEnabled(false);
+            status.setText("Pairing with desktop…");
+            FastestComputeRouter.pair(this,prefs.bridgeUrl(),code,error->runOnUiThread(()->{
+                if(isDestroyed())return;
+                pair.setEnabled(true);
+                if(error==null){
+                    invitation.setText("");
+                    translationKey.setText("");
+                    translationKey.setHint("Client key saved securely");
+                    refreshStatus();
+                    status.setText(status.getText()+"\nPaired. Current network remembered. Enable automatic paired compute to use it.");
+                }else status.setText(error);
+            }));
+        });
+        Button remember=button("Remember current network for desktop");
+        remember.setOnClickListener(v->{
+            try{
+                prefs.setBridgeUrl(bridgeAddress.getText().toString());
+                TranslationRuntime.disconnect();
+                boolean ok=FastestComputeRouter.rememberCurrent(this);
+                refreshStatus();
+                status.setText(status.getText()+(ok?"\nCurrent network remembered.":"\nPair a desktop and connect to Wi-Fi first."));
+            }catch(IllegalArgumentException e){status.setText(e.getMessage());}
+        });
+        content.addView(remember);
+        content.addView(text("Legacy desktop access key (optional)", 13, 0xFFAAC8D4));
         translationKey = new EditText(this);
         translationKey.setSingleLine(true);
         translationKey.setHint(OverlayTranslationKeyStore.isConfigured(this)
@@ -144,6 +182,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         Button clearKey = button("Clear translation key");
         clearKey.setOnClickListener(v -> {
             OverlayTranslationKeyStore.clear(this);
+            FastestComputeRouter.forgetNetworks(this);
             prefs.setDesktopTranslationEnabled(false);
             TranslationRuntime.disconnect();
             if (desktopTranslation != null) desktopTranslation.setChecked(false);
@@ -203,6 +242,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                     .setNegativeButton("Not now", null)
                     .setPositiveButton("I consent to desktop translation", (dialog, which) -> {
                         prefs.setDesktopTranslationEnabled(true);
+                        TranslationRuntime.disconnect();
                         TranslationRuntime.startCompute(this);
                         desktopTranslation.setChecked(true);
                         refreshStatus();
@@ -398,8 +438,9 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             prefs.setTargetLanguage(codes[targetLanguage.getSelectedItemPosition()]);
             TranslationRuntime.disconnect(); // key, URL or language may have changed
             TranslationRuntime.startCompute(this);
+            boolean remembered=FastestComputeRouter.rememberCurrent(this);
             refreshStatus();
-            status.setText(status.getText() + "\nTranslation connection saved.");
+            status.setText(status.getText() + "\nTranslation connection saved."+(remembered?" Current network remembered.":""));
         } catch (Exception error) {
             status.setText("Could not save translation settings: " + error.getMessage());
         }

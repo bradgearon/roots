@@ -16,10 +16,10 @@ import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
-/** One paired compute connection. A successful encrypted probe, not the
+/** One paired compute connection. A successful encrypted reply, not the
  * WebSocket upgrade, establishes readiness. One in-flight envelope per socket. */
 final class SecureComputeSocket {
-    private static final long HEARTBEAT_MS=20000, RETRY_MS=8000;
+    private static final long RETRY_MS=8000;
     private final ReentrantLock exchange=new ReentrantLock();
     private final Object lifecycle=new Object();
     private volatile Session current;
@@ -37,19 +37,19 @@ final class SecureComputeSocket {
         final AtomicReference<Pending> pending=new AtomicReference<>();
         volatile WebSocket socket;
         volatile boolean open,ready,closed;
-        volatile long lastProbe;
+         
         Session(Network network,String base,String key){
             this.network=network;this.base=base;this.key=key;
             client=new OkHttpClient.Builder().socketFactory(network.getSocketFactory())
                 .dns(host->Arrays.asList(network.getAllByName(host)))
                 .followRedirects(false).followSslRedirects(false)
-                .connectTimeout(1200,TimeUnit.MILLISECONDS).pingInterval(20,TimeUnit.SECONDS).build();
+                .connectTimeout(1200,TimeUnit.MILLISECONDS).build();
         }
         boolean matches(Network n,String b,String k){return network.equals(n)&&base.equals(b)&&key.equals(k);}
     }
     boolean ready(Network network,String base,String key){
         Session s=current;
-        return s!=null&&s.matches(network,base,key)&&s.ready&&!s.closed&&SystemClock.elapsedRealtime()-s.lastProbe<60000;
+        return s!=null&&s.matches(network,base,key)&&s.ready&&!s.closed;
     }
     private void fail(Session s){
         synchronized(lifecycle){
@@ -70,7 +70,7 @@ final class SecureComputeSocket {
         synchronized(lifecycle){old=current;current=null;retryAt=0;retryNetwork=null;retryBase="";retryKey="";}
         if(old!=null)fail(old);
     }
-    private Session connect(Network network,String base,String key)throws Exception{
+    private Session connect(Network network,String base,String key,String path)throws Exception{
         Session s;
         synchronized(lifecycle){
             Session old=current;
@@ -85,7 +85,7 @@ final class SecureComputeSocket {
             else throw new IOException("Invalid bridge URL");
             current=s;
             try{
-                s.socket=s.client.newWebSocket(new Request.Builder().url(url+"/api/compute/v1/socket").build(),new WebSocketListener(){
+                s.socket=s.client.newWebSocket(new Request.Builder().url(url+path).build(),new WebSocketListener(){
                     @Override public void onOpen(WebSocket ws,Response response){if(s.closed){ws.cancel();return;}s.open=true;s.opened.countDown();}
                     @Override public void onMessage(WebSocket ws,String message){
                         Pending p=s.pending.get();
@@ -102,29 +102,29 @@ final class SecureComputeSocket {
         if(!s.opened.await(1800,TimeUnit.MILLISECONDS)||!s.open||s.closed){fail(s);return null;}
         return s;
     }
-    /** Background heartbeat: never waits for a busy inference exchange. */
-    void maintain(Network network,String base,String key){
-        if(!exchange.tryLock())return;
-        Session s=null;
-        try{
-            s=connect(network,base,key);
-            if(s==null)return;
-            if(s.ready&&SystemClock.elapsedRealtime()-s.lastProbe<HEARTBEAT_MS)return;
-            JSONObject reply=request(s,new JSONObject().put("kind","probe"),1800);
-            if(!reply.optBoolean("ok")||reply.optInt("protocol")!=1||
-                !"translate".equals(reply.optString("capability"))||!"plamo-3-translate".equals(reply.optString("model")))throw new IOException("Unsupported compute");
-            s.lastProbe=SystemClock.elapsedRealtime();s.ready=true;
-        }catch(Exception e){if(s!=null)fail(s);}
-        finally{exchange.unlock();}
-    }
+    /** No discovery or heartbeat. Connect only to send actual requested work. */
     JSONObject translate(Network network,String base,String key,JSONObject payload,Runnable started)throws Exception{
         if(!exchange.tryLock())throw new IOException("Compute socket busy");
-        Session s=current;
+        Session s=null;
         try{
-            if(!ready(network,base,key)||s==null||s!=current)throw new IOException("Compute socket not ready");
-            return request(s,payload,30000,started);
-        }catch(Exception e){if(s!=null&&s.matches(network,base,key))fail(s);throw e;}
+            s=connect(network,base,key,"/api/compute/v1/socket");
+            if(s==null)throw new IOException("Compute socket unavailable");
+            JSONObject reply=request(s,payload,30000,started);
+            s.ready=true;return reply;
+        }catch(Exception e){if(s!=null)fail(s);throw e;}
         finally{exchange.unlock();}
+    }
+    /** Explicit user pairing, isolated from the persistent inference socket. */
+    static String pair(Network network,String base,String invitation)throws Exception{
+        SecureComputeSocket pairing=new SecureComputeSocket();
+        try{
+            String client=SecureLanCompute.newKey();
+            Session s=pairing.connect(network,base,invitation,"/api/compute/v1/pair");
+            if(s==null)throw new IOException("Pairing host unavailable");
+            JSONObject reply=pairing.request(s,new JSONObject().put("kind","pair").put("clientKey",client),5000);
+            if(!reply.optBoolean("ok")||!SecureLanCompute.keyId(client).equals(reply.optString("keyId")))throw new IOException("Pairing confirmation invalid");
+            return client;
+        }finally{pairing.disconnect();}
     }
     private JSONObject request(Session s,JSONObject payload,long timeout)throws Exception{
         return request(s,payload,timeout,()->{});

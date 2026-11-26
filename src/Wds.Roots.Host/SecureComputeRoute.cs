@@ -17,11 +17,14 @@ internal sealed class SecureComputeRoute
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly byte[] RequestAad = Encoding.ASCII.GetBytes("roots.compute.v1.request");
     private readonly byte[] _requestKey, _responseKey;
+    private readonly ComputePairing? _pairing;
+    private readonly bool _invitation;
     private readonly PLaMoLocalTranslationService _translator;
     private readonly Dictionary<string,long> _seen = new();
     private readonly object _gate = new();
-    public SecureComputeRoute(string secret, PLaMoLocalTranslationService translator)
+    public SecureComputeRoute(string secret, PLaMoLocalTranslationService translator, ComputePairing? pairing = null, bool invitation = false)
     {
+        _pairing = pairing; _invitation = invitation;
         byte[] key = Convert.FromHexString(secret);
         _requestKey = HMACSHA256.HashData(key, Encoding.ASCII.GetBytes("roots.compute.v1.request"));
         _responseKey = HMACSHA256.HashData(key, Encoding.ASCII.GetBytes("roots.compute.v1.response"));
@@ -45,7 +48,7 @@ internal sealed class SecureComputeRoute
     {
         if (!context.WebSockets.IsWebSocketRequest || !string.IsNullOrEmpty(context.Request.Headers["Origin"]))
         { context.Response.StatusCode = 400; return; }
-        using var socket = await context.WebSockets.AcceptWebSocketAsync();
+        using var socket = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext { KeepAliveInterval = TimeSpan.Zero });
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var token = lifetime.Token;
         try
@@ -54,7 +57,7 @@ internal sealed class SecureComputeRoute
             while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
             {
                 using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-                readDeadline.CancelAfter(TimeSpan.FromSeconds(verified ? 75 : 5));
+                if (!verified) readDeadline.CancelAfter(TimeSpan.FromSeconds(5));
                 var buffer = new byte[4096];
                 using var message = new MemoryStream();
                 WebSocketReceiveResult part;
@@ -67,7 +70,7 @@ internal sealed class SecureComputeRoute
                 } while (!part.EndOfMessage);
 
                 var wire = JsonSerializer.Deserialize<Envelope>(message.ToArray(), Json);
-                var (code, reply) = await ExchangeCoreAsync(wire, token, requireProbe: !verified);
+                var (code, reply) = await ExchangeCoreAsync(wire, token);
                 if (code != 200 || reply == null) return;
                 verified = true;
                 byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(reply, Json);
@@ -81,20 +84,32 @@ internal sealed class SecureComputeRoute
     }
 
     private async Task<(int Code, Envelope? Reply)> ExchangeCoreAsync(
-        Envelope? wire, CancellationToken cancellationToken, bool requireProbe = false)
+        Envelope? wire, CancellationToken cancellationToken)
     {
         byte[] nonce;
+        byte[] requestKey = _requestKey, responseKey = _responseKey;
         JsonDocument request;
         try
         {
             if (wire == null) return (400, null);
+            if (!_invitation && !string.IsNullOrEmpty(wire.KeyId))
+            {
+                var client = _pairing?.Find(wire.KeyId);
+                if (client != null)
+                {
+                    requestKey = HMACSHA256.HashData(client, Encoding.ASCII.GetBytes("roots.compute.v1.request"));
+                    responseKey = HMACSHA256.HashData(client, Encoding.ASCII.GetBytes("roots.compute.v1.response"));
+                    CryptographicOperations.ZeroMemory(client);
+                }
+                // Legacy clients still use the existing desktop secret.
+            }
             nonce = Convert.FromBase64String(wire.Nonce);
             byte[] sealedBytes = Convert.FromBase64String(wire.Data);
             if (nonce.Length != 12 || sealedBytes.Length < 16 || sealedBytes.Length > 16000) return (400, null);
             byte[] plain = new byte[sealedBytes.Length - 16];
             try
             {
-                using var aes = new AesGcm(_requestKey, 16);
+                using var aes = new AesGcm(requestKey, 16);
                 aes.Decrypt(nonce, sealedBytes.AsSpan(0,plain.Length), sealedBytes.AsSpan(plain.Length), plain, RequestAad);
                 request = JsonDocument.Parse(plain);
                 // JsonDocument owns its parsed backing memory until disposal.
@@ -123,9 +138,15 @@ internal sealed class SecureComputeRoute
                 }
 
                 string? kind = root.GetProperty("kind").GetString();
-                if (requireProbe && kind != "probe") return (401, null);
                 object response;
-                if (kind == "probe")
+                if (_invitation)
+                {
+                    if (kind != "pair" || _pairing == null) return (401, null);
+                    string? clientKey = root.GetProperty("clientKey").GetString();
+                    if (clientKey == null || !_pairing.Redeem(clientKey)) return (401, null);
+                    response = new { ok = true, keyId = ComputePairing.Id(clientKey), protocol = 1 };
+                }
+                else if (kind == "probe")
                     response = new { ok = true, capability = "translate", model = PLaMoLocalTranslationService.ModelName, protocol = 1 };
                 else if (kind == "translate")
                 {
@@ -138,7 +159,7 @@ internal sealed class SecureComputeRoute
                 byte[] body = JsonSerializer.SerializeToUtf8Bytes(response, Json);
                 byte[] replyNonce = RandomNumberGenerator.GetBytes(12);
                 byte[] sealedReply = new byte[body.Length + 16];
-                using (var aes = new AesGcm(_responseKey, 16))
+                using (var aes = new AesGcm(responseKey, 16))
                     aes.Encrypt(replyNonce, body, sealedReply.AsSpan(0,body.Length), sealedReply.AsSpan(body.Length), nonce);
                 CryptographicOperations.ZeroMemory(body);
                 return (200, new Envelope(Convert.ToBase64String(replyNonce), Convert.ToBase64String(sealedReply)));
@@ -149,5 +170,5 @@ internal sealed class SecureComputeRoute
         }
     }
 
-    private sealed record Envelope(string Nonce,string Data);
+    private sealed record Envelope(string Nonce,string Data,string? KeyId = null);
 }

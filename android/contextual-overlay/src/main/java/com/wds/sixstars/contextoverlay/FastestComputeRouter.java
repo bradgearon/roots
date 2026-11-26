@@ -20,11 +20,10 @@ final class FastestComputeRouter implements TranslationProvider {
     private static volatile String status="On-device PLaMo";
     private static final java.util.concurrent.atomic.AtomicLong generation=new java.util.concurrent.atomic.AtomicLong();
     private final SecureComputeSocket socket=new SecureComputeSocket();
-    private final java.util.concurrent.ScheduledExecutorService maintenance=
-        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(task->{
-            Thread thread=new Thread(task,"RootsComputeHeartbeat");thread.setDaemon(true);return thread;
-        });
-    private java.util.concurrent.ScheduledFuture<?> heartbeat;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private volatile Network selectedNetwork;
+    private volatile String selectedFingerprint="";
+    private final FamiliarComputeNetworks familiar;
     private volatile boolean maintaining;
     private volatile String connection="Not connected";
     private final Context app;
@@ -43,44 +42,79 @@ final class FastestComputeRouter implements TranslationProvider {
     }
     static synchronized void invalidate(){
         generation.incrementAndGet();status="On-device PLaMo";
-        if(instance!=null){instance.socket.disconnect();instance.connection="Pairing changed";}
+        if(instance!=null){instance.socket.disconnect();instance.updateNetworkState();}
     }
     synchronized void startBackground(){
         if(maintaining)return;
         maintaining=true;
-        heartbeat=maintenance.scheduleWithFixedDelay(this::maintain,0,4,TimeUnit.SECONDS);
+        ConnectivityManager cm=manager();
+        if(cm!=null){
+            networkCallback=new ConnectivityManager.NetworkCallback(){
+                @Override public void onAvailable(Network n){updateNetworkState();}
+                @Override public void onLost(Network n){updateNetworkState();}
+                @Override public void onCapabilitiesChanged(Network n,NetworkCapabilities caps){updateNetworkState();}
+                @Override public void onLinkPropertiesChanged(Network n,android.net.LinkProperties props){updateNetworkState();}
+            };
+            try{cm.registerDefaultNetworkCallback(networkCallback);}
+            catch(RuntimeException e){networkCallback=null;}
+        }
+        updateNetworkState();
     }
     synchronized void stopBackground(){
         maintaining=false;generation.incrementAndGet();
-        if(heartbeat!=null){heartbeat.cancel(true);heartbeat=null;}
-        socket.disconnect();connection="Compute connection stopped";
+        if(networkCallback!=null){
+            try{manager().unregisterNetworkCallback(networkCallback);}catch(RuntimeException ignored){}
+            networkCallback=null;
+        }
+        selectedNetwork=null;selectedFingerprint="";socket.disconnect();connection="Compute connection stopped";
     }
-    private void maintain(){
-        if(!maintaining)return;
-        long epoch=generation.get();
-        try{
-            if(!prefs.enabled()||!prefs.desktopTranslationEnabled()){
-                socket.disconnect();connection="Paired compute disabled";return;
-            }
-            Network network=wifi();
-            String base=prefs.bridgeUrl(),key=OverlayTranslationKeyStore.read(app);
-            if(network==null||key.isEmpty()){
-                socket.disconnect();connection=network==null?"No active Wi-Fi":"Pairing required";return;
-            }
-            if(!maintaining||epoch!=generation.get()||!authorized(base,key))return;
-            socket.maintain(network,base,key);
-            if(!maintaining||epoch!=generation.get()||!authorized(base,key)){
-                socket.disconnect();return;
-            }
-            connection=socket.ready(network,base,key)?"Paired desktop connected":"Desktop unavailable · local ready";
-        }catch(Exception e){socket.disconnect();connection="Compute reconnect pending";}
+    /** Android callbacks change the routing state; no packets sent here. */
+    private synchronized void updateNetworkState(){
+        Network next=maintaining&&prefs.enabled()&&prefs.desktopTranslationEnabled()?wifi():null;
+        String fingerprint=next==null?"":familiar.fingerprint(next);
+        if(!java.util.Objects.equals(next,selectedNetwork)||!fingerprint.equals(selectedFingerprint))socket.disconnect();
+        selectedNetwork=next;selectedFingerprint=fingerprint;
+        if(next==null)connection="Local compute";
+        else if(!familiar.contains(prefs.bridgeUrl(),fingerprint))connection="Unfamiliar network · local compute";
+        else connection="Familiar network · paired desktop eligible";
     }
-    private FastestComputeRouter(Context app){this.app=app;prefs=new OverlayPreferences(app);local=new LocalPLaMoTranslationProvider(app);}
+    private FastestComputeRouter(Context app){
+        this.app=app;prefs=new OverlayPreferences(app);local=new LocalPLaMoTranslationProvider(app);
+        familiar=new FamiliarComputeNetworks(app);
+    }
+    private ConnectivityManager manager(){return (ConnectivityManager)app.getSystemService(Context.CONNECTIVITY_SERVICE);}
     private Network wifi(){
-        ConnectivityManager cm=(ConnectivityManager)app.getSystemService(Context.CONNECTIVITY_SERVICE);
+        ConnectivityManager cm=manager();
         if(cm==null)return null;
         Network n=cm.getActiveNetwork();NetworkCapabilities caps=n==null?null:cm.getNetworkCapabilities(n);
         return caps!=null&&caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)?n:null;
+    }
+    static boolean rememberCurrent(Context context){
+        FastestComputeRouter r=get(context);Network n=r.wifi();
+        if(n==null||!OverlayTranslationKeyStore.isConfigured(context))return false;
+        boolean remembered=r.familiar.remember(r.prefs.bridgeUrl(),r.familiar.fingerprint(n));
+        r.updateNetworkState();return remembered;
+    }
+    static void forgetNetworks(Context context){
+        FastestComputeRouter r=get(context);r.familiar.clear();r.updateNetworkState();
+    }
+    interface PairResult{void completed(String error);}
+    static void pair(Context context,String base,String invitation,PairResult result){
+        FastestComputeRouter r=get(context);Network n=r.wifi();
+        if(n==null){result.completed("Connect to the desktop Wi-Fi first.");return;}
+        String fingerprint=r.familiar.fingerprint(n);
+        if(fingerprint.isEmpty()){result.completed("Network details unavailable.");return;}
+        try{r.routes.execute(()->{
+            try{
+                String client=SecureComputeSocket.pair(n,base,invitation);
+                if(!n.equals(r.wifi())||!fingerprint.equals(r.familiar.fingerprint(n)))throw new IllegalStateException("Network changed during pairing.");
+                if(!base.equals(r.prefs.bridgeUrl()))throw new IllegalStateException("Bridge address changed.");
+                OverlayTranslationKeyStore.save(r.app,client);
+                r.familiar.remember(base,fingerprint);
+                invalidate();r.startBackground();
+                result.completed(null);
+            }catch(Exception e){result.completed("Pairing failed. Check address, invitation and desktop host.");}
+        });}catch(java.util.concurrent.RejectedExecutionException e){result.completed("Compute queue busy.");}
     }
     private boolean authorized(String base,String key){
         return prefs.enabled()&&prefs.desktopTranslationEnabled()&&base.equals(prefs.bridgeUrl())&&key.equals(OverlayTranslationKeyStore.read(app));
@@ -114,8 +148,9 @@ final class FastestComputeRouter implements TranslationProvider {
             String phone=localProfile();
             Network network=prefs.desktopTranslationEnabled()?wifi():null;
             String base=prefs.bridgeUrl(),key=network==null?"":OverlayTranslationKeyStore.read(app);
-            boolean remote=network!=null&&!key.isEmpty()&&socket.ready(network,base,key);
-            String desktop="desktop:"+base;
+            String fingerprint=network==null?"":familiar.fingerprint(network);
+            boolean remote=network!=null&&!key.isEmpty()&&familiar.contains(base,fingerprint);
+            String desktop="desktop:"+base+":"+fingerprint;
             if(remote&&preferRemote(desktop,phone,text.length())){
                 if(remoteTranslate(network,base,key,desktop,text,source,target,callback,finished))return;
                 remote=false;
@@ -143,7 +178,7 @@ final class FastestComputeRouter implements TranslationProvider {
         });}catch(java.util.concurrent.RejectedExecutionException e){finish(callback,finished,null,"Compute routing queue is busy.");}
     }
     private boolean remoteTranslate(Network network,String base,String key,String route,String text,String source,String target,Result callback,AtomicBoolean finished){
-        if(!authorized(base,key)||!network.equals(wifi()))return false;
+        if(!authorized(base,key)||!network.equals(wifi())||!familiar.contains(base,familiar.fingerprint(network)))return false;
         long start=SystemClock.elapsedRealtime();
         try{
             JSONObject input=new JSONObject().put("text",text).put("targetLang",target).put("maxTokens",768);
@@ -153,9 +188,12 @@ final class FastestComputeRouter implements TranslationProvider {
             String translated=reply.optString("translation","").trim();
             if(translated.isEmpty())throw new IllegalStateException("Empty translation");
             if(!authorized(base,key)){finish(callback,finished,null,"Desktop compute permission changed.");return true;}
+            familiar.remember(base,familiar.fingerprint(network));
+            connection="Familiar network · desktop responding";
             observe(route,text.length(),SystemClock.elapsedRealtime()-start);
             finish(callback,finished,translated,null);return true;
         }catch(Exception e){
+            connection="Desktop request failed";
             status="Desktop route unavailable · falling back to phone";return false;
         }
     }

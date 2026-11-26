@@ -30,6 +30,21 @@ final class SecureLanCompute {
         }
         void clear(){java.util.Arrays.fill(responseKey,(byte)0);}
     }
+    static String newKey(){
+        byte[] bytes=new byte[32];RANDOM.nextBytes(bytes);return hex(bytes);
+    }
+    private static String hex(byte[] bytes){
+        StringBuilder out=new StringBuilder(bytes.length*2);
+        for(byte b:bytes)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));
+        return out.toString();
+    }
+    static String keyId(String secret)throws Exception{
+        if(!secret.matches("[0-9a-f]{64}"))throw new IllegalArgumentException("Invalid pairing");
+        byte[] key=new byte[32];
+        for(int i=0;i<key.length;i++)key[i]=(byte)Integer.parseInt(secret.substring(i*2,i*2+2),16);
+        try{return hex(java.security.MessageDigest.getInstance("SHA-256").digest(key));}
+        finally{java.util.Arrays.fill(key,(byte)0);}
+    }
     static Packet seal(String secret,JSONObject payload)throws Exception{
         byte[] key=new byte[32];
         if(!secret.matches("[0-9a-f]{64}"))throw new IllegalArgumentException("Invalid pairing");
@@ -38,7 +53,7 @@ final class SecureLanCompute {
         try{
             payload.put("at",System.currentTimeMillis());
             byte[] encrypted=crypt(Cipher.ENCRYPT_MODE,derive(key,REQUEST),nonce,REQUEST.getBytes(StandardCharsets.US_ASCII),payload.toString().getBytes(StandardCharsets.UTF_8));
-            JSONObject wire=new JSONObject().put("nonce",Base64.encodeToString(nonce,Base64.NO_WRAP)).put("data",Base64.encodeToString(encrypted,Base64.NO_WRAP));
+            JSONObject wire=new JSONObject().put("nonce",Base64.encodeToString(nonce,Base64.NO_WRAP)).put("data",Base64.encodeToString(encrypted,Base64.NO_WRAP)).put("keyId",keyId(secret));
             return new Packet(wire.toString(),nonce,derive(key,RESPONSE));
         }finally{java.util.Arrays.fill(key,(byte)0);}
     }

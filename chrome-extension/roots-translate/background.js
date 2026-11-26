@@ -2,8 +2,8 @@
 // service worker talks to the desktop translation gateway.
 chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }).catch(console.warn);
 
-const HTTP_BASE = "http://127.0.0.1:8123/api/translation/v1";
-const SOCKET_URL = "ws://127.0.0.1:8123/api/translation/v1/socket";
+const HTTP_BASE = "http://127.0.0.1:8223/api/translation/v1";
+const SOCKET_URL = "ws://127.0.0.1:8223/api/translation/v1/socket";
 const ALLOWED_HOSTS = new Set(["x.com", "twitter.com"]);
 const REQUEST_TIMEOUT_MS = 95000;
 const HANDSHAKE_TIMEOUT_MS = 2500;
