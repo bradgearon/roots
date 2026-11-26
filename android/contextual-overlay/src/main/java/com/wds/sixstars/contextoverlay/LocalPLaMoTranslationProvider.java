@@ -47,7 +47,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
     }
     private static String explain(Throwable error) {
         String message=error.getMessage();
-        if(message==null||message.isBlank())return error.getClass().getSimpleName();
+        if(message==null||message.trim().isEmpty())return error.getClass().getSimpleName();
         return error.getClass().getSimpleName()+": "+message.substring(0,Math.min(message.length(),2200));
     }
     LocalPLaMoTranslationProvider(Context context) { app=context.getApplicationContext(); }
@@ -140,7 +140,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                 if(translated.isEmpty())callback.completed(null,"No translation returned.");else callback.completed(translated,null);
             } catch(Exception|LinkageError ex){
                 // Native load/decode errors contain stage and return code, not source content.
-                trace(app,stage,"error",started,ex.getClass().getSimpleName());
+                trace(app,stage,"error",started,stage.equals("model_load")?explain(ex):ex.getClass().getSimpleName());
                 Log.w(TAG,"Local inference failed at "+stage+" ("+ex.getClass().getSimpleName()+")");
                 callback.completed(null,"Local inference unavailable at "+stage+": "+explain(ex));
             }
