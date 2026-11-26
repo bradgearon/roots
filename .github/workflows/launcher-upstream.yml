@@ -1,0 +1,48 @@
+name: Launcher3 adapter and upstream
+
+on:
+  pull_request:
+    paths:
+      - 'launcher/**'
+      - '.github/workflows/launcher-upstream.yml'
+  push:
+    branches:
+      - main
+      - feature/aosp-launcher-artifact
+    paths:
+      - 'launcher/**'
+      - '.github/workflows/launcher-upstream.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '23 12 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify manifest adapter and isolation gates
+        run: python3 launcher/launcher.py self-test
+  upstream:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Report Google's current Launcher3 release revision
+        shell: bash
+        run: |
+          set -o pipefail
+          echo '## Official AOSP launcher update stream' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Read-only check; no source checkout, promotion, signing or installation.' >> "$GITHUB_STEP_SUMMARY"
+          echo '~~~text' >> "$GITHUB_STEP_SUMMARY"
+          python3 launcher/launcher.py status | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '~~~' >> "$GITHUB_STEP_SUMMARY"

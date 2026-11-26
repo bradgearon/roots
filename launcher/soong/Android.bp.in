@@ -1,0 +1,39 @@
+// Copyright (c) 2026 We Develop Software LLC. All rights reserved.
+// Generated into a separate vendor module. No upstream files are edited.
+package {
+    default_applicable_licenses: ["roots_launcher_license", "Android-Apache-2.0"],
+}
+
+license {
+    name: "roots_launcher_license",
+    visibility: [":__subpackages__"],
+    license_kinds: ["legacy_proprietary"],
+    license_text: ["LICENSE"],
+}
+
+android_app {
+    name: "RootsLauncher",
+    defaults: ["launcher-non-platform-apis-defaults"],
+    // The stock filegroups and resource library are the upstream dependency interface.
+    static_libs: ["Launcher3ResLib"],
+    srcs: [
+        ":launcher-src",
+        ":launcher-src_no_quickstep",
+        "generated/build-config/**/*.java",
+        "generated/build-config/**/*.kt",
+        "src/**/*.java",
+    ],
+    manifest: "generated/AndroidManifest.xml",
+    // Launcher3's common manifest arrives transitively from Launcher3ResLib.
+    // Retain com.android.launcher3.R while the app manifest uses the distinct Roots ID.
+    aaptflags: ["--custom-package", "com.android.launcher3"],
+    resource_dirs: [],
+    sdk_version: "current",
+    min_sdk_version: "@MIN_SDK@",
+    target_sdk_version: "current",
+    plugins: ["dagger2-compiler"],
+    optimize: { enabled: false },
+    dex_preopt: { enabled: false },
+    privileged: false,
+    // Never override any preinstalled launcher, request platform signing, or add a privapp grant.
+}
