@@ -7,6 +7,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <map>
+#include <set>
+#include <tuple>
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -31,26 +34,60 @@ struct reader {
     uint64_t u64(){uint64_t r=0;for(unsigned i=0;i<8;++i)r|=uint64_t(byte())<<(8*i);return r;}
     std::string str(){auto n=u64();need(n<100000,"unbounded metadata");std::string s;for(uint64_t i=0;i<n;++i)s+=static_cast<char>(byte());return s;}
 };
-void check_gguf(const std::filesystem::path &path,size_t n,int64_t revision){
+void check_gguf(const std::filesystem::path &path,size_t n,int64_t revision,
+                const std::vector<item> &expected,bool structured=false){
     reader r(path);
     need(r.byte()=='G'&&r.byte()=='G'&&r.byte()=='U'&&r.byte()=='F',"GGUF magic");
     need(r.u32()==3&&r.u64()==1,"GGUF version/count");
-    auto kv=r.u64();need(kv==9,"metadata count");
-    uint64_t nodes=0,edges=0;bool rev=false;
+    auto kv=r.u64();need(kv==18,"metadata count");
+    std::map<std::string,std::vector<std::string>> arrays;
+    std::vector<uint64_t> timestamps;
+    bool rev=false,format=false;
     for(uint64_t i=0;i<kv;++i){
         auto name=r.str();auto type=r.u32();
         if(type==8){r.str();}
-        else if(type==4){need(r.u32()==32,"alignment");}
-        else if(type==10){need(r.u64()==static_cast<uint64_t>(revision),"revision");rev=true;}
+        else if(type==4){
+            auto value=r.u32();
+            if(name=="general.alignment")need(value==32,"alignment");
+            else if(name=="roots.format.version"){need(value==2,"format version");format=true;}
+            else throw std::runtime_error("unexpected uint32");
+        }
+        else if(type==10){need(name=="roots.tree.revision"&&r.u64()==static_cast<uint64_t>(revision),"revision");rev=true;}
         else if(type==9){
-            need(r.u32()==8,"array type");auto count=r.u64();
-            if(name=="roots.node.keys")nodes=count;
-            if(name=="roots.edge.subject")edges=count;
-            if(name=="roots.edge.predicate"||name=="roots.edge.object")need(count==edges,"edge array length");
-            for(uint64_t j=0;j<count;++j)r.str();
+            auto element=r.u32();auto count=r.u64();
+            if(name=="roots.node.observed_ms"){
+                need(element==10&&count==n,"timestamp array");
+                for(uint64_t j=0;j<count;++j)timestamps.push_back(r.u64());
+            }else{
+                need(element==8,"string array type");
+                auto &values=arrays[name];for(uint64_t j=0;j<count;++j)values.push_back(r.str());
+            }
         }else throw std::runtime_error("unknown metadata");
     }
-    need(nodes==n&&rev&&edges>=2*n,"metadata values");
+    for(auto name:{"roots.node.keys","roots.node.text","roots.node.source","roots.node.external_id","roots.node.language"})
+        need(arrays[name].size()==n,"node metadata alignment");
+    need(rev&&format&&timestamps.size()==n,"metadata values");
+    auto &subjects=arrays["roots.edge.subject"],&predicates=arrays["roots.edge.predicate"],&objects=arrays["roots.edge.object"];
+    need(subjects.size()>=2*n&&subjects.size()==predicates.size()&&subjects.size()==objects.size(),"edge array lengths");
+    std::set<std::tuple<std::string,std::string,std::string>> edges;
+    for(size_t i=0;i<subjects.size();++i)need(edges.emplace(subjects[i],predicates[i],objects[i]).second,"duplicate edge");
+    if(structured){
+        need(edges.count({"master:local:x:a","is.in","network:x"})==1,"master network edge");
+        need(arrays["roots.branch.name"].empty(),"no branches");
+        need(arrays["roots.node.text"][0]==u8"日本語 😀\nsecond line","lossless unicode and newline");
+    }else{
+        need(arrays["roots.branch.name"]==std::vector<std::string>{"Music"},"branch metadata");
+        need(arrays["roots.branch.term"]==std::vector<std::string>{"music"},"branch term");
+    }
+    for(const auto &e:expected){
+        auto key="fragment:"+std::to_string(e.seq);
+        bool found=false;
+        for(size_t i=0;i<n;++i)if(arrays["roots.node.keys"][i]==key){
+            need(arrays["roots.node.text"][i]==e.body&&arrays["roots.node.source"][i]==e.source&&arrays["roots.node.external_id"][i]==e.external,"exact source row roundtrip");
+            found=true;break;
+        }
+        need(found,"missing fragment key");
+    }
     need(r.str()=="node.embedding"&&r.u32()==2&&r.u64()==128&&r.u64()==n&&r.u32()==0&&r.u64()==0,"tensor descriptor");
     while(static_cast<uint64_t>(r.f.tellg())%32)need(r.byte()==0,"padding");
     for(size_t i=0;i<n;++i){double norm=0;for(unsigned j=0;j<128;++j){auto b=r.u32();float v;std::memcpy(&v,&b,4);need(std::isfinite(v),"finite tensor");norm+=double(v)*v;}need(std::abs(norm-1.0)<1e-4,"vector norm");}
@@ -66,7 +103,7 @@ int main(){
         auto db=(dir/"tree.db").u8string();
         ok(roots_tree_open(db.c_str(),&t));need(roots_tree_abi_version()==1,"abi");
         {
-            roots_observation parts[]={{"record.x.body","local:x:a","body one","en",1},
+            roots_observation parts[]={{"record.x.body","local:x:a",u8"日本語 😀\nsecond line","ja",1},
                 {"record.x.author","local:x:a","name","en",1},
                 {"record.x.body","local:x:b","body two","en",2},
                 {"record.x.author","local:x:b","name","en",2}};
@@ -77,6 +114,9 @@ int main(){
             auto cursor=records[0].first;records.clear();
             ok(roots_tree_records(t,"",0,cursor,1,record_member,&records));
             need(records.size()==2&&records[0].first<cursor,"whole master paging");
+            auto path=dir/"structured.gguf";int64_t revision=0;
+            ok(roots_tree_compile(t,path.u8string().c_str(),&revision));
+            check_gguf(path,4,revision,query(t),true);
             ok(roots_tree_clear(t));
         }
         const char *parts[]={"Is","Part","Of"};char key[64];
@@ -109,7 +149,7 @@ int main(){
         int64_t count=0;ok(roots_tree_count(t,&count));need(count==104,"parallel count");
         int64_t rev=0,snapshot_rev=0;ok(roots_tree_revision(t,&rev));
         auto gguf=dir/"tree.gguf";auto gp=gguf.u8string();
-        ok(roots_tree_compile(t,gp.c_str(),&snapshot_rev));need(snapshot_rev==rev,"snapshot revision");check_gguf(gguf,104,rev);
+        ok(roots_tree_compile(t,gp.c_str(),&snapshot_rev));need(snapshot_rev==rev,"snapshot revision");check_gguf(gguf,104,rev,query(t));
         need(roots_tree_compile(t,gp.c_str(),&snapshot_rev)==ROOTS_TREE_INVALID,"no overwrite");
         roots_tree_close(t);t=nullptr;
         ok(roots_tree_open(db.c_str(),&t));ok(roots_tree_count(t,&count));need(count==104,"restart persistence");

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <tuple>
 
 struct roots_tree {
     sqlite3 *db=nullptr;
@@ -106,33 +107,60 @@ std::array<float,dim> lexical_vector(const std::string &input){
 }
 struct le_writer {
     std::ofstream &out; uint64_t count=0;
-    void byte(uint8_t v){out.put(static_cast<char>(v));++count;}
-    void u32(uint32_t v){for(unsigned i=0;i<4;++i)byte(static_cast<uint8_t>(v>>(8*i)));}
-    void u64(uint64_t v){for(unsigned i=0;i<8;++i)byte(static_cast<uint8_t>(v>>(8*i)));}
-    void str(const std::string &v){u64(v.size());out.write(v.data(),static_cast<std::streamsize>(v.size()));count+=v.size();}
+    void bytes(const void *p,size_t n){
+        out.write(static_cast<const char*>(p),static_cast<std::streamsize>(n));count+=n;
+    }
+    void byte(uint8_t v){bytes(&v,1);}
+    void u32(uint32_t v){uint8_t b[4];for(unsigned i=0;i<4;++i)b[i]=static_cast<uint8_t>(v>>(8*i));bytes(b,4);}
+    void u64(uint64_t v){uint8_t b[8];for(unsigned i=0;i<8;++i)b[i]=static_cast<uint8_t>(v>>(8*i));bytes(b,8);}
+    void str(const std::string &v){u64(v.size());bytes(v.data(),v.size());}
     void string_kv(const char *k,const std::string &v){str(k);u32(8);str(v);}
-    void array_header(const char *k,size_t size){str(k);u32(9);u32(8);u64(size);}
+    void array_header(const char *k,size_t size,uint32_t type=8){str(k);u32(9);u32(type);u64(size);}
+    void vector_row(const std::array<float,dim> &v){
+        std::array<uint8_t,dim*4> b{};
+        for(size_t i=0;i<dim;++i){
+            uint32_t bits;std::memcpy(&bits,&v[i],sizeof(bits));
+            for(unsigned j=0;j<4;++j)b[i*4+j]=static_cast<uint8_t>(bits>>(8*j));
+        }
+        bytes(b.data(),b.size());
+    }
 };
 void write_gguf(std::ofstream &stream,const std::vector<row> &rows,
-                const std::vector<edge> &edges,int64_t rev){
+                const std::vector<edge> &edges,const std::vector<agent> &agents,int64_t rev){
     static_assert(sizeof(float)==4 && std::numeric_limits<float>::is_iec559,"GGUF requires IEEE f32");
     le_writer w{stream};
     w.byte('G');w.byte('G');w.byte('U');w.byte('F');w.u32(3);
-    w.u64(1);w.u64(9);
+    w.u64(1);w.u64(18);
     w.string_kv("general.architecture","roots-tree");
     w.str("general.alignment");w.u32(4);w.u32(32);
     w.string_kv("roots.vector.profile","roots.lexical.utf8-trigram.f32.v1");
     w.str("roots.tree.revision");w.u32(10);w.u64(static_cast<uint64_t>(rev));
     w.string_kv("roots.scope","local-private");
+    w.str("roots.format.version");w.u32(4);w.u32(2);
     w.array_header("roots.node.keys",rows.size());
     for(const auto &r:rows)w.str(fragment_key(r.id));
+    // Lossless parallel arrays, in precisely the same order as node.embedding.
+    // No tokenization, lossy conversion, or second copy of the original text.
+    w.array_header("roots.node.text",rows.size());for(const auto &r:rows)w.str(r.body);
+    w.array_header("roots.node.source",rows.size());for(const auto &r:rows)w.str(r.source);
+    w.array_header("roots.node.external_id",rows.size());for(const auto &r:rows)w.str(r.external);
+    w.array_header("roots.node.language",rows.size());for(const auto &r:rows)w.str(r.lang);
+    w.array_header("roots.node.observed_ms",rows.size(),10);for(const auto &r:rows)w.u64(static_cast<uint64_t>(r.at));
+    w.array_header("roots.branch.keys",agents.size());for(const auto &a:agents)w.str("branch:"+std::to_string(a.id));
+    w.array_header("roots.branch.name",agents.size());for(const auto &a:agents)w.str(a.name);
+    w.array_header("roots.branch.term",agents.size());for(const auto &a:agents)w.str(a.term);
     w.array_header("roots.edge.subject",edges.size());for(const auto &e:edges)w.str(e.subject);
     w.array_header("roots.edge.predicate",edges.size());for(const auto &e:edges)w.str(e.predicate);
     w.array_header("roots.edge.object",edges.size());for(const auto &e:edges)w.str(e.object);
     w.str("node.embedding");w.u32(2);w.u64(dim);w.u64(rows.size());w.u32(0);w.u64(0);
     while(w.count%32)w.byte(0);
-    for(const auto &r:rows)for(float f:lexical_vector(r.body)){
-        uint32_t bits;std::memcpy(&bits,&f,sizeof(bits));w.u32(bits);
+    // Stream one fixed-size, little-endian tensor row at a time.
+    // No full tensor allocation; identical adjacent text can reuse its vector.
+    std::array<float,dim> previous{};
+    const std::string *previous_text=nullptr;
+    for(const auto &r:rows){
+        if(!previous_text||*previous_text!=r.body)previous=lexical_vector(r.body);
+        w.vector_row(previous);previous_text=&r.body;
     }
     stream.flush();if(!stream)throw std::runtime_error("GGUF write");
 }
@@ -277,7 +305,7 @@ roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out
     if(out)*out=0;
     return guard([&]{
         require(t&&out);bounded(path,32768,true);
-        std::vector<row> rows;std::vector<edge> edges;int64_t rev;
+        std::vector<row> rows;std::vector<edge> edges;std::vector<agent> agents;int64_t rev;
         {
             std::lock_guard<std::mutex> lock(t->mutex);
             // Snapshot is internally consistent even if another process writes.
@@ -285,11 +313,22 @@ roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out
             try{
                 rev=revision_of(t->db);
                 statement s(t->db,"SELECT seq,source,external_id,body,language,observed_ms FROM fragments ORDER BY seq");
-                while(s.next()){rows.push_back(read_row(s));add_edges(edges,rows.back());}
-                membership_edges(t->db,edges,0);exec(t->db,"COMMIT");
+                rows.reserve(static_cast<size_t>(scalar(t->db,"SELECT count(*) FROM fragments")));
+                while(s.next())rows.push_back(read_row(s));
+                membership_edges(t->db,edges,0);
+                statement a(t->db,"SELECT id,name,term FROM agents ORDER BY id");
+                while(a.next())agents.push_back({a.integer(0),a.str(1),a.str(2)});
+                exec(t->db,"COMMIT");
             }catch(...){sqlite3_exec(t->db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
         }
         require(!rows.empty());
+        // Build and deduplicate derived edges outside the writer mutex.
+        // Multiple members of the same master emit the same network edge.
+        edges.reserve(edges.size()+rows.size()*5);
+        for(const auto &r:rows)add_edges(edges,r);
+        auto key=[](const edge &e){return std::tie(e.subject,e.predicate,e.object);};
+        std::sort(edges.begin(),edges.end(),[&](const edge &a,const edge &b){return key(a)<key(b);});
+        edges.erase(std::unique(edges.begin(),edges.end(),[&](const edge &a,const edge &b){return key(a)==key(b);}),edges.end());
         auto dest=std::filesystem::u8path(path);
         // This API takes a new path reserved by the application. Never overwrite
         // an existing file. Single application compiler owns that directory.
@@ -297,7 +336,7 @@ roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out
         try{
             std::ofstream file(dest,std::ios::binary|std::ios::out);
             if(!file)throw std::runtime_error("open snapshot");
-            write_gguf(file,rows,edges,rev);file.close();if(!file)throw std::runtime_error("close snapshot");
+            write_gguf(file,rows,edges,agents,rev);file.close();if(!file)throw std::runtime_error("close snapshot");
             *out=rev;
         }catch(...){std::error_code ec;std::filesystem::remove(dest,ec);throw;}
     });
