@@ -31,6 +31,7 @@ public final class RootsStreamActivity extends Activity {
     private TreeRuntime runtime;
     private TextView status,empty,more,capture;
     private EditText search;
+    private ListView feed;
     private FeedAdapter adapter;
     private long generation,cursor;
     private String term="";
@@ -61,7 +62,7 @@ public final class RootsStreamActivity extends Activity {
         LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-2,1);tp.leftMargin=dp(8);actions.addView(tree,tp);
         tools.addView(actions);
         capture=RootsUi.action(this,"Enable local capture",this::toggleCapture);tools.addView(capture);
-        ListView feed=new ListView(this);feed.setDivider(null);feed.setClipToPadding(false);
+        feed=new ListView(this);feed.setDivider(null);feed.setClipToPadding(false);
         feed.setPadding(dp(16),dp(4),dp(16),dp(8));feed.setSelector(android.R.color.transparent);
         adapter=new FeedAdapter();
         // Footer before setAdapter, to keep the explicit pagination control.
@@ -72,7 +73,7 @@ public final class RootsStreamActivity extends Activity {
         android.widget.FrameLayout body=new android.widget.FrameLayout(this);
         body.addView(feed,new android.widget.FrameLayout.LayoutParams(-1,-1));
         body.addView(empty,new android.widget.FrameLayout.LayoutParams(-1,-1));
-        feed.setEmptyView(empty);
+        showEmpty(true);
         shell.addView(body,new LinearLayout.LayoutParams(-1,0,1));
         shell.addView(RootsUi.navigation(this,false));
         setContentView(shell);
@@ -106,9 +107,15 @@ public final class RootsStreamActivity extends Activity {
         generation++;cursor=0;loading=false;ended=false;rows.clear();
         term=search.getText().toString().trim();
         adapter.notifyDataSetChanged();
+        showEmpty(true);
+        more.setEnabled(true);
         empty.setText("Reading local knowledge…");
         capture.setText(runtime.enabled()?"Pause local capture":"Enable local capture");
         load();
+    }
+    private void showEmpty(boolean value){
+        feed.setVisibility(value?View.GONE:View.VISIBLE);
+        empty.setVisibility(value?View.VISIBLE:View.GONE);
     }
     private void load(){
         if(runtime==null||closed||loading||ended)return;
@@ -122,6 +129,7 @@ public final class RootsStreamActivity extends Activity {
                     rows.addAll(page);
                     if(!page.isEmpty())cursor=page.get(page.size()-1).sequence();
                     ended=page.size()<PAGE;loading=false;adapter.notifyDataSetChanged();
+                    showEmpty(rows.isEmpty());
                     status.setText(count+" stored fragments · capture "+(runtime.enabled()?"on":"off"));
                     empty.setText(count==0?"Your stream is empty. Enable local capture, then browse X Home.":"No fragments match your search.");
                     more.setText(ended?"All matching observations loaded":"Load older observations");
