@@ -210,6 +210,16 @@ public final class TreeRuntime {
         if(clearing)throw new IllegalStateException("Tree is clearing");
         return tree().records(term,agent,before,limit);
     }
+    public List<NativeTree.Master> allRecords(String term,int max){
+        if(max<1||max>10000)throw new IllegalArgumentException("Invalid record limit");
+        List<NativeTree.Master> out=new ArrayList<>();long cursor=0;
+        while(out.size()<max){
+            int limit=Math.min(100,max-out.size());List<NativeTree.Master> page=records(term,0,cursor,limit);
+            if(page.isEmpty())break;out.addAll(page);cursor=page.get(page.size()-1).sequence();
+            if(page.size()<limit)break;
+        }
+        return out;
+    }
     private void scheduleDrain(){if(!queue.isEmpty()&&draining.compareAndSet(false,true))writer.execute(this::drain);}
     private void drain(){
         ArrayList<Queued> batch=new ArrayList<>(BATCH_SIZE);

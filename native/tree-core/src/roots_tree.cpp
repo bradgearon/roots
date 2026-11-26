@@ -318,10 +318,10 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
                 statement s(t->db,language?
                     "SELECT seq,source,external_id,body,language,observed_ms FROM fragments f "
                     "WHERE source GLOB 'record.*' AND external_id GLOB 'local:*' AND language=? "
-                    "AND (source GLOB 'record.*.body' OR source GLOB 'record.*.translation') "
+                    "AND (source GLOB 'record.*.body' OR source GLOB 'record.*.translation' OR source GLOB 'record.*.localized') "
                     "AND seq=(SELECT g.seq FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language "
-                    "AND (g.source GLOB 'record.*.body' OR g.source GLOB 'record.*.translation') "
-                    "ORDER BY (g.source GLOB 'record.*.translation') DESC,g.seq DESC LIMIT 1) ORDER BY seq":
+                    "AND (g.source GLOB 'record.*.body' OR g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized') "
+                    "ORDER BY (g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized') DESC,g.seq DESC LIMIT 1) ORDER BY seq":
                     "SELECT seq,source,external_id,body,language,observed_ms FROM fragments ORDER BY seq");
                 if(language)s.text(1,language);
                 rows.reserve(static_cast<size_t>(scalar(t->db,"SELECT count(*) FROM fragments")));
@@ -337,9 +337,9 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
         if(language){
             std::unordered_set<std::string> keys;for(const auto &r:rows)keys.insert(fragment_key(r.id));
             edges.erase(std::remove_if(edges.begin(),edges.end(),[&](const edge &e){return !keys.count(e.subject);}),edges.end());
-            // Branch terms/names may be private original-language text. Keep them in SQLite.
-            agents.clear();
-            edges.erase(std::remove_if(edges.begin(),edges.end(),[](const edge &e){return e.object.rfind("branch:",0)==0;}),edges.end());
+            // Preserve branch identities and relation edges without copying
+            // private terms/names into the localized projection.
+            for(auto &a:agents){a.name.clear();a.term.clear();}
         }
         // Build and deduplicate derived edges outside the writer mutex.
         // Multiple members of the same master emit the same network edge.
