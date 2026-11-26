@@ -26,6 +26,8 @@ final class AutoOverlayPositionStore {
         final String id;
         final AutoInlinePlacementService.Placement rectangle;
         final AutoDetailsPlacementService.Placement details;
+        final AutoDetailsPlacementService.Placement nameDetails;
+        final String authorName;
 
         Observation(String id, AutoInlinePlacementService.Placement rectangle) {
             this(id, rectangle, null);
@@ -33,9 +35,17 @@ final class AutoOverlayPositionStore {
 
         Observation(String id, AutoInlinePlacementService.Placement rectangle,
                 AutoDetailsPlacementService.Placement details) {
+            this(id, rectangle, details, null, null);
+        }
+
+        Observation(String id, AutoInlinePlacementService.Placement rectangle,
+                AutoDetailsPlacementService.Placement tweetDetails,
+                AutoDetailsPlacementService.Placement nameDetails, String authorName) {
             this.id = id;
             this.rectangle = rectangle;
-            this.details = details;
+            this.details = tweetDetails;
+            this.nameDetails = nameDetails;
+            this.authorName = authorName;
         }
     }
 
@@ -43,12 +53,17 @@ final class AutoOverlayPositionStore {
         final String id;
         final AutoInlinePlacementService.Placement rectangle;
         final AutoDetailsPlacementService.Placement details;
+        final AutoDetailsPlacementService.Placement nameDetails;
+        final String authorName;
 
         Located(String id, AutoInlinePlacementService.Placement rectangle,
-                AutoDetailsPlacementService.Placement details) {
+                AutoDetailsPlacementService.Placement details,
+                AutoDetailsPlacementService.Placement nameDetails, String authorName) {
             this.id = id;
             this.rectangle = rectangle;
             this.details = details;
+            this.nameDetails = nameDetails;
+            this.authorName = authorName;
         }
     }
 
@@ -56,13 +71,19 @@ final class AutoOverlayPositionStore {
         final String id;
         AutoInlinePlacementService.Placement rectangle;
         AutoDetailsPlacementService.Placement details;
+        AutoDetailsPlacementService.Placement nameDetails;
+        String authorName;
         long missingSince;
+        long authorMissingSince;
 
         Entry(String id, AutoInlinePlacementService.Placement rectangle,
-                AutoDetailsPlacementService.Placement details) {
+                AutoDetailsPlacementService.Placement details,
+                AutoDetailsPlacementService.Placement nameDetails, String authorName) {
             this.id = id;
             this.rectangle = rectangle;
             this.details = details;
+            this.nameDetails = nameDetails;
+            this.authorName = authorName;
         }
     }
 
@@ -95,15 +116,55 @@ final class AutoOverlayPositionStore {
             Entry existing = entries.get(observation.id);
             if (existing == null) {
                 existing = new Entry(observation.id, observation.rectangle,
-                        observation.details);
+                        observation.details, observation.nameDetails,
+                        observation.authorName);
                 entries.put(observation.id, existing);
                 changed = true;
             } else {
+                AutoDetailsPlacementService.Placement nextName = observation.nameDetails;
+                String nextAuthor = observation.authorName;
+
+                if (nextName == null && existing.nameDetails != null
+                        && existing.authorName != null) {
+                    // X can temporarily omit the header/PFP during scrolling or
+                    // virtual-tree recomposition while keeping the SAME post.
+                    // Move the old verified anchor by the newly observed body
+                    // displacement; never extrapolate from time or velocity.
+                    long firstMissing = existing.authorMissingSince == 0L
+                            ? Math.max(1L, nowMs) : existing.authorMissingSince;
+                    int dx = observation.rectangle.x - existing.rectangle.x;
+                    int dy = observation.rectangle.y - existing.rectangle.y;
+                    if (AutoAuthorRetentionPolicy.mayRetain(firstMissing, nowMs,
+                            dx, dy, screenWidth, screenHeight)) {
+                        AutoDetailsPlacementService.Placement moved =
+                                existing.nameDetails.shifted(dx, dy);
+                        if (moved.y >= safeTop
+                                && moved.y + moved.height <= screenHeight
+                                && moved.x >= 0
+                                && moved.x + moved.width <= screenWidth) {
+                            nextName = moved;
+                            nextAuthor = existing.authorName;
+                            existing.authorMissingSince = firstMissing;
+                        } else {
+                            existing.authorMissingSince = 0L;
+                        }
+                    } else {
+                        existing.authorMissingSince = 0L;
+                    }
+                } else {
+                    // A freshly verified author restores full confidence.
+                    existing.authorMissingSince = 0L;
+                }
+
                 if (!same(existing.rectangle, observation.rectangle)
-                        || !sameDetails(existing.details, observation.details))
+                        || !sameDetails(existing.details, observation.details)
+                        || !sameDetails(existing.nameDetails, nextName)
+                        || !java.util.Objects.equals(existing.authorName, nextAuthor))
                     changed = true;
                 existing.rectangle = observation.rectangle;
                 existing.details = observation.details;
+                existing.nameDetails = nextName;
+                existing.authorName = nextAuthor;
                 existing.missingSince = 0;
             }
         }
@@ -140,6 +201,8 @@ final class AutoOverlayPositionStore {
             entry.rectangle = shifted(p, -deltaX, -deltaY);
             if (entry.details != null)
                 entry.details = entry.details.shifted(-deltaX, -deltaY);
+            if (entry.nameDetails != null)
+                entry.nameDetails = entry.nameDetails.shifted(-deltaX, -deltaY);
         }
         coordinatesTrusted = true;
         version++;
@@ -157,12 +220,56 @@ final class AutoOverlayPositionStore {
         return coordinatesTrusted && entries.containsKey(id);
     }
 
+    /** An already identified name can survive a short missing header sample. */
+    boolean hasTrackedAuthor(String id, long nowMs) {
+        Entry entry = entries.get(id);
+        return entry != null && entry.authorName != null
+                && entry.nameDetails != null
+                && (entry.authorMissingSince == 0L
+                    || nowMs - entry.authorMissingSince
+                        < AutoAuthorRetentionPolicy.MISSING_GRACE_MS);
+    }
+
+    boolean hasPendingAuthorExpiry() {
+        for (Entry entry : entries.values())
+            if (entry.authorMissingSince > 0L) return true;
+        return false;
+    }
+
+    /**
+     * Return the earliest remaining expiry, not a fresh 1.1s timeout per
+     * scan. Otherwise continuous accessibility events keep postponing the
+     * cleanup of an already missing author/control indefinitely.
+     */
+    long nextExpiryDelayMs(long nowMs) {
+        long expiryAt = Long.MAX_VALUE;
+        for (Entry entry : entries.values()) {
+            if (entry.missingSince > 0L)
+                expiryAt = Math.min(expiryAt,
+                        entry.missingSince + TRANSIENT_GAP_MS);
+            if (entry.authorMissingSince > 0L)
+                expiryAt = Math.min(expiryAt,
+                        entry.authorMissingSince
+                                + AutoAuthorRetentionPolicy.MISSING_GRACE_MS);
+        }
+        return expiryAt == Long.MAX_VALUE ? -1L
+                : Math.max(1L, expiryAt - nowMs + 1L);
+    }
+
     List<Located> snapshot(long nowMs) {
         if (!coordinatesTrusted) return Collections.emptyList();
         ArrayList<Located> current = new ArrayList<>();
         for (String id : new ArrayList<>(entries.keySet())) {
             Entry entry = entries.get(id);
             if (entry == null) continue;
+            if (entry.authorMissingSince > 0L
+                    && nowMs - entry.authorMissingSince
+                        >= AutoAuthorRetentionPolicy.MISSING_GRACE_MS) {
+                entry.nameDetails = null;
+                entry.authorName = null;
+                entry.authorMissingSince = 0L;
+                version++;
+            }
             if (entry.missingSince > 0 &&
                     nowMs - entry.missingSince >= TRANSIENT_GAP_MS) {
                 entries.remove(id);
@@ -174,7 +281,8 @@ final class AutoOverlayPositionStore {
             if (p.y < safeTop || p.y >= screenHeight ||
                     p.x + p.width <= 0 || p.x >= screenWidth ||
                     p.y + p.height <= 0) continue;
-            current.add(new Located(entry.id, p, entry.details));
+            current.add(new Located(entry.id, p, entry.details,
+                    entry.nameDetails, entry.authorName));
         }
         return Collections.unmodifiableList(current);
     }

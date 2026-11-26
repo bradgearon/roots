@@ -49,6 +49,22 @@ public class PostTextHeuristicsTest {
                 "android.widget.ImageView"));
     }
 
+    @Test public void japaneseDisplayNameIsNotATweetBody() {
+        assertTrue(PostTextHeuristics.isUiLabel("夕海ソラ",
+                "com.twitter.android:id/display_name",
+                "android.widget.TextView"));
+        assertTrue(PostTextHeuristics.isUiLabel("Long screen name",
+                "com.twitter.android:id/author_name",
+                "android.widget.TextView"));
+    }
+
+    @Test public void mixedLanguageAuthorHeaderIsNotTranslatedAsTweetText() {
+        assertTrue(PostTextHeuristics.isUiLabel(
+                "夕海ソラ @sora_jp… · 31m", null, "android.view.View"));
+        assertFalse(PostTextHeuristics.isUiLabel(
+                "こんにちは @friend 明日会える？", null, "android.widget.TextView"));
+    }
+
     @Test public void recyclerViewRowDiscovery() {
         assertTrue(PostTextHeuristics.isListClass("androidx.recyclerview.widget.RecyclerView"));
         assertTrue(PostTextHeuristics.isListClass("android.widget.ListView"));

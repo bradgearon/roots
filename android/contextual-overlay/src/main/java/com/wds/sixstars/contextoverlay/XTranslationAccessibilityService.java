@@ -129,6 +129,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             scrollTracker.reset();
             scrollSinceLastScan = true;
             renderer.uncertainScroll();
+            renderer.resetAutoWindowAttachment();
         }
         scheduleScan();
     }
@@ -216,6 +217,9 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             }
             OverlayDiagnostics.recordAuto(this, preferences.autoPreview(),
                     eligible, placeable, renderer.visibleTranslationCount());
+            OverlayDiagnostics.recordAuthorCounts(this, reader.lastAvatarCount(),
+                    reader.lastAuthorSampleCount(), reader.lastAuthorMatchCount(),
+                    reader.lastClippedNameCount());
         }
     }
 
@@ -239,10 +243,10 @@ public final class XTranslationAccessibilityService extends AccessibilityService
 
         android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
         // All coordinates and overlay windows use screen pixels, not dp.
-        List<TextCandidate> found = reader.find(root, metrics.widthPixels, metrics.heightPixels);
+        List<TextCandidate> found = reader.find(root, metrics.widthPixels, metrics.heightPixels, metrics.scaledDensity);
         readerStatus = found.isEmpty()
-                ? "X active; no eligible visible text found"
-                : "X active; candidate text found";
+                ? (reader.lastPostDetail() ? "X active; post detail heading found, no body text" : "X active; no eligible visible text found")
+                : (reader.lastPostDetail() ? "X active; post detail text found" : "X active; candidate text found");
         return found;
     }
 

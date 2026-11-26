@@ -56,6 +56,75 @@ public final class AutoOverlayPositionStoreTest {
         assertEquals(234, store.snapshot(120).get(0).details.y);
     }
 
+    @Test public void nameAndTweetDetailsMoveWithTheSamePost() {
+        AutoOverlayPositionStore store = new AutoOverlayPositionStore(440, 920);
+        AutoDetailsPlacementService.Placement tweet =
+                new AutoDetailsPlacementService.Placement(369, 254, 38, 30);
+        AutoDetailsPlacementService.Placement name =
+                new AutoDetailsPlacementService.Placement(47, 287, 32, 30);
+        store.publish(Arrays.asList(new AutoOverlayPositionStore.Observation(
+                "one", at(130, 250), tweet, name, "Long account name…")),
+                false, 100);
+        store.applyMeasuredScroll(0, 25);
+        AutoOverlayPositionStore.Located moved = store.snapshot(101).get(0);
+        assertEquals(225, moved.rectangle.y);
+        assertEquals(229, moved.details.y);
+        assertEquals(262, moved.nameDetails.y);
+        assertEquals("Long account name…", moved.authorName);
+    }
+
+    @Test public void aMissingAuthorNodeDoesNotBlinkForTheSamePost() {
+        AutoOverlayPositionStore store = new AutoOverlayPositionStore(440, 920);
+        AutoDetailsPlacementService.Placement name =
+                new AutoDetailsPlacementService.Placement(47, 337, 32, 30);
+        store.publish(Arrays.asList(new AutoOverlayPositionStore.Observation(
+                "post-one", at(130, 300), null, name, "Long account name…")),
+                false, 100);
+        // X momentarily emits just the body, even though the tweet remains.
+        store.publish(Arrays.asList(post("post-one", 130, 296)), true, 200);
+        assertTrue(store.hasTrackedAuthor("post-one", 250));
+        assertTrue(store.hasPendingAuthorExpiry());
+        assertEquals(333, store.snapshot(250).get(0).nameDetails.y);
+        assertEquals("Long account name…", store.snapshot(250).get(0).authorName);
+
+        store.publish(Arrays.asList(post("post-one", 130, 294)), true, 800);
+        // Repeated scans must not restart the original 1.1-second grace.
+        assertEquals(501L, store.nextExpiryDelayMs(800));
+        assertEquals(331, store.snapshot(850).get(0).nameDetails.y);
+        // An old name is never kept indefinitely after X stops exposing it.
+        assertNull(store.snapshot(1301).get(0).nameDetails);
+        assertFalse(store.hasTrackedAuthor("post-one", 1301));
+    }
+
+    @Test public void nameReappearsAndResetsItsMissingHeaderGrace() {
+        AutoOverlayPositionStore store = new AutoOverlayPositionStore(440, 920);
+        AutoDetailsPlacementService.Placement original =
+                new AutoDetailsPlacementService.Placement(47, 337, 32, 30);
+        store.publish(Arrays.asList(new AutoOverlayPositionStore.Observation(
+                "post-one", at(130, 300), null, original, "Japanese display…")),
+                false, 100);
+        store.publish(Arrays.asList(post("post-one", 130, 298)), false, 200);
+        store.publish(Arrays.asList(new AutoOverlayPositionStore.Observation(
+                "post-one", at(130, 298), null,
+                new AutoDetailsPlacementService.Placement(47, 335, 32, 30),
+                "Japanese display…")), false, 400);
+        assertFalse(store.hasPendingAuthorExpiry());
+        assertNotNull(store.snapshot(2500).get(0).nameDetails);
+    }
+
+    @Test public void anotherPostNeverInheritsThePreviousAuthorsControl() {
+        AutoOverlayPositionStore store = new AutoOverlayPositionStore(440, 920);
+        AutoDetailsPlacementService.Placement name =
+                new AutoDetailsPlacementService.Placement(47, 337, 32, 30);
+        store.publish(Arrays.asList(new AutoOverlayPositionStore.Observation(
+                "first", at(130, 300), null, name, "First author…")),
+                false, 100);
+        store.publish(Arrays.asList(post("different", 130, 305)), true, 200);
+        assertEquals(1, store.snapshot(210).size());
+        assertEquals("different", store.snapshot(210).get(0).id);
+        assertNull(store.snapshot(210).get(0).nameDetails);
+    }
+
     @Test public void nextXSnapshotReplacesMotionOffsetInsteadOfDoubleApplyingIt() {
         AutoOverlayPositionStore store = new AutoOverlayPositionStore(440, 920);
         store.publish(Arrays.asList(post("post-one", 40, 300)), false, 100);

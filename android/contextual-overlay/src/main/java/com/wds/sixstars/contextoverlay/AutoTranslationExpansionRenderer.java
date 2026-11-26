@@ -46,13 +46,29 @@ final class AutoTranslationExpansionRenderer {
                 && fingerprint.equals(sourceFingerprint);
     }
 
-    /** The same post-specific details action opens AND closes the bottom sheet. */
+    void toggleTweet(String fingerprint, String translation) {
+        toggle("tweet:" + fingerprint, translation, "Full tweet translation");
+    }
+
+    void toggleName(String fingerprint, String displayName) {
+        toggle("name:" + fingerprint, displayName, "Full account name");
+    }
+
+    /** Legacy entry points remain for callers using the old single action. */
     void toggle(String fingerprint, String translation) {
-        if (isShowing(fingerprint)) hide();
-        else show(fingerprint, translation);
+        toggleTweet(fingerprint, translation);
+    }
+
+    private void toggle(String key, String text, String title) {
+        if (isShowing(key)) hide();
+        else show(key, text, title);
     }
 
     void show(String fingerprint, String translation) {
+        show(fingerprint, translation, "Full translation");
+    }
+
+    private void show(String fingerprint, String translation, String heading) {
         hide();
         if (fingerprint == null || translation == null || translation.trim().isEmpty())
             return;
@@ -79,7 +95,7 @@ final class AutoTranslationExpansionRenderer {
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(context);
-        title.setText("PLaMo · Full translation");
+        title.setText(heading);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         title.setTextColor(palette.foreground);
         header.addView(title, new LinearLayout.LayoutParams(
@@ -155,7 +171,9 @@ final class AutoTranslationExpansionRenderer {
     }
 
     void hideIfSource(String fingerprint) {
-        if (fingerprint != null && fingerprint.equals(sourceFingerprint)) hide();
+        if (fingerprint != null && (fingerprint.equals(sourceFingerprint)
+                || ("name:" + fingerprint).equals(sourceFingerprint)
+                || ("tweet:" + fingerprint).equals(sourceFingerprint))) hide();
     }
 
     void hide() {

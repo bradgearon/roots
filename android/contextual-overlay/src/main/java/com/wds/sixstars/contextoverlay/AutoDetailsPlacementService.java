@@ -1,8 +1,8 @@
 package com.wds.sixstars.contextoverlay;
 
 /**
- * One role-specific control per translated X post: a details action underneath
- * that post's avatar, never inside the name/header or translated body.
+ * Two role-specific controls per X post: a NAME action underneath
+ * the avatar when clipped, and a thumb-side TWEET action only when the translation is clipped.
  *
  * Pure pixel geometry: the text body, post card and (when X exposes it) avatar
  * have distinct meanings. Independent of Android widgets and testable on JVM.
@@ -66,6 +66,60 @@ final class AutoDetailsPlacementService {
         if (hasCard && cardBottom > cardTop && y + height > cardBottom - dp(2, density))
             return null;
         if (hasAvatar && (avatarRight > bodyLeft || avatarBottom > y)) return null;
+        return new Placement(x, y, width, height);
+    }
+
+    /**
+     * Thumb-side tweet expansion. The name-details button is different and
+     * stays below the avatar. This control lives at the right of the source
+     * text, and is only materialized when translated text is actually clipped.
+     */
+    static Placement locateTweet(int bodyLeft, int bodyTop, int bodyRight,
+            int bodyBottom, int cardRight, int screenWidth, int screenHeight,
+            float density) {
+        if (bodyRight <= bodyLeft || bodyBottom <= bodyTop) return null;
+        int w = dp(38, density);
+        int h = dp(30, density);
+        int rightEdge = Math.min(screenWidth - dp(5, density),
+                Math.min(bodyRight - dp(3, density),
+                        cardRight > bodyLeft ? cardRight - dp(8, density)
+                                : bodyRight - dp(3, density)));
+        int x = rightEdge - w;
+        // Keep the action alongside the source text rather than on the
+        // engagement row or across a neighboring tweet.
+        int y = bodyTop + Math.min(dp(4, density), Math.max(0, bodyBottom - bodyTop - h));
+        if (x <= bodyLeft || x + w > screenWidth || y < 0
+                || y + h > screenHeight) return null;
+        return new Placement(x, y, w, h);
+    }
+
+    /**
+     * Put account-name details strictly below the avatar. X often returns
+     * a body-only postBounds that ends before the PFP plus its control, so
+     * using cardBottom as a hard gate made valid badges disappear.
+     *
+     * The avatar may be an observed image or a high-confidence inferred
+     * gutter rectangle from a verified author header.
+     */
+    static Placement locateName(int bodyLeft, int bodyTop, int bodyRight,
+            int bodyBottom, int cardLeft, int cardTop, int cardRight,
+            int cardBottom, boolean hasCard, int avatarLeft, int avatarTop, int avatarRight,
+            int avatarBottom, int screenWidth, int screenHeight, float density) {
+        if (avatarRight <= avatarLeft || avatarBottom <= avatarTop
+                || avatarTop < dp(24, density)) return null;
+        int width = dp(32, density);
+        int height = dp(30, density);
+        int gap = dp(4, density);
+        int gutterRight = bodyLeft - gap;
+        int x = Math.min(avatarLeft + (avatarRight - avatarLeft - width) / 2,
+                gutterRight - width);
+        int y = avatarBottom + gap;
+        // Never float the badge over the actual PFP, username or status bar.
+        // Card bounds are intentionally NOT a gate: X frequently reports
+        // only the text body as the enclosing "post" node.
+        if (x < 0 || x + width > gutterRight || y < 0
+                || x + width > screenWidth || y + height > screenHeight)
+            return null;
         return new Placement(x, y, width, height);
     }
 

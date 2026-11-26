@@ -33,6 +33,7 @@ final class AutoSceneSurfaceManager {
     private AutoWindowAttachedSurface attached;
     private AutoOverlaySceneView fallback;
     private boolean attachFailed;
+    private long attachmentGeneration;
     private String lastError = "";
     private List<AutoOverlaySceneView.TextItem> lastPaint = Collections.emptyList();
 
@@ -83,9 +84,10 @@ final class AutoSceneSurfaceManager {
                         Build.VERSION.SDK_INT, target)) {
             try {
                 final int attachedId = target.windowId;
+                final long generation = ++attachmentGeneration;
                 AutoWindowAttachedSurface created = new AutoWindowAttachedSurface(
                         service, target, presentation,
-                        () -> onAttachedFailure(attachedId));
+                        () -> onAttachedFailure(attachedId, generation));
                 attached = created;
                 created.present(items, target);
                 removeFallback();
@@ -127,18 +129,26 @@ final class AutoSceneSurfaceManager {
         fallback.setTextItems(items);
     }
 
-    private void onAttachedFailure(int originalWindowId) {
-        // Fail closed: never keep a broken surface above X and never adopt
-        // a callback from a previous application's window session.
-        if (attached == null || target == null
-                || target.windowId != originalWindowId) return;
+    private void onAttachedFailure(int originalWindowId, long generation) {
+        // Old GPU release/error callbacks can arrive AFTER X's window has
+        // been recreated with the same ID. Never detach its newer surface.
+        if (generation != attachmentGeneration || attached == null
+                || target == null || target.windowId != originalWindowId) return;
         attachFailed = true;
         lastError = "GPU window surface failed; restored touch-through fallback";
         releaseAttached();
         present(lastPaint);
     }
 
+    /** A resumed/recreated X window can reuse size and an old window ID. */
+    void resetAttachment() {
+        releaseAttached();
+        attachFailed = false;
+        target = null;
+    }
+
     private void releaseAttached() {
+        ++attachmentGeneration;
         if (attached != null) {
             attached.close();
             attached = null;

@@ -45,6 +45,11 @@ public final class AccessibilityOverlayRenderer {
 
     public int visibleBadgeCount() { return markers.size(); }
     public int visibleTranslationCount() { return autoInline.visibleCount(); }
+
+    /** Reattach on a verified X app return or its window-state transition. */
+    public void resetAutoWindowAttachment() {
+        if (automaticMode) autoInline.resetWindowAttachment();
+    }
     public String lastWindowError() {
         String inlineError = autoInline.lastWindowError();
         return inlineError.isEmpty() ? lastWindowError : inlineError;

@@ -1,6 +1,7 @@
 package com.wds.sixstars.contextoverlay;
 
 import android.graphics.Rect;
+import android.graphics.Paint;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 import java.util.ArrayDeque;
@@ -15,30 +16,56 @@ import java.util.Locale;
  */
 public final class XVisibleTextReader {
     public static final String X_PACKAGE = "com.twitter.android";
-    private static final int MAX_VISITED_NODES = 650;
+    private static final int MAX_VISITED_NODES = 850;
+    private static final int MAX_DETAIL_NODES = 1400;
     private static final int MAX_SOURCE_CHARS = 1100;
     private final XPostSpatialAnalyzer spatial = new XPostSpatialAnalyzer();
     private int lastVisited;
     private int lastTextNodes;
     private int lastCandidateCount;
+    private int lastAvatarCount;
+    private int lastAuthorSampleCount;
+    private int lastAuthorMatchCount;
+    private int lastClippedNameCount;
+    private boolean lastPostDetail;
 
     public int lastVisitedNodes() { return lastVisited; }
     public int lastTextNodes() { return lastTextNodes; }
     public int lastCandidateCount() { return lastCandidateCount; }
+    public int lastAvatarCount() { return lastAvatarCount; }
+    public int lastAuthorSampleCount() { return lastAuthorSampleCount; }
+    public int lastAuthorMatchCount() { return lastAuthorMatchCount; }
+    public int lastClippedNameCount() { return lastClippedNameCount; }
+    public boolean lastPostDetail() { return lastPostDetail; }
 
     public List<TextCandidate> find(AccessibilityNodeInfo root, int width, int height) {
+        return find(root, width, height,
+                android.content.res.Resources.getSystem()
+                        .getDisplayMetrics().scaledDensity);
+    }
+
+    public List<TextCandidate> find(AccessibilityNodeInfo root,
+            int width, int height, float scaledDensity) {
         List<TextCandidate> raw = new ArrayList<>();
         List<Rect> avatars = new ArrayList<>();
+        List<AuthorSample> authorSamples = new ArrayList<>();
         lastVisited = 0;
         lastTextNodes = 0;
         lastCandidateCount = 0;
+        lastAvatarCount = 0;
+        lastAuthorSampleCount = 0;
+        lastAuthorMatchCount = 0;
+        lastClippedNameCount = 0;
+        lastPostDetail = false;
         if (root == null || root.getPackageName() == null
                 || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
 
         ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
         queue.add(root);
+        boolean detailScreen = false;
 
-        while (!queue.isEmpty() && lastVisited < MAX_VISITED_NODES) {
+        while (!queue.isEmpty()
+                && lastVisited < (detailScreen ? MAX_DETAIL_NODES : MAX_VISITED_NODES)) {
             AccessibilityNodeInfo node = queue.removeFirst();
             final int order = ++lastVisited;
             try {
@@ -56,11 +83,23 @@ public final class XVisibleTextReader {
                 // Avatar identity is a separate card element, not translatable
                 // body text. Capture its rectangle without retaining X nodes.
                 String nodeId = node.getViewIdResourceName();
+                if (XPostDetailContextService.isDetailContainerId(nodeId))
+                    detailScreen = true;
                 CharSequence accessibilityLabel = node.getContentDescription();
-                if (avatars.size() < 32 && looksLikeAvatar(nodeId, accessibilityLabel)) {
+                if (avatars.size() < 48) {
                     Rect avatar = new Rect();
                     node.getBoundsInScreen(avatar);
-                    if (plausibleAvatar(avatar, width, height)) avatars.add(avatar);
+                    String imageClass = node.getClassName() == null ? ""
+                            : node.getClassName().toString().toLowerCase(Locale.ROOT);
+                    boolean namedAvatar = looksLikeAvatar(nodeId, accessibilityLabel);
+                    // X sometimes omits avatar resource IDs/descriptions. A
+                    // plausible square ImageView in the left PFP gutter is
+                    // still usable, but only when matched to a post header.
+                    boolean gutterImage = imageClass.contains("imageview")
+                            && avatar.left >= 0 && avatar.right <= width / 4;
+                    if ((namedAvatar || gutterImage)
+                            && plausibleAvatar(avatar, width, height))
+                        avatars.add(avatar);
                 }
 
                 CharSequence textValue = node.getText();
@@ -78,8 +117,41 @@ public final class XVisibleTextReader {
 
                 Rect bounds = new Rect();
                 node.getBoundsInScreen(bounds);
+                if (XPostDetailContextService.isDetailHeading(
+                        text, viewId, className, node.isClickable(),
+                        node.isEditable(), bounds.top, bounds.bottom, height))
+                    detailScreen = true;
                 if (!XPostSpatialAnalyzer.onScreen(bounds, width, height)) continue;
-                if (description && childCount > 5) continue; // whole-feed descriptions
+                // X sometimes exposes the OPENED post on detail pages through
+                // one localized container description rather than a TextView.
+                // Keep timeline descriptions conservative to avoid translating
+                // a whole feed or navigation labels.
+                if (description && childCount > 5
+                        && !(detailScreen && !language.isEmpty()
+                            && text.length() <= 600
+                            && bounds.height() < height / 2)) continue;
+
+                boolean knownAuthor = XAuthorNameHeuristics.isNameId(viewId);
+                if (authorSamples.size() < 160
+                        && XAuthorNameHeuristics.mayBeAuthorLabel(
+                                text, viewId, className, description)) {
+                    // Author/handle are potential HEADER roles, not post text.
+                    authorSamples.add(new AuthorSample(text, bounds, knownAuthor));
+                }
+                // In some X versions the direct TextView is ellipsized while
+                // its contentDescription contains a richer name+handle line.
+                // Keep that description as a possible header separately.
+                CharSequence desc = node.getContentDescription();
+                if (!description && desc != null && authorSamples.size() < 160) {
+                    String label = TextFingerprint.normalized(desc.toString());
+                    if (!label.equals(text) &&
+                            XAuthorNameHeuristics.mayBeAuthorLabel(
+                                    label, viewId, className, true))
+                        authorSamples.add(new AuthorSample(label, bounds, knownAuthor));
+                }
+                // A recognized author name is never eligible for PLaMo's
+                // post-body translation pipeline.
+                if (knownAuthor) continue;
 
                 int score = PostTextHeuristics.score(text, viewId, className, description,
                         node.isClickable(), bounds.width(), bounds.height(), language);
@@ -104,13 +176,24 @@ public final class XVisibleTextReader {
         List<TextCandidate> associated = new ArrayList<>(raw.size());
         for (TextCandidate candidate : raw) {
             Rect avatar = nearestAvatar(candidate, avatars, width);
+            XAuthorInfo author = findAuthor(candidate, avatar, authorSamples, width,
+                    scaledDensity);
             associated.add(new TextCandidate(candidate.text, candidate.languageHint,
                     candidate.bounds, candidate.postBounds, candidate.order,
                     candidate.bodyScore, candidate.hasPostContainer,
-                    candidate.fromDescription, candidate.knownPostTextId, avatar));
+                    candidate.fromDescription, candidate.knownPostTextId, avatar, author));
         }
-        List<TextCandidate> selected = spatial.locate(associated, width, height);
+        List<TextCandidate> selected =
+                spatial.locate(associated, width, height, detailScreen);
+        lastPostDetail = detailScreen;
         lastCandidateCount = selected.size();
+        lastAvatarCount = avatars.size();
+        lastAuthorSampleCount = authorSamples.size();
+        for (TextCandidate item : selected) {
+            if (item.author == null) continue;
+            lastAuthorMatchCount++;
+            if (item.author.truncated) lastClippedNameCount++;
+        }
         return selected;
     }
 
@@ -163,22 +246,116 @@ public final class XVisibleTextReader {
         Rect nearest = null;
         int best = Integer.MAX_VALUE;
         for (Rect avatar : avatars) {
-            // The profile picture is in X's LEFT GUTTER of the same post,
-            // slightly above the body text. Never borrow an image from an
-            // adjacent tweet or from the media region below the body.
             int gap = body.bounds.left - avatar.right;
-            if (gap < 0 || gap > Math.max(60, width / 6)
+            int verticalGap = body.bounds.top - avatar.bottom;
+            int maxVerticalGap = Math.max(width / 5, avatar.height() * 2);
+            if (gap < -Math.max(8, width / 65)
+                    || gap > Math.max(60, width / 6)
                     || avatar.top > body.bounds.top + width / 24
-                    || avatar.bottom < body.bounds.top - width / 8) continue;
-            if (body.hasPostContainer && (avatar.centerY() < body.postBounds.top
-                    || avatar.centerY() > body.postBounds.bottom)) continue;
-            int score = gap + Math.abs(avatar.bottom - body.bounds.top);
+                    || verticalGap > maxVerticalGap) continue;
+
+            // X often exposes a body-only "post container". Reject an
+            // unrelated avatar only when the returned card is demonstrably
+            // a full-width container INCLUDING the avatar's gutter.
+            if (body.hasPostContainer && body.postBounds.left <= avatar.left
+                    && body.postBounds.right >= avatar.right
+                    && (avatar.centerY() < body.postBounds.top
+                        || avatar.centerY() > body.postBounds.bottom)) continue;
+
+            int score = Math.max(0, gap) + Math.abs(verticalGap);
             if (score < best) {
                 best = score;
                 nearest = avatar;
             }
         }
         return nearest == null ? null : new Rect(nearest);
+    }
+
+    private static final class AuthorSample {
+        final String text;
+        final Rect bounds;
+        final boolean knownNameId;
+
+        AuthorSample(String text, Rect bounds, boolean knownNameId) {
+            this.text = text;
+            this.bounds = new Rect(bounds);
+            this.knownNameId = knownNameId;
+        }
+    }
+
+    /**
+     * Bind one author to its body through the actual avatar/header geometry.
+     * A conservative inferred avatar gutter is used only when X provides a
+     * strong name ID or a compact name+handle header but hides its image node.
+     */
+    private static XAuthorInfo findAuthor(TextCandidate body, Rect foundAvatar,
+            List<AuthorSample> samples, int screenWidth, float density) {
+        AuthorSample best = null;
+        int bestScore = Integer.MIN_VALUE;
+
+        for (AuthorSample sample : samples) {
+            if (sample.text.equals(body.text) ||
+                    XAuthorNameHeuristics.looksLikeHandle(sample.text)) continue;
+            boolean known = sample.knownNameId;
+            boolean composite = XAuthorNameHeuristics.looksCompositeHeader(sample.text);
+            boolean plausible;
+            if (foundAvatar != null && !foundAvatar.isEmpty()) {
+                plausible = XAuthorNameHeuristics.plausibleHeader(
+                        sample.bounds.left, sample.bounds.top, sample.bounds.right,
+                        sample.bounds.bottom, body.bounds.left, body.bounds.top,
+                        foundAvatar.left, foundAvatar.top, foundAvatar.right,
+                        foundAvatar.bottom, screenWidth, known);
+            } else {
+                plausible = XAuthorNameHeuristics.plausibleHeaderWithoutAvatar(
+                        sample.bounds.left, sample.bounds.top, sample.bounds.right,
+                        sample.bounds.bottom, body.bounds.left, body.bounds.top,
+                        screenWidth, known, composite);
+            }
+            if (!plausible) continue;
+            int score = (known ? 180 : 0) + (composite ? 60 : 0)
+                    - Math.abs(sample.bounds.left - body.bounds.left) / 4
+                    - Math.abs(sample.bounds.bottom - body.bounds.top) / 4;
+            if (score > bestScore) {
+                bestScore = score;
+                best = sample;
+            }
+        }
+        if (best == null) return null;
+
+        Rect avatar = foundAvatar;
+        if (avatar == null || avatar.isEmpty()) {
+            // The inferred PFP sits in X's measured LEFT GUTTER, not on the
+            // author row. Never synthesize one without a confirmed header.
+            int size = Math.min(Math.max(36, screenWidth / 10), screenWidth / 5);
+            int gap = Math.max(5, screenWidth / 55);
+            int right = best.bounds.left - gap;
+            int top = Math.max(0, best.bounds.top - size / 12);
+            avatar = new Rect(Math.max(0, right - size), top, right, top + size);
+            if (avatar.width() < size * 3 / 4) return null;
+        }
+
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setTextSize(18f * Math.max(1f, density));
+        paint.setFakeBoldText(true);
+        boolean clipped = XAuthorNameHeuristics.looksTruncated(best.text,
+                paint.measureText(best.text), best.bounds.width());
+
+        // X can truncate the @handle even if the display name fits. The
+        // badge is useful in either case; keep the actual available name.
+        for (AuthorSample other : samples) {
+            if (other == best || other.text.equals(body.text)) continue;
+            boolean isHandle = XAuthorNameHeuristics.looksLikeHandle(other.text);
+            boolean composite = XAuthorNameHeuristics.looksCompositeHeader(other.text);
+            if (!isHandle && !composite) continue;
+            if (Math.abs(other.bounds.top - best.bounds.top) >
+                    Math.max(28, avatar.height() / 2)) continue;
+            if (other.bounds.left < best.bounds.left ||
+                    other.bounds.left > screenWidth) continue;
+            if (XAuthorNameHeuristics.hasVisibleEllipsis(other.text))
+                clipped = true;
+        }
+
+        return new XAuthorInfo(best.text, best.bounds, avatar, clipped);
     }
 
     private static final class PostCard {

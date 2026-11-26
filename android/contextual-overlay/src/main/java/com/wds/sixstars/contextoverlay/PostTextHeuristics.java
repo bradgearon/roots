@@ -54,12 +54,20 @@ final class PostTextHeuristics {
         if (cls.contains("imageview") || cls.contains("imagebutton") || cls.contains("compoundbutton") ||
                 cls.endsWith(".button")) return true;
 
-        if (!isPostTextId(id) && (id.contains("toolbar") || id.contains("tab_bar") ||
+        if (!isPostTextId(id) && (XAuthorNameHeuristics.isNameId(id)
+                || id.contains("toolbar") || id.contains("tab_bar") ||
                 id.contains("navigation") || id.contains("action_button") ||
                 id.contains("avatar") || id.contains("timestamp") ||
                 id.contains("author_name") || id.contains("profile_name") ||
                 id.contains("follow_button") || id.contains("repost_count") ||
                 id.contains("like_count") || id.contains("view_count"))) return true;
+
+        // A composite X header (Name @handle · 2h) is an author label,
+        // even when custom Views omit the usual author_name resource ID.
+        // Require the timestamp separator before excluding it as a tweet.
+        if ((s.contains("·") || s.contains("•"))
+                && XAuthorNameHeuristics.looksCompositeHeader(text))
+            return true;
 
         if (COUNTER.matcher(s).matches() || TIME.matcher(s).matches() ||
                 HANDLE.matcher(s).matches()) return true;

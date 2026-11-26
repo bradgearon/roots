@@ -47,6 +47,44 @@ public final class AutoDetailsPlacementServiceTest {
                 0, 0, 0, 0, 440, 920, 1f));
     }
 
+    @Test public void clippedTweetDetailsBelongOnRightNextToThumb() {
+        AutoDetailsPlacementService.Placement p =
+                AutoDetailsPlacementService.locateTweet(
+                        130, 250, 410, 310, 440, 440, 920, 1f);
+        assertNotNull(p);
+        assertEquals(369, p.x);
+        assertEquals(254, p.y);
+        assertEquals(38, p.width);
+        assertTrue(p.x > 310);
+    }
+
+    @Test public void clippedNameDetailsSitBelowPfpNotOverAvatar() {
+        AutoDetailsPlacementService.Placement name =
+                AutoDetailsPlacementService.locateName(
+                        130, 260, 410, 335, 0, 195, 440, 420, true,
+                        22, 205, 104, 283, 440, 920, 1f);
+        assertNotNull(name);
+        assertEquals(287, name.y);
+        assertTrue(name.x + name.width <= 130);
+        // With NO verified avatar, suppress the name badge instead of
+        // guessing near the author's text or floating over the photo.
+        assertNull(AutoDetailsPlacementService.locateName(
+                130, 260, 410, 335, 0, 195, 440, 420, true,
+                0, 0, 0, 0, 440, 920, 1f));
+    }
+
+    @Test public void partialXPostCardCannotSuppressVerifiedNameBadge() {
+        // X sometimes reports the post container as only the short body
+        // rectangle, ending before the profile picture's 30dp control.
+        AutoDetailsPlacementService.Placement name =
+                AutoDetailsPlacementService.locateName(
+                        130, 260, 410, 281, 130, 260, 410, 281,
+                        true, 22, 205, 104, 283, 440, 920, 1f);
+        assertNotNull(name);
+        assertEquals(287, name.y);
+        assertEquals(47, name.x);
+    }
+
     @Test public void measuredMovementShiftsTheActionByExactlyTheSamePixels() {
         AutoDetailsPlacementService.Placement original =
                 new AutoDetailsPlacementService.Placement(47, 289, 32, 30);

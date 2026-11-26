@@ -24,6 +24,8 @@ public final class AutoInlineTranslationRenderer {
 
     public int visibleCount() { return scene.visibleCount(); }
 
+    public void resetWindowAttachment() { scene.resetWindowAttachment(); }
+
     public String lastWindowError() { return scene.lastError(); }
 
     /** Independently verified topmost X window for API 34+ surface attachment. */

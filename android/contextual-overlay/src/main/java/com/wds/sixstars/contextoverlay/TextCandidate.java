@@ -13,6 +13,8 @@ public final class TextCandidate {
     public final Rect postBounds;
     /** Best-effort avatar geometry, kept separate from header and body text. */
     public final Rect avatarBounds;
+    /** Independent author header, never itself translated as the post body. */
+    public final XAuthorInfo author;
     public final int order;
     public final int bodyScore;
     public final boolean hasPostContainer;
@@ -45,12 +47,21 @@ public final class TextCandidate {
     TextCandidate(String text, String languageHint, Rect bounds, Rect postBounds,
                   int order, int bodyScore, boolean hasPostContainer,
                   boolean fromDescription, boolean knownPostTextId, Rect avatarBounds) {
+        this(text, languageHint, bounds, postBounds, order, bodyScore,
+                hasPostContainer, fromDescription, knownPostTextId, avatarBounds, null);
+    }
+
+    TextCandidate(String text, String languageHint, Rect bounds, Rect postBounds,
+                  int order, int bodyScore, boolean hasPostContainer,
+                  boolean fromDescription, boolean knownPostTextId, Rect avatarBounds,
+                  XAuthorInfo author) {
         this.fingerprint = TextFingerprint.of(text);
         this.text = text;
         this.languageHint = languageHint;
         this.bounds = new Rect(bounds);
         this.postBounds = new Rect(postBounds);
         this.avatarBounds = avatarBounds == null ? new Rect() : new Rect(avatarBounds);
+        this.author = author;
         this.order = order;
         this.bodyScore = bodyScore;
         this.hasPostContainer = hasPostContainer;

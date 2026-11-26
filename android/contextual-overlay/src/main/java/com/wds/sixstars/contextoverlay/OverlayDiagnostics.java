@@ -25,6 +25,10 @@ public final class OverlayDiagnostics {
     private static final String KEY_AUTO_ELIGIBLE = "auto_eligible_count";
     private static final String KEY_AUTO_PLACEABLE = "auto_placeable_count";
     private static final String KEY_AUTO_RENDERED = "auto_rendered_count";
+    private static final String KEY_AVATAR_NODES = "last_avatar_nodes";
+    private static final String KEY_AUTHOR_SAMPLES = "last_author_samples";
+    private static final String KEY_AUTHOR_MATCHES = "last_author_matches";
+    private static final String KEY_CLIPPED_NAMES = "last_clipped_names";
 
     private OverlayDiagnostics() { }
 
@@ -64,6 +68,19 @@ public final class OverlayDiagnostics {
                 .apply();
     }
 
+    /** Stage counts only; never store account names or tweet content. */
+    public static void recordAuthorCounts(Context context,
+            int avatars, int samples, int matches, int clipped) {
+        context.getApplicationContext()
+                .getSharedPreferences(FILE, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(KEY_AVATAR_NODES, Math.max(0, avatars))
+                .putInt(KEY_AUTHOR_SAMPLES, Math.max(0, samples))
+                .putInt(KEY_AUTHOR_MATCHES, Math.max(0, matches))
+                .putInt(KEY_CLIPPED_NAMES, Math.max(0, clipped))
+                .apply();
+    }
+
     public static String summary(Context context) {
         SharedPreferences p = context.getApplicationContext()
                 .getSharedPreferences(FILE, Context.MODE_PRIVATE);
@@ -82,6 +99,10 @@ public final class OverlayDiagnostics {
             message += "\nAuto inline: eligible " + p.getInt(KEY_AUTO_ELIGIBLE, 0)
                     + " · placeable " + p.getInt(KEY_AUTO_PLACEABLE, 0)
                     + " · shown " + p.getInt(KEY_AUTO_RENDERED, 0);
+            message += "\nNames: avatars " + p.getInt(KEY_AVATAR_NODES, 0)
+                    + " · possible names " + p.getInt(KEY_AUTHOR_SAMPLES, 0)
+                    + " · matched " + p.getInt(KEY_AUTHOR_MATCHES, 0)
+                    + " · clipped " + p.getInt(KEY_CLIPPED_NAMES, 0);
         } else {
             message += "\nDisplay mode at last X scan: Manual";
         }
