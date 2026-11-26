@@ -59,3 +59,9 @@ Internally, a separate adversarial review process can challenge hypotheses, Whir
 - A foreign actor can connect, submit an attributable expression with authorized voice, and be revoked without affecting translation.
 - A delayed callback is optional, correctly attributed and cancelable.
 - A Serpent exercise is clearly distinguishable from real evidence and has a reviewed explanation and opt-out.
+
+## Accessible journeys and weighted expression
+
+[Garden listening journeys](listening-journeys.md) make an audio-first Garden a core experience: approved ordered network destinations, launcher, deterministic foreground navigation and scroll, semantic reading queue, local TTS, translation, lock-screen playback and accessible voice/headset controls. Native and permitted API sources can supply screen-off content; do not promise third-party app navigation while locked or arbitrary AI-directed accessibility automation. Preserve TalkBack/braille access and test with blind/low-vision participants.
+
+A Garden assembles authorized discoveries from the [Network Brain](network-brain.md), rather than requesting generative ranking of every post. The current Tree and user intention activate weighted associations; the content mixer balances fellowship, art, beauty, learning, exploration, history and other explicit modes. Label organic discovery, foreign Forge expressions and paid sponsorship separately. An approved portable Branch can provide a complete offline learning/research Garden or an additional source in a journey; distinguish reference-only and self-contained packages. Grafting adds a continuing scoped relationship, not identity surrender or permission to contact people. No public action from a voice instruction without applicable confirmation.

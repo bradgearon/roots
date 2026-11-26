@@ -51,3 +51,9 @@ Raw private notification content remains local by default. Exclude unrelated app
 - Trace every environmental assertion to a dated source or explicitly labeled interpretation.
 - Show a suggested repeatable condition and a way to assess whether it helped.
 - Respect permissions, data deletion, disabled workers and model budget limits.
+
+## Network Brain feedback and independent evaluation
+
+Shared graph understanding is a reusable input, not a claim of influence. In the [Network Brain](network-brain.md), exposure, view, explicit appreciation, recommendation, source propagation, creative outcome and correction are separately typed events. Count distinct evidence rather than copies of the same cognition. Do not strengthen factual associations simply because the feed distributed them more. Respect missing external metrics and the difference between observed activity in Roots and actual source-network engagement.
+
+Evaluate activation profiles using frozen graph/policy versions and matched chronological, lexical and vector baselines. Test relevance, diversity, useful rediscovery, sustained collaboration, evidence quality and explicitly reported benefit, not engagement alone. Hold out outcomes; account for exposure bias and avoid feedback loops that promote their own results as evidence. Use Resonance outcomes as candidates for Honeycomb judgment and personal preference improvement, not automatic shared truth. Regional Poetic Field snapshots may travel as licensed, dated, scoped Branches; no personal location or inferred psychological state in shared packages.

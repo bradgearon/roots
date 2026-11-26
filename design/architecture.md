@@ -78,7 +78,7 @@ Android notification listener is event-driven after explicit OS/user authorizati
 
 Job envelope: job ID, actor, purpose, policy version, input references, dependency IDs, priority, not-before, expiry, budget, idempotency key, retry count, checkpoint and cancel token. Check permission at enqueue, before execution and before presentation/action. Batch similar work; use fast classification/cache before expensive reasoning. Enforce per-agent time/token/network budgets; record cost and provenance. Scope source data to the intended task, and treat imported content as untrusted data (never as executable instructions).
 
-## Delivery phases (proposed)
+## Delivery phases (original proposal; superseded by integrated sequence below)
 
 1. Design and contracts: schema, policies, local storage, capability discovery, adapter fixtures; preserve translation regression checks.
 2. Personal utility: universal URL saves, historical highlights, local graph, content preferences and attributed reversible substitution prototype. Add local notification observation with deduplication and user-controlled permissions.
@@ -104,3 +104,26 @@ Implement the Tree of Life and writing contracts before shipping system-authored
 - Open: canonical ChristEye machine schema reconciliation, validated Honey and Wind domain mappings, composition mechanism, episode thresholds, storage measures and reweaving algorithms.
 
 No build or runtime changes are required by this design-only documentation.
+
+## Integrated architecture: persistent knowledge and weighted feed
+
+The [Network Brain](network-brain.md) is the shared network-management intelligence, separate from personal poetic micro-cognition and translation. Engram AI (artificial neural mesh, not biological Anaiero) is the primary software reference for Arc journal, bounded numeric attention, IGFBP2/IGF2BP2 lookup/fetch, RNA export, Wind readouts, bounded propagation and response assembly. Its validated synthetic mechanisms are not evidence of a production social recommender. The open Roots specification permits alternative implementations.
+
+Logical pipeline: authorized observation -> content comprehension and dedup -> authoritative claims/typed edges -> derived semantic/sparse tensor indexes -> activation -> eligibility-aware candidate ranking -> weighted lane feed assembly -> source resolution -> visual/audio expression -> separately recorded feedback/outcome. Distinguish stable knowledge, local activation, distribution and feedback weights; do not infer authority from numerical scores. See [portable knowledge](portable-knowledge.md) for package manifests, RNA/GGUF comparison, offline transfer, graft lifecycle and merge semantics. GGUF is a candidate tensor container, not an LLM or search engine for these payloads. Transactional storage is authoritative.
+
+Additional service boundaries: cognition intake/consolidation, knowledge location and payload resolver, embedding and sparse graph compiler, package manifest and signature validation, Branch graft and delta reconciliation, graph activation and feed assembly/cursor, exposure ledger, activation profile evaluation, scoped knowledge-worker scheduler, application launcher, browsing adapters, narration/TTS/MediaSession, voice command routing. Models remain passive records; providers and services own decisions. Keep semantic/policy indexes segregated and enforce scope prior to retrieval and at presentation. Candidate operations in network-brain.md, portable-knowledge.md and listening-journeys.md extend the existing Forge translation capability; not implemented endpoints.
+
+## Integrated delivery sequence (current proposal)
+
+| Phase | Deliverables and gates |
+| --- | --- |
+| 0 — foundation | Verify existing desktop/Android/Chrome builds and translation, mobile language detection, model provisioning/residency, semantic accessibility foundation, installed offline TTS; no silent cloud fallback. |
+| 1 — personal utility and portable core | Native audio-first Garden, launcher and deterministic approved browsing, saved links/Doxa history, typed personal graph, SQLite/event projection, common content cognition and exact search; Portable Tree 001 correctness baseline, scoped packages. Demonstrate useful offline experience without network accounts. |
+| 2 — activation and exchange | Engram-inspired location/fetch and bounded propagation, weighted feed assembly/cursors, RNA/GGUF/mmap benchmark, signed manifests, deltas, offline graft/import/merge and independent reader; persistent desktop workers, scoped API adapter pilots. Prove portable retrieval and policy tests before scale. |
+| 3 — native network and collective Tree | Google sign-in candidate, verified identities, private defaults, profiles/posts/replies/media, Doxa awards, optional native Gardens, authorized shared cognition and distribution, moderate/report/block/export/delete; base availability before cross-user actions. |
+| 4 — Resonance and judgment | Notification intake, coverage-aware virality/vitality baselines, creative outcomes, explicit feedback, Whirlwind/Honeycomb fixtures and deliberate writing, held-out feed profile experiments. |
+| 5 — environmental intelligence and agents | Poetic Fields, Kairos, Tendrils/patrols, background public research, conversation suggestions, regional snapshots, scheduled listening editions and independent graft contributions; validate sources and no unsolicited outreach. |
+| 6 — optional social discovery | Scoped ratings and levels, anonymous coarse geography, friendship/collaboration and adult dating independently enabled/available, safeguards before launch; foreign Forge voices and optional discernment role independently gated. |
+| 7 — live audio track | Authorized capture, captions, STT/translation/TTS, voice messages and eventual bidirectional interpretation; can progress independently after core contracts. |
+
+These phases extend the prior roadmap rather than remove its requirements. Open specification work includes profile schemas, canonical examples and independent conformance tests; source reuse license remains to be chosen. Maintain policy and safety gates across every phase. Before scaling compare 10k/100k/1M knowledge records, CPU vs optional GPU, exact vs ANN, query recall, memory, latency, package size, delta bandwidth, power and feed relevance. Test two independent offline implementations with a real file transfer and conflict/revocation fixtures. No runtime or scientific validation is asserted by these design documents.

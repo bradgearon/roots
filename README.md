@@ -61,3 +61,7 @@ dotnet run --project tests/Roots.ContractChecks -c Release
 ```
 
 Do not distribute until the native ABI, model digest, privacy/consent flows, and store requirements have been validated.
+
+## Open architecture direction (design only)
+
+Forge and Roots are intended open specifications; the WDS Roots application remains its own product. Independent applications may eventually exchange Trees and Branches through compatible files or APIs without depending on ChristEye or a proprietary SDK. The intended source/design reuse needs explicit licensing terms; the existing LICENSE is unchanged. See [openness](design/openness.md), [portable knowledge](design/portable-knowledge.md), [Network Brain and weighted feed](design/network-brain.md), and [accessible Garden journeys](design/listening-journeys.md). Engram AI is the reference for bounded artificial neural mesh, RNA tiles, Wind readouts and response assembly; these are proposed adaptations, not features already shipped in Roots. The translation instructions above are unchanged.

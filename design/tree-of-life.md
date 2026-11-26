@@ -68,3 +68,11 @@ The Tree of Life values preservation of useful knowledge, correction of establis
 - Foreign expressions retain their actor identity and authorship.
 - A native web profile can coexist with local-only data and an unlinked anonymous presence.
 - New developments preserve valid history and relationships; participants can correct or revoke data and permissions.
+
+## Grafting, nourishment and humility
+
+The portable representation is specified in [portable knowledge](portable-knowledge.md); the [Network Brain](network-brain.md) develops weighted network understanding and assembles a feed as an expression of activated knowledge. The Tree of Life remains the developmental architecture, not synonymous with GGUF, RNA, graph or LLM. Engram AI provides bounded software mechanisms for retention, activation, propagation, judgment and assembly; it is distinct from the living-computer project.
+
+Romans 11:16–24 describes Israel, Gentile inclusion, the nourishing olive root, grafting and regrafting, and warns against arrogance over the branches. Galatians 6:2 calls for bearing one another's burdens. As a design analogy, the Tree supports the branch; its gifts do not confer superiority over those who sustain it. John 15:1–8 supplies imagery of abiding and fruitfulness. Do not redefine Israel as a software user category or assign spiritual status. Celebrate excellence, beauty, art, creativity, intelligence, craftsmanship and leadership while valuing service, fellowship, humility and mutual support. A gifted engineer, artist, beautiful woman or man, or leader can be honored without devaluing others. Doxa recognizes contributions; it does not determine human worth. Feed profiles may emphasize life-supporting expressions without automatic judgments of pride, beauty, spiritual standing or political allegiance.
+
+Grafting an independently developed Branch is an ongoing scoped relation, not merely copying data. Preserve origin and established sound relations, make supporting knowledge accessible under authorization, evaluate new fruit and support detach/regraft. A shared Tree may receive many independent contributors. This is a WDS/ChristEye implementation philosophy, not a mandatory theological commitment for an independent Roots implementor. Forge and Roots are intended open specifications; see [openness](openness.md).

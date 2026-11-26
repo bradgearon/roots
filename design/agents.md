@@ -47,3 +47,9 @@ Agent output: recommendation with evidence, why it matches the user's intention,
 - Develop a useful idea from an authorized sample conversation without asserting another person's hidden intention.
 - Pausing or revoking an agent stops its work and prevents further discoveries from being presented.
 - An unavailable or blocked person never appears in a matchmaking result for that mode.
+
+## Distributed knowledge workers and offline cultivation
+
+Tendrils can operate against personal Roots and authorized shared Trees through the [Network Brain](network-brain.md). Desktop and approved web/server workers can run while the user is away: Explorer discovers associations, Investigator researches open questions, Evaluator challenges claims, Organizer improves neighborhoods/indexes, Translator prepares multilingual representations, Compiler builds compact packages, Distributor offers scoped deltas. A browser tab alone cannot guarantee work after closure. Agent plans specify resource budgets, source rights, scope, permitted output recipients, device preference and expiry. Separate personal benefit from explicitly opted-in contribution to a shared Tree. An idle worker does not acquire arbitrary authority to browse, message or disclose.
+
+Workers may import a Branch, operate offline and propose independently developed knowledge or feed profiles; use [grafting](portable-knowledge.md) for ongoing authorized participation. Proposals retain provenance and uncertainty; merge requires validation/authority. Stop on cancellation/revocation, checkpoint and dedup, no unsolicited outreach. Preserve Engram AI selective upkeep principles (event-driven work, bounded lineage, rest/defer, no self-corroboration); candidate Wind/profile activation is separate from training. Agent-authored written reports still use deliberate writing.

@@ -48,3 +48,11 @@ Proposed navigation: Home, Discover, Highlights, Network, Profile; agents and av
 - Scrolling and recycled rows do not misplace replacements or cause wrong-account actions.
 - No background upload of private observations by default.
 - Recognition, collections and profile controls remain usable without overlays or external API access.
+
+## Shared cognition and weighted Garden feed
+
+Use the [Network Brain](network-brain.md) to comprehend eligible observed posts once, integrate scoped typed knowledge and reuse it across Gardens. The original content, source, authorization and interpretation remain distinct; scrolling past an item is not endorsement. A permitted common observation can become an organic discovery opportunity for another user, giving a creator free exposure without paying for placement. Label the originating network, why it appeared and whether it is an authorized recommendation, not an original post. Paid sponsorship stays separate. Use source links, permitted APIs/embeds or authorized cached payloads; no claim that a derived representation exempts platform rules.
+
+A native feed or content mixer activates the same weighted Tree using personal interests, explicit intentions, knowledge, geography, trusted Doxa, history, freshness and diversity. Separate common cognition from private personal weighting; avoid compulsory ratings, popularity ranking or inferred romantic availability. Explicit exposure vs appreciation vs outcome logs support Resonance. Celebrate excellence, beauty, art, creativity and service without treating gifts as superiority. Provide original reveal, source fidelity and user-adjustable exploration/lanes.
+
+Garden Radio is a flagship early feature: accessible hands-free journeys with ordered network destinations, deterministic foreground launcher/scroll controller, continuous reading, optional translation/context, screen-off playback of queued or authorized API content, and voice/headset controls. See [listening journeys](listening-journeys.md). Trees and Branches can be imported, cultivated and grafted across independent compatible applications; a user need not join a native social network to benefit.

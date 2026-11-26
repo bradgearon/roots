@@ -2,7 +2,7 @@
 
 Status: exploratory product design, 2026-11-25. Copyright (c) 2026 We Develop Software LLC. All rights reserved. See [proprietary license](../LICENSE).
 
-Roots is a local-first, micro-cognitive social integration platform that converges with a native web presence. It is the human-facing expression of ChristEye's Tree of Life, not merely a social graph. A feed tells you what is happening; Roots helps you understand what is growing. Honeycomb organizes sustainable patterns and Whirlwind coordinates interacting Winds whose circulation may produce new development.
+Roots is both an intended open specification for portable, searchable, developable knowledge and a WDS-owned local-first social integration application that converges with a native web presence. Forge is likewise an open specification; independent implementations need not use ChristEye, Engram AI or a proprietary SDK. Existing legal terms remain unchanged pending an explicit license decision. It is the human-facing expression of ChristEye's Tree of Life, not merely a social graph. A feed tells you what is happening; Roots helps you understand what is growing. Honeycomb organizes sustainable patterns and Whirlwind coordinates interacting Winds whose circulation may produce new development.
 
 | Document | Scope |
 | --- | --- |
@@ -34,3 +34,9 @@ Working names (Doxa, Gardens, Resonance, Poetic Field, Kairos and Tendrils) are 
 - [Portable knowledge](portable-knowledge.md): Network Brain, compiled GGUF tensors, typed graph search, snapshots/deltas, file/API exchange, offline cultivation and validation gates.
 - [Open architecture](openness.md): open Forge and Roots specifications, independent implementations, licensing decision pending.
 - [Accessible listening journeys](listening-journeys.md): launcher, deterministic browsing, TTS and Garden Radio.
+
+## Integrated Network Brain
+
+- [Network Brain and weighted feed](network-brain.md): Engram AI implementation evidence, Arc/RNA/Wind separation, shared cognition, activation, feed assembly, life-supporting recognition and independent evaluation.
+- [Portable knowledge](portable-knowledge.md) defines import, planting, grafting, nourishment, pruning, regrafting, file/API exchange and offline field/education profiles. A Tree of Life is not merely a storage graph; the packages are its possible representations.
+- [Open architecture](openness.md) separates interoperability and implementation ownership; [listening journeys](listening-journeys.md) provides the flagship accessible experience. All proposed capabilities remain subject to authorization, source terms and verification.

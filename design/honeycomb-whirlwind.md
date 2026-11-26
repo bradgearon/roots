@@ -129,3 +129,9 @@ Candidate domain analogies: Wind as observable signal, coupling as interaction b
 - Enforce bounded activity, pause and expiration, independent judgment and no unsolicited outreach.
 - Trace written findings to evidence and writing state. Test later retention and actual development rather than model confidence alone.
 - Measure performance and storage against synthetic and authorized consented data; verify no external schema compatibility is claimed prematurely.
+
+## Portable neighborhoods and activation
+
+A Comb Cell can select an authorized Branch neighborhood without becoming identical to its storage format. Preserve overlapping cell identity, policy, version and provenance when compiling or grafting; do not equate file transfer with sustained fellowship or evaluated Honey. A graft establishes an authorized relation and may create conditions for new reciprocal Winds. Only evidenced return influence and evaluated transformation meet existing Whirlwind gates. See [portable knowledge](portable-knowledge.md) and [Network Brain](network-brain.md).
+
+Engram AI's bounded recurrent activation, cycle-suppressed mesh propagation and distinct learned Wind readouts are the software precedent for candidate feed activation. Numerical circulation alone is not a Whirlwind, activation strength is not evidence of fruit, and an exposure is not Honey. Keep knowledge associations, current activation, feed distribution and feedback separate. Reweaving remains an independently judged, reversible, authorized transaction; it may propose graph changes or alternate profiles, never silently update private interpersonal relationships. Candidate profile evaluation should compare stable baselines and reserve held-out observations.

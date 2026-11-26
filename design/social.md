@@ -54,3 +54,9 @@ Record consent/version, evidence for moderation decisions, and retention policy.
 - An unavailable, underage or blocked candidate cannot be matched, rated or contacted through an ineligible mode, including stale queued agent results.
 - Concurrent policy changes are checked server-side at action time.
 - Small sample, coordinated votes and withdrawn ratings produce correct, explainable aggregate behavior.
+
+## Composite search and life-supporting recognition
+
+The [Network Brain](network-brain.md) combines permitted semantic/graph retrieval with typed ratings, recognition, coarse geography, availability and time indexes. Keep authoritative eligibility checks before ranking and recheck at delivery/action. Rating categories, uncertainty and consent remain separate from knowledge weights, current activation and distribution. Unscored users remain discoverable. Dating is adult-only, independent and off by default; no general score as romantic ranking, no inferred attraction, availability or orientation. Avoid rating or identifying nonparticipants. Do not expose private data, anonymous region or sensitive preferences through vectors, Branch metadata, paths, aggregates or shared feed explanations.
+
+Doxa can express appreciation for art, beauty, creativity, intelligence, engineering, craftsmanship, kindness and service without suggesting that people with gifts outrank others in worth. No automated moral, spiritual, pride or beauty score. Recognition may inform discovery with the recipient's permissions, but a view, exposure or LLM classification is not peer recognition. Roots interoperable export does not override social policy; default exclude dating, anonymous presence, private votes and sensitive locations from shareable packages.
