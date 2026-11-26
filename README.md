@@ -115,3 +115,16 @@ Further design: [root:// protocol](design/root-protocol.md), [Whirlwind peer exc
 ## Native Tree Core (experimental)
 
 The [shared C++ Tree Core](native/tree-core/README.md) is the first implementation slice for scroll observation storage, composed predicates, exact search, branch agents and GGUF compilation. The experimental Android JNI path adds a separately opted-in local capture lane and searchable paginated Tree viewer; the desktop P/Invoke binding exposes a standalone CLI without starting translation. Follow the native core build and verification instructions, including the optional Android SQLite amalgamation. Platform builds and live capture remain unverified. See [Lily Tendrils](design/tendrils.md) for the separate proposed semantic-growth architecture.
+
+
+### Export Android knowledge and diagnostics
+
+From the repository root with an authorized ADB-connected debug device:
+
+```cmd
+export-android.cmd
+export-android.cmd -LogsOnly
+export-android.cmd -Serial YOUR_DEVICE_SERIAL
+```
+
+The default export stops Roots (pause capture first if pending in-memory observations matter), copies its private `no_backup/roots-tree/tree.db`, any WAL/SHM/journal sidecars, the latest `tree.gguf` if present, and current/rotated PLaMo and FunctionGemma lifecycle JSONL files. Reopen Roots afterward and check accessibility permission. The logs-only variant does not stop the app; logs may change during copying. Each run writes to a unique ignored `logs/device-exports` directory with a SHA-256 manifest. The GGUF is a derived snapshot and can be older than the SQLite database. Keep SQLite sidecars beside the database when opening a copy. No inference model weights, preferences, access keys or unrelated app data are exported. Missing files are reported. Exports can contain private acquired text; store them securely. `-OutputDir` and `-Adb` allow explicit overrides. Debug builds must support `adb shell run-as com.wds.roots`.
