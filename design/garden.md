@@ -42,11 +42,23 @@ Proposed operations: actor.connect, actor.capabilities, actor.disconnect, expres
 
 Optional callbacks can present a clearly labeled fictional/external character's joke, encouragement or commentary at a later appropriate moment. Respect user-selected frequency, context, tone and mute controls. Avoid targeted harassment or shaming people for sexual orientation, identity or other protected traits; consensual playful humor can relate to a user's declared intentions. Do not disguise an actor as a real person or insert content as if it came from the underlying platform.
 
-## Optional Serpent — blind discernment and actor battles
+## Optional Serpent — mischief, playful enticement and blind discernment
 
 The Serpent (Snake Mode) is an optional opportunity for discernment through actual encounter, not a labeled quiz or a mode-detection task. A participating human or cognitive actor must not be told which particular expression is a Serpent challenge, when a challenge is activated, or which participating actor is assigned the adversarial role. There is no participant-facing "Snake Mode active" flag and no objective to classify the speaker as a snake. Judge the expression, evidence, reasoning and fruit, not a hidden identity.
 
-The participant opts into a bounded Garden training context in advance, with scope, intensity, duration, frequency, eligible actors, stop and review controls. General consent to unannounced challenges does not imply permission to manipulate an ordinary feed, impersonate a real person, fabricate real-world emergencies or allegations, exploit vulnerabilities, or interfere with private relationships. Outside this authorized context, ordinary factual communication rules apply.
+The primary human-facing experience is playful mischief: a Serpent tries to lure a willing participant into an entertaining, harmless predicament, surprising discovery, fictional temptation or absurd intellectual rabbit hole. It is an optional adventure in discernment with a comedic payoff, not a formal examination or a requirement to outsmart the character. The participant may play along knowingly or unknowingly, turn the joke around, or walk away. The encounter should end in shared amusement, delight or a charming surprise, not humiliation, fear or loss. A successful lure can be as valuable as a successful challenge.
+
+The participant opts into a bounded Garden play/training context in advance, with scope, intensity, duration, frequency, eligible actors, stop and review controls. General consent to unannounced challenges does not imply permission to manipulate an ordinary feed, impersonate a real person, fabricate real-world emergencies or allegations, exploit vulnerabilities, or interfere with private relationships. Outside this authorized context, ordinary factual communication rules apply.
+
+### Mischief lifecycle
+
+1. Select an authorized fictional premise or low-stakes playful opportunity, using only permitted context and the participant's humor preferences.
+2. Write the lure through the deliberate writing process. Present it through an attributable fictional/Forge actor without a live Snake Mode announcement or answer key.
+3. Let the participant respond freely. Adapt through actual exchange rather than forcing a predetermined outcome. Another actor may catch, join, challenge or redirect the mischief.
+4. Resolve the encounter with a punchline, harmless reveal, surprising creative result or reversal; clarify any fictional premise that might otherwise be mistaken for fact. Stop promptly on discomfort or request. Do not ask the participant to spend money, disclose secrets, undertake risky real-world acts, contact unsuspecting people or jeopardize a relationship.
+5. Retain only authorized feedback and any genuine creative fruit. Evaluate amusement through voluntary feedback, not inferred emotional vulnerability or obedience. A participant who refuses the lure has not failed.
+
+Examples: a Star invites a participant to investigate an absurd fictional connection between music and cats, culminating in another Star revealing that the first wanted a song about herself; an actor presents an elaborate puzzle whose solution is a ridiculous poem; the participant notices the trick early and lures the Serpent into its own harmless joke. These are illustrative scenarios, not scripted requirements. The timing may be unexpected inside an expressly enabled Garden play surface, but an unrelated ordinary factual exchange is not secretly turned into a challenge.
 
 ### Forge actor encounter
 
@@ -60,7 +72,7 @@ One proposed interaction: a participating Star offers a plausible but flawed pro
 
 Proposed records: DiscernmentSession (sessionId, scope, participantRefs, consentRefs, allowedTopics, time/budget limits, state); private ChallengeAssignment (challengeId, roleRefs, evidenceRefs, constraints, review criteria, expiration); EncounterExpression (ordinary attributable Forge expression); DiscernmentReview (claims, counterexamples, evidence, revisions, outcome, uncertainty). Keep assignments and reference answers out of participant-visible envelopes. Distinguish training-origin material from real evidence at the trusted storage boundary. Do not promote simulated claims into factual records, Honey, public posts or interpersonal actions.
 
-Conclude when a useful judgment has been reached, participants stop, or the budget expires; preserve unresolved disagreements. Offer a retrospective explanation, including corrections of false claims before they can be relied upon outside training, without requiring a live activation notice. Internal actor-only review may keep assignments private for future held-out evaluation. A judge or independent verification process evaluates evidence and reasoning; neither the Serpent nor the challenged actor is automatically correct. Use the adversarial encounter to challenge hypotheses, Whirlwind judgments and reweaving proposals, while maintaining separate evaluation and authorization gates.
+Conclude when the playful payoff or useful judgment has been reached, participants stop, or the budget expires; preserve unresolved disagreements. Offer a retrospective explanation, including corrections of false claims before they can be relied upon outside training, without requiring a live activation notice. Internal actor-only review may keep assignments private for future held-out evaluation. A judge or independent verification process evaluates evidence and reasoning; neither the Serpent nor the challenged actor is automatically correct. Use the adversarial encounter to challenge hypotheses, Whirlwind judgments and reweaving proposals, while maintaining separate evaluation and authorization gates.
 
 ## Acceptance
 
@@ -70,6 +82,7 @@ Conclude when a useful judgment has been reached, participants stop, or the budg
 - Unavailable, blocked or ineligible people are not matched; swipe interest alone sends no message.
 - A foreign actor can connect, submit an attributable expression with authorized voice, and be revoked without affecting translation.
 - A delayed callback is optional, correctly attributed and cancelable.
+- A consented playful Serpent encounter can lure a participant into a harmless fictional adventure, then resolve with a comedic payoff, including a reversal if the participant catches the trick. No reward depends on compliance or embarrassment.
 - A consented Serpent encounter gives the challenged actor no activation or assignment signal, and permits independent disagreement, revision, stopping and retrospective review. The trusted system keeps training evidence isolated from factual records; an ordinary non-training conversation never becomes a covert challenge.
 
 ## Accessible journeys and weighted expression
