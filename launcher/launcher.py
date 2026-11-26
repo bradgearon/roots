@@ -391,8 +391,9 @@ def build(args):
         modules = ["Launcher3QuickStep" if args.command == "quickstep" else "Launcher3"]
     digest = lock_digest(raw)
     state = state_dir(aosp)
-    dist = state / "dist" / digest
-    dist.mkdir(parents=True, exist_ok=True)
+    base_dist = state / "dist" / digest
+    base_dist.mkdir(parents=True, exist_ok=True)
+    dist = Path(tempfile.mkdtemp(prefix="build-", dir=base_dist))
     # Avoid reusing a different OUT_DIR inherited from another AOSP build.
     env = dict(os.environ, OUT_DIR="out", ROOTS_PRODUCT_OUT_FILE=str(state / "product-out.txt"))
     for module in modules:
