@@ -132,6 +132,9 @@ public final class OverlayTranslationCoordinator {
             pool.clear();retryAfter.clear();poolTarget=target;
         }
         demand.snapshot(viewportHeight);
+        // A new snapshot may arrive while a gesture is decelerating. Keep a
+        // wake armed until the directional prediction expires.
+        armMotionWake();
         {
             visible.clear();
             for(TextCandidate candidate:current)visible.add(candidate.fingerprint);
@@ -221,8 +224,14 @@ public final class OverlayTranslationCoordinator {
     }
 
     /** Main-thread admission. Select work only when a provider slot is free. */
+    private void armMotionWake(){
+        main.removeCallbacks(motionWake);
+        long delay=demand.idleDelay(SystemClock.uptimeMillis());
+        if(active&&preferences.autoPreview()&&delay>0)main.postDelayed(motionWake,delay+1);
+    }
     private void pump() {
         if (destroyed || !active || !preferences.enabled()) return;
+        armMotionWake();
         int limit = PROVIDER_SLOTS;
         String target = preferences.targetLanguage();
         if (manualCandidate != null) {
@@ -248,7 +257,7 @@ public final class OverlayTranslationCoordinator {
         long now=SystemClock.uptimeMillis();
         final String backend=profile();
         final double velocity=demand.velocity(now);
-        pool.values().removeIf(p->now-p.lastSeen>RETAIN_MS
+        pool.values().removeIf(p->(!visible.contains(p.candidate.fingerprint)&&now-p.lastSeen>RETAIN_MS)
                 ||cache.read(p.candidate.text,target)!=null);
         ArrayList<Pending> ranked=new ArrayList<>(pool.values());
         ranked.sort(Comparator.comparingLong((Pending p)->priority(p,now,backend,velocity)).reversed()
@@ -271,11 +280,7 @@ public final class OverlayTranslationCoordinator {
         }
         if(admission.hasRoom(limit)&&nextRetry!=Long.MAX_VALUE)
             main.postDelayed(retryWake,Math.max(1,nextRetry-System.currentTimeMillis()));
-        long idleDelay=demand.idleDelay(now);
-        if(admission.hasRoom(limit)&&idleDelay>0&&!ranked.isEmpty()){
-            main.removeCallbacks(motionWake);
-            main.postDelayed(motionWake,idleDelay+1);
-        }
+        // Motion wake is armed before all early returns above.
     }
 
     private void submit(TextCandidate candidate,String target) {

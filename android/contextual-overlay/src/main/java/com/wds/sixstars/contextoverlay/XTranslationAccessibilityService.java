@@ -32,6 +32,25 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private String readerStatus = "Service not scanned yet";
     private boolean scanScheduled;
     private boolean scrollSinceLastScan;
+    // X may expose a recycled card before its text nodes are populated.
+    // A bounded trailing scan verifies the settled layout, without polling.
+    private static final long SETTLED_SCAN_MS=520;
+    private final Runnable settledScan=()->{
+        if(destroyed||preferences==null||!preferences.enabled()||!preferences.autoPreview())return;
+        if(findXApplicationWindow()==null)return;
+        if(!scanScheduled)refreshWindow();
+        else scheduleSettledRetry();
+    };
+    private final Runnable settledScanRetry=()->{
+        if(!destroyed&&preferences!=null&&preferences.enabled()&&preferences.autoPreview()
+                &&!scanScheduled&&findXApplicationWindow()!=null)refreshWindow();
+    };
+    private void scheduleSettledRetry(){main.removeCallbacks(settledScanRetry);main.postDelayed(settledScanRetry,SCAN_INTERVAL_MS);}
+    private void scheduleSettledScan(){
+        main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
+        if(preferences!=null&&preferences.enabled()&&preferences.autoPreview())
+            main.postDelayed(settledScan,SETTLED_SCAN_MS);
+    }
     private final Runnable scan = () -> {
         scanScheduled = false;
         refreshWindow();
@@ -51,14 +70,14 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 : "Accessibility service connected; enable consent inside Roots",
                 0, 0, 0, 0, "");
         treeRuntime=NativeTree.available()?TreeRuntime.get(this):null;
-        scheduleScan();
+        scheduleScan();scheduleSettledScan();
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || destroyed || preferences == null) return;
         if (!preferences.enabled()) {
-                main.removeCallbacks(scan);
+                main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
             coordinator.clear();
             TranslationRuntime.disconnect();
@@ -85,7 +104,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 // events come from the keyboard, not X. Ignore those events
                 // when X is still the topmost TYPE_APPLICATION window.
                 if (isNonXApplicationForeground()) hideOutsideX();
-                else if (findXApplicationWindow() != null) scheduleScan();
+                else if (findXApplicationWindow() != null) {scheduleScan();scheduleSettledScan();}
             }
             return;
         }
@@ -123,10 +142,11 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             renderer.resetAutoWindowAttachment();
         }
         scheduleScan();
+        scheduleSettledScan();
     }
 
     private void hideOutsideX() {
-        main.removeCallbacks(scan);
+        main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
         scrollSinceLastScan = false;
         scrollTracker.reset();
@@ -284,7 +304,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
 
     @Override
     public void onInterrupt() {
-        main.removeCallbacks(scan);
+        main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
         if (coordinator != null) coordinator.clear();
         scrollTracker.reset();
@@ -295,7 +315,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     public void onDestroy() {
         destroyed = true;
         treeRuntime=null;
-        main.removeCallbacks(scan);
+        main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
         if (coordinator != null) coordinator.destroy();
         if (renderer != null) renderer.destroy();
