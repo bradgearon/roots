@@ -9,6 +9,10 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
+import com.wds.sixstars.contextoverlay.tree.NativeTree;
+import com.wds.sixstars.contextoverlay.tree.TreeRuntime;
+import com.wds.sixstars.contextoverlay.tree.XTreeCapture;
+
 import java.util.Collections;
 import java.util.List;
 
@@ -25,6 +29,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private AccessibilityOverlayRenderer renderer;
     private OverlayTranslationCoordinator coordinator;
     private boolean destroyed;
+    private XTreeCapture treeCapture;
     private String readerStatus = "Service not scanned yet";
     private boolean scanScheduled;
     private boolean scrollSinceLastScan;
@@ -46,13 +51,23 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 ? "Accessibility service connected; ready for X"
                 : "Accessibility service connected; enable consent inside Roots",
                 0, 0, 0, 0, "");
+        if (treeCapture != null) treeCapture.close();
+        treeCapture = NativeTree.available() ? new XTreeCapture(TreeRuntime.get(this), this::findXApplicationWindow, preferences::enabled) : null;
+        signalTree();
         scheduleScan();
+    }
+
+    private void signalTree() {
+        if (treeCapture == null) return;
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        treeCapture.signal(metrics.widthPixels, metrics.heightPixels);
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || destroyed || preferences == null) return;
         if (!preferences.enabled()) {
+            if (treeCapture != null) treeCapture.invalidate();
             main.removeCallbacks(scan);
         scanScheduled = false;
             coordinator.clear();
@@ -85,6 +100,8 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             return;
         }
 
+        if (kind == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && treeCapture != null) treeCapture.invalidate();
+        signalTree();
         if (kind == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             scrollSinceLastScan = true;
             if (preferences.autoPreview() && renderer != null) {
@@ -117,6 +134,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     }
 
     private void hideOutsideX() {
+        if (treeCapture != null) treeCapture.invalidate();
         main.removeCallbacks(scan);
         scanScheduled = false;
         scrollSinceLastScan = false;
@@ -259,6 +277,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
 
     @Override
     public void onInterrupt() {
+        if (treeCapture != null) treeCapture.invalidate();
         main.removeCallbacks(scan);
         scanScheduled = false;
         if (coordinator != null) coordinator.clear();
@@ -269,6 +288,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     @Override
     public void onDestroy() {
         destroyed = true;
+        if (treeCapture != null) { treeCapture.close(); treeCapture = null; }
         main.removeCallbacks(scan);
         scanScheduled = false;
         if (coordinator != null) coordinator.destroy();
