@@ -63,10 +63,12 @@ public final class MeshActivity extends Activity {
         inbound.addView(useAxon);
         inbound.addView(RootsUi.action(this,"Bind / edit .axon",this::editAxon));
         inbound.addView(RootsUi.action(this,"View current flow allocation",this::showAxon));
+        inbound.addView(RootsUi.action(this,"Arm runtime Axon (30 minutes)",this::armRuntime));
+        inbound.addView(RootsUi.action(this,"Revoke runtime access",()->{AxonRuntime.revoke();axonStatus.setText(AxonRuntime.status());}));
         inbound.addView(RootsUi.action(this,"Remove .axon binding",()->{
             new AlertDialog.Builder(this).setTitle("Remove saved Axon?")
                 .setMessage("Removes the local subscription, not retained knowledge.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->{AxonSubscription.clear(this);useAxon.setChecked(false);axonStatus.setText("No saved Axon");}).show();
+                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->{AxonRuntime.revoke();AxonSubscription.clear(this);useAxon.setChecked(false);axonStatus.setText("No saved Axon");}).show();
         }));
         axonStatus=RootsUi.text(this,"Bind one or more peer identities and select topics.",13,RootsUi.MUTED,false);
         inbound.addView(axonStatus);
@@ -146,9 +148,20 @@ public final class MeshActivity extends Activity {
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
             try{
                 AxonSubscription next=AxonSubscription.create(peers,IntelligenceModel.values()[model.getSelectedItemPosition()],ElementFlow.OPERATIONS[op.getSelectedItemPosition()],lines.getText().toString());
-                next.save(this);useAxon.setChecked(true);dialog.dismiss();showAxon();
+                AxonRuntime.revoke();next.save(this);useAxon.setChecked(true);dialog.dismiss();showAxon();
             }catch(Exception e){lines.setError(e.getMessage());}
         }));dialog.show();
+    }
+    private void armRuntime(){
+        if(busy)return;
+        try{
+            AxonSubscription policy=AxonSubscription.load(this);
+            List<MeshPeer.Invite> peers=parseInvitations();
+            if(policy==null||!policy.accepts(peers))throw new IllegalArgumentException("Bind these peers to an Axon first.");
+            new AlertDialog.Builder(this).setTitle("Allow runtime Axon access?")
+                .setMessage("For 30 minutes, explicit intelligence requests may ask these bound peers for published knowledge using only named subscription topics you approve. Your prompt stays here. No background requests, no automatic retention. Invitations remain in memory only.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Arm",(d,w)->{AxonRuntime.arm(policy,peers);axonStatus.setText(AxonRuntime.status());}).show();
+        }catch(Exception e){axonStatus.setText(e.getMessage());}
     }
     private void showAxon(){
         if(!NativeTree.available())return;

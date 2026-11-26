@@ -402,6 +402,21 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 });}
             });
         });
+        Button runtimeNeed=button("Resolve request through Axon");
+        runtimeNeed.setOnClickListener(v->{
+            IntelligenceModel model=IntelligenceModel.values()[intelligence.getSelectedItemPosition()];
+            String request=intelligenceInput.getText().toString();
+            if(request.trim().isEmpty()||request.length()>1500||request.indexOf('<')>=0){intelligenceStatus.setText("Enter plain text (up to 1500 characters).");return;}
+            AxonRuntime.choose(this,request,plan->{
+                runtimeNeed.setEnabled(false);intelligenceTest.setEnabled(false);intelligenceStatus.setText("Preparing local model and Axon references…");
+                LocalIntelligenceProvider.generateWithAxon(this,model,request,plan,new LocalIntelligenceProvider.Result(){
+                    @Override public void partial(String prefix){runOnUiThread(()->{if(!isDestroyed())StreamText.reveal(intelligenceStatus,prefix);});}
+                    @Override public void completed(String message,String error){runOnUiThread(()->{
+                        if(isDestroyed())return;runtimeNeed.setEnabled(true);intelligenceTest.setEnabled(true);intelligenceStatus.setText(error==null?message:error);
+                    });}
+                });
+            },error->intelligenceStatus.setText(error),()->{});
+        });content.addView(runtimeNeed);
         Button intelligenceRelease=button("Release intelligence memory");
         intelligenceRelease.setOnClickListener(v->LocalIntelligenceProvider.release((message,error)->runOnUiThread(()->{
             if(!isDestroyed())intelligenceStatus.setText(error==null?message:error);

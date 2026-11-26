@@ -199,6 +199,39 @@ final class LocalIntelligenceProvider {
             finally{scheduleIdle();}
         },()->result.completed(null,"Local inference queue is busy."));
     }
+    /** Explicit, transient Axon retrieval, concurrent with model preparation.
+     * Retrieval is never placed on the serial inference queue. */
+    static void generateWithAxon(Context context,IntelligenceModel model,String request,AxonRuntime.Plan plan,Result result){
+        Context app=context.getApplicationContext();
+        if(request==null||request.trim().isEmpty()||request.length()>1500||request.indexOf('<')>=0){
+            result.completed(null,"Enter plain text (up to 1500 characters for runtime context).");return;
+        }
+        long deadline=SystemClock.elapsedRealtime()+RuntimeNeed.BUDGET_MS;
+        String language=new OverlayPreferences(app).targetLanguage();
+        java.util.concurrent.Future<AxonRuntime.Result> need=AxonRuntime.start(app,plan,request,language,deadline);
+        submit(()->{
+            try{
+                ensure(app,model,result::partial);
+                AxonRuntime.Result references=new AxonRuntime.Result("","Axon deadline · local fallback");
+                try{
+                    int remaining=RuntimeNeed.remaining(deadline,SystemClock.elapsedRealtime());
+                    if(need.isDone())references=need.get();
+                    else if(remaining>0)references=need.get(remaining,TimeUnit.MILLISECONDS);
+                }catch(java.util.concurrent.ExecutionException|java.util.concurrent.TimeoutException|java.util.concurrent.CancellationException ignored){}
+                finally{if(!need.isDone())need.cancel(true);}
+                String augmented=RuntimeNeed.augment(request,references.context());
+                String answer;
+                try{answer=infer(app,model,"Intelligence sample",augmented,new long[8],result::partial);}
+                catch(IllegalStateException tooLong){
+                    if(references.context().isEmpty()||tooLong.getMessage()==null||!tooLong.getMessage().contains("Invalid prompt token count"))throw tooLong;
+                    references=new AxonRuntime.Result("","Context exceeded model budget · local fallback");
+                    answer=infer(app,model,"Intelligence sample",request,new long[8],result::partial);
+                }
+                result.completed(answer+"\n\n"+references.status(),null);
+            }catch(Exception|LinkageError e){result.completed(null,e.getClass().getSimpleName()+": "+e.getMessage());}
+            finally{need.cancel(true);scheduleIdle();}
+        },()->{need.cancel(true);result.completed(null,"Local inference queue is busy.");});
+    }
     static void testMovement(Context context,IntelligenceModel model,PoeticMovement.Input input,LocalFunctionGemmaProvider.MovementResult result){
         Context app=context.getApplicationContext();long submitted=SystemClock.elapsedRealtime();
         submit(()->{

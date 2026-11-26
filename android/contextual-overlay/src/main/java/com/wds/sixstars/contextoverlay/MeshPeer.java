@@ -236,7 +236,7 @@ final class MeshPeer {
             JSONObject request=read(client);
             if(active!=server||request.optInt("version")!=1||!MessageDigest.isEqual(server.token.getBytes(StandardCharsets.US_ASCII),request.optString("token").getBytes(StandardCharsets.US_ASCII)))return;
             String op=request.optString("op");
-            if(!op.equals("inventory")&&!op.equals("want"))return;
+            if(!op.equals("inventory")&&!op.equals("want")&&!op.equals("need"))return;
             Map<String,MeshItem> catalog=catalog();
             JSONObject response=new JSONObject().put("version",1);
             if(op.equals("inventory")){
@@ -249,6 +249,18 @@ final class MeshPeer {
                         .put("topic",item.topic()).put("demand",Math.min(1000,requested.getOrDefault(item.id(),0))));
                 }
                 response.put("items",entries).put("next",next);
+            }else if(op.equals("need")){
+                // One bounded request/response, no arbitrary search query, file access or computation.
+                String id=request.optString("request_id"),topic=request.optString("topic"),language=request.optString("language");
+                int limit=request.optInt("limit",0);
+                if(!id.matches("[0-9a-f-]{36}")||!RuntimeNeed.validTopic(topic)||!language.matches("[a-z]{2,3}")||limit<1||limit>3)return;
+                List<MeshItem> candidates=new ArrayList<>();
+                for(MeshItem item:catalog.values())if(RuntimeNeed.matches(item.topic(),topic))candidates.add(item);
+                candidates.sort(Comparator.comparingInt((MeshItem item)->item.language().equals(language)?0:1)
+                    .thenComparing(Comparator.comparingInt((MeshItem item)->requested.getOrDefault(item.id(),0)).reversed()).thenComparing(MeshItem::id));
+                JSONArray delivered=new JSONArray();
+                for(int i=0;i<Math.min(limit,candidates.size());i++)delivered.put(candidates.get(i).json());
+                response.put("op","deliver").put("request_id",id).put("items",delivered);
             }else{
                 String id=request.optString("id");MeshItem item=catalog.get(id);
                 if(item==null){response.put("error","unavailable");}
@@ -263,20 +275,48 @@ final class MeshPeer {
         finally{server.clients.remove(socket);}
     }
     private JSONObject exchange(Network network,Invite invite,JSONObject request)throws Exception{
+        return exchange(network,invite,request,0);
+    }
+    private static final java.util.concurrent.ScheduledThreadPoolExecutor DEADLINES=new java.util.concurrent.ScheduledThreadPoolExecutor(1,r->{Thread t=new Thread(r,"RootsNeedDeadline");t.setDaemon(true);return t;});
+    static {DEADLINES.setRemoveOnCancelPolicy(true);}
+    private JSONObject exchange(Network network,Invite invite,JSONObject request,long deadline)throws Exception{
         InetAddress destination=InetAddress.getByName(invite.host());
         if(!network.equals(wifi())||!sameSubnet(network,destination))throw new IOException("Peer is not on the current Wi-Fi subnet.");
         DesktopTlsPin pin=new DesktopTlsPin(invite.pin());
         SSLContext tls=SSLContext.getInstance("TLS");tls.init(null,new javax.net.ssl.TrustManager[]{pin},random);
         try(Socket plain=network.getSocketFactory().createSocket()){
-            plain.connect(new InetSocketAddress(destination,PORT),3500);plain.setSoTimeout(8000);
-            try(SSLSocket socket=(SSLSocket)tls.getSocketFactory().createSocket(plain,invite.host(),PORT,true)){
-                socket.setEnabledProtocols(protocols(socket.getSupportedProtocols()));socket.setSoTimeout(8000);socket.startHandshake();
-                request.put("version",1).put("token",invite.token());write(socket,request);
-                JSONObject response=read(socket);
-                if(response.optInt("version")!=1)throw new IOException("Unsupported mesh protocol.");
-                return response;
-            }
+            java.util.concurrent.ScheduledFuture<?> expiry=null;
+            try{
+                int remaining=deadline==0?8000:RuntimeNeed.remaining(deadline,android.os.SystemClock.elapsedRealtime());
+                if(remaining<=0)throw new java.net.SocketTimeoutException("Axon deadline");
+                if(deadline!=0)expiry=DEADLINES.schedule(()->{try{plain.close();}catch(IOException ignored){}},remaining,TimeUnit.MILLISECONDS);
+                plain.connect(new InetSocketAddress(destination,PORT),Math.min(3500,remaining));plain.setSoTimeout(remaining);
+                try(SSLSocket socket=(SSLSocket)tls.getSocketFactory().createSocket(plain,invite.host(),PORT,true)){
+                    socket.setEnabledProtocols(protocols(socket.getSupportedProtocols()));socket.setSoTimeout(remaining);socket.startHandshake();
+                    request.put("version",1).put("token",invite.token());write(socket,request);
+                    JSONObject response=read(socket);
+                    if(response.optInt("version")!=1)throw new IOException("Unsupported mesh protocol.");
+                    if(deadline!=0&&RuntimeNeed.remaining(deadline,android.os.SystemClock.elapsedRealtime())<=0)throw new java.net.SocketTimeoutException("Axon deadline");
+                    return response;
+                }
+            }finally{if(expiry!=null)expiry.cancel(false);}
         }
+    }
+    List<MeshItem> need(Invite invite,String topic,String language,int limit,long deadline)throws Exception{
+        if(!RuntimeNeed.validTopic(topic)||limit<1||limit>3)throw new IllegalArgumentException("Invalid need");
+        Network network=wifi();if(network==null)throw new IOException("No Wi-Fi");
+        String id=java.util.UUID.randomUUID().toString();
+        JSONObject response=exchange(network,invite,new JSONObject().put("op","need").put("request_id",id)
+            .put("topic",topic).put("language",language).put("limit",limit),deadline);
+        if(!"deliver".equals(response.optString("op"))||!id.equals(response.optString("request_id")))throw new IOException("Unexpected need response");
+        JSONArray rows=response.getJSONArray("items");if(rows.length()>limit)throw new IOException("Too many need items");
+        List<MeshItem> items=new ArrayList<>();Set<String> seen=new HashSet<>();
+        for(int i=0;i<rows.length();i++){
+            MeshItem item=MeshItem.parse(rows.getJSONObject(i));
+            if(!RuntimeNeed.matches(item.topic(),topic))throw new IOException("Unexpected topic");
+            if(seen.add(item.id()))items.add(item);
+        }
+        return items;
     }
     private static final class Offer {
         final String id,language,topic;
