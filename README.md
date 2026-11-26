@@ -45,6 +45,20 @@ Open android/ in Android Studio. Use the Gradle version specified in android/gra
 
 The local model and inference context remain resident; each request clears the context's memory before processing independent text. Android debug builds optimize native C/C++ inference code while retaining debug symbols/assertions. Lifecycle diagnostics include queue delay, context reuse/setup, tokenization, prompt prefill, generation, token counts and thread count. Device latency and memory usage must be measured; no particular speedup is guaranteed. To test, run the same short translation three times, then alternate two different samples to confirm state isolation. No prompt or output text is written to the lifecycle log.
 
+### Android acceleration
+
+Standard ARM64 builds enable llama.cpp's runtime-dispatched Arm KleidiAI kernels (including applicable Q4_0 quantized matrix kernels). No device-specific ISA is imposed on all compiled code. The initial automatic CPU thread setting uses up to six available processors; select 2, 4, 6, or 8 in Local inference acceleration to compare warm results. The app shows end-to-end sample latency and records prefill, generation, requested/actual CPU thread count, selected device, build capabilities and available CPU instruction flags in the local PLaMo lifecycle JSONL. A build flag or a supported instruction does not prove that every operation uses an accelerated kernel.
+
+```cmd
+build-android.cmd :app:installDebug
+```
+
+If the optional upstream KleidiAI dependency cannot build, `-ProotsEnableKleidiAI=false` restores the ordinary CPU build.
+
+**Experimental Vulkan:** build with `-ProotsEnableVulkan=true` using a host Vulkan SDK containing recent headers, glslc and SPIRV-Headers CMake configuration; Android NDK Vulkan loader is linked instead of the desktop loader. On Windows, run from a Visual Studio developer command prompt with a host compiler available. If needed set `-ProotsVulkanSdk=<SDK path>`, `-ProotsSpirvHeadersDir=<directory containing SPIRV-HeadersConfig.cmake>`, and `-ProotsVulkanHostToolchain=<host toolchain file>`. Then explicitly enable Vulkan GPU in Roots' local inference settings and test the same sample two or three times. The native runtime requests all model layers on a registered GPU; CPU may execute unsupported operations. No unsupported-device fallback to desktop or cloud occurs. Turn the Vulkan toggle off if GPU inference fails, produces invalid output, or is slower. Vulkan build and PowerVR driver behavior must be validated on-device before shipping.
+
+Tensor G5's TPU is a separate backend path: Google Tensor SDK/LiteRT-LM requires a compatible converted/compiled model and tokenizer. The existing GGUF is not a TPU executable. Do not claim TPU support or measured GPU speedup from this implementation.
+
 Android uses the existing eligibility heuristics and a CPU llama.cpp provider; desktop/Chrome uses the existing FastText model. GPU/NPU acceleration on Android and a native FastText mobile provider are follow-up work. The existing Android automatic overlay covers original text; Chrome continues to show translations underneath.
 
 ## Forge integration
