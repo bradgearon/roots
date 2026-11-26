@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
 import android.widget.AbsListView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -12,6 +11,7 @@ import android.widget.ListView;
 import android.widget.TextView;
 import com.wds.sixstars.contextoverlay.OverlayPreferences;
 import com.wds.sixstars.contextoverlay.RootsUi;
+import com.wds.sixstars.contextoverlay.KnowledgeRecordAdapter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -23,8 +23,10 @@ public final class TreeActivity extends Activity {
     private TreeRuntime runtime;
     private TextView status,branchLabel;
     private EditText search;
-    private ArrayAdapter<String> adapter;
-    private final ArrayList<String> rows=new ArrayList<>();
+    private KnowledgeRecordAdapter adapter;
+    private final ArrayList<NativeTree.Master> rows=new ArrayList<>();
+    private TextView summary;
+    private boolean rawMode;
     private long generation, before, branch;
     private String term="";
     private boolean loading,ended,closed;
@@ -54,21 +56,38 @@ public final class TreeActivity extends Activity {
             setContentView(shell);return;
         }
         runtime=TreeRuntime.get(this);
-        status=new TextView(this);layout.addView(status);
-        Button refresh=button("Refresh status",()->refreshStatus());layout.addView(refresh);
-        layout.addView(button("Enable X text capture",this::consent));
-        layout.addView(button("Pause capture",()->{runtime.setEnabled(false);refreshStatus();}));
-        layout.addView(button("Compile GGUF",()->{runtime.requestSnapshot();refreshStatus();}));
+        summary=RootsUi.text(this,"Local knowledge",13,RootsUi.ACCENT,true);layout.addView(summary);
+        status=new TextView(this);
+        // Keep diagnostic details out of the scrollable record area.
+        LinearLayout tools=new LinearLayout(this);
+        tools.addView(button("Diagnostics",()->{
+            refreshStatus();
+            TextView details=RootsUi.text(this,status.getText().toString(),13,RootsUi.TEXT,false);
+            int p=RootsUi.dp(this,16);details.setPadding(p,p,p,p);
+            android.widget.ScrollView scroll=new android.widget.ScrollView(this);scroll.addView(details);
+            new AlertDialog.Builder(this).setTitle("Tree diagnostics").setView(scroll)
+                .setNeutralButton("Compile GGUF",(dialog,w)->{runtime.requestSnapshot();refreshStatus();})
+                .setPositiveButton("Close",null).show();
+        }),new LinearLayout.LayoutParams(0,-2,1));
+        tools.addView(button("Capture",()->{
+            if(runtime.enabled())runtime.setEnabled(false);else consent();
+            refreshStatus();
+        }),new LinearLayout.LayoutParams(0,-2,1));
+        layout.addView(tools);
         search=new EditText(this);search.setSingleLine(true);search.setHint("Search retained text");layout.addView(search);
         layout.addView(button("Search / refresh feed",this::reset));
-        branchLabel=new TextView(this);branchLabel.setText("Branch: all fragments");layout.addView(branchLabel);
+        branchLabel=new TextView(this);branchLabel.setText("Branch: all records");layout.addView(branchLabel);
+        Button mode=button("View: grouped records",()->{rawMode=!rawMode;reset();});
+        mode.setOnClickListener(v->{rawMode=!rawMode;mode.setText(rawMode?"View: all raw fragments":"View: grouped records");reset();});
+        layout.addView(mode);
         LinearLayout controls=new LinearLayout(this);
         controls.addView(button("Branches",this::chooseBranch),new LinearLayout.LayoutParams(0,-2,1));
         controls.addView(button("New agent",this::createAgent),new LinearLayout.LayoutParams(0,-2,1));
         controls.addView(button("Remove",this::removeAgent),new LinearLayout.LayoutParams(0,-2,1));
         layout.addView(controls);
         ListView list=new ListView(this);
-        adapter=new ArrayAdapter<>(this,android.R.layout.simple_list_item_1,rows);
+        adapter=new KnowledgeRecordAdapter(this,rows);
+        list.setDivider(null);list.setSelector(android.R.color.transparent);
         list.setAdapter(adapter);layout.addView(list,new LinearLayout.LayoutParams(-1,0,1));
         list.setOnScrollListener(new AbsListView.OnScrollListener(){
             @Override public void onScrollStateChanged(AbsListView v,int state){}
@@ -83,8 +102,9 @@ public final class TreeActivity extends Activity {
     private void refreshStatus(){
         if(runtime==null||closed)return;
         status.setText(runtime.status());
+        summary.setText("Capture "+(runtime.enabled()?"on":"off")+" · "+rows.size()+" items loaded");
         reader.execute(()->{
-            try{long n=runtime.count();runOnUiThread(()->{if(!closed)status.setText(runtime.status()+"\nTotal stored fragments: "+n);});}
+            try{long n=runtime.count();runOnUiThread(()->{if(!closed){status.setText(runtime.status()+"\nTotal stored fragments: "+n);summary.setText(n+" stored fragments · capture "+(runtime.enabled()?"on":"off")+" · "+rows.size()+" loaded");}});}
             catch(Exception e){runOnUiThread(()->{if(!closed)status.setText(runtime.status()+"\nTree unavailable: "+e.getMessage());});}
         });
     }
@@ -103,25 +123,31 @@ public final class TreeActivity extends Activity {
     }
     private void load(){
         if(closed||loading||ended||adapter==null)return;
-        loading=true;long g=generation,b=before,a=branch;String q=term;
+        loading=true;long g=generation,b=before,a=branch;String q=term;boolean raw=rawMode;
         reader.execute(()->{
             try{
-                List<NativeTree.Fragment> page=runtime.query(q,a,b,30);
+                List<NativeTree.Master> page;
+                if(raw){
+                    page=new ArrayList<>();
+                    for(NativeTree.Fragment f:runtime.query(q,a,b,30))
+                        page.add(new NativeTree.Master(f.sequence(),"",java.util.Collections.singletonList(f)));
+                }else page=runtime.records(q,a,b,30);
                 runOnUiThread(()->{
                     if(closed||g!=generation)return;
-                    for(NativeTree.Fragment f:page)rows.add(f.body()+"\n"+f.source()+" · "+(f.language().isEmpty()?"language unknown":f.language())+" · observed fragment #"+f.sequence());
+                    rows.addAll(page);
                     if(!page.isEmpty())before=page.get(page.size()-1).sequence();
                     ended=page.size()<30;loading=false;adapter.notifyDataSetChanged();
-                    if(rows.isEmpty())status.setText(runtime.status()+"\nNo matching fragments.");
+                    if(rows.isEmpty())summary.setText(raw?"No matching fragments.":"No grouped records yet. Browse X or switch to all raw fragments.");
+                    else summary.setText(rows.size()+(raw?" fragments":" records")+" loaded · capture "+(runtime.enabled()?"on":"off"));
                 });
-            }catch(Exception e){runOnUiThread(()->{if(!closed&&g==generation){loading=false;ended=true;status.setText("Query failed: "+e.getMessage());}});}
+            }catch(Exception e){runOnUiThread(()->{if(!closed&&g==generation){loading=false;ended=true;status.setText("Query failed: "+e.getMessage());summary.setText("Query failed: "+e.getMessage());}});}
         });
     }
     private void chooseBranch(){
         reader.execute(()->{
             try{List<NativeTree.Agent> list=runtime.agents();runOnUiThread(()->{
                 if(closed)return;
-                String[] names=new String[list.size()+1];names[0]="All fragments";
+                String[] names=new String[list.size()+1];names[0]="All knowledge";
                 for(int i=0;i<list.size();i++)names[i+1]=list.get(i).name()+" ("+list.get(i).term()+")";
                 new AlertDialog.Builder(this).setTitle("Choose branch").setItems(names,(d,w)->{
                     branch=w==0?0:list.get(w-1).id();branchLabel.setText("Branch: "+names[w]);reset();
@@ -140,13 +166,13 @@ public final class TreeActivity extends Activity {
     private void removeAgent(){
         if(branch==0)return;long id=branch;
         new AlertDialog.Builder(this).setMessage("Remove this agent and its branch membership? Observations remain.")
-            .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->runtime.removeAgent(id,error->runOnUiThread(()->{if(!closed){if(error==null){branch=0;branchLabel.setText("Branch: all fragments");reset();refreshStatus();}else status.setText(error);}}))).show();
+            .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->runtime.removeAgent(id,error->runOnUiThread(()->{if(!closed){if(error==null){branch=0;branchLabel.setText("Branch: all records");reset();refreshStatus();}else status.setText(error);}}))).show();
     }
     private void clear(){
         new AlertDialog.Builder(this).setTitle("Clear local Tree?").setMessage("Stops capture and logically deletes all observations, agents, and managed GGUF snapshots. This is not forensic erasure.")
             .setNegativeButton("Cancel",null).setPositiveButton("Clear",(d,w)->{
                 generation++;ended=true;loading=false;rows.clear();adapter.notifyDataSetChanged();
-                runtime.clear(error->runOnUiThread(()->{if(!closed){branch=0;branchLabel.setText("Branch: all fragments");reset();refreshStatus();if(error!=null)status.setText(error);}}));
+                runtime.clear(error->runOnUiThread(()->{if(!closed){branch=0;branchLabel.setText("Branch: all records");reset();refreshStatus();if(error!=null)status.setText(error);}}));
             }).show();
     }
     @Override protected void onResume(){super.onResume();if(runtime!=null)refreshStatus();}

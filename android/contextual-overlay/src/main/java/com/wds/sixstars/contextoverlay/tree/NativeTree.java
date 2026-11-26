@@ -35,6 +35,33 @@ public final class NativeTree implements AutoCloseable {
     public record Observation(String source,String externalId,String body,String language,long at){}
     public record Fragment(long sequence,String source,String externalId,String body,String language,long at){}
     public record Agent(long id,String name,String term){}
+    public record Master(long sequence,String key,List<Fragment> members){
+        public String first(String role){
+            for(Fragment f:members)if(f.source().endsWith("."+role))return f.body();
+            return "";
+        }
+        public Fragment body(){
+            for(Fragment f:members)if(f.source().endsWith(".body"))return f;
+            return members.get(0);
+        }
+    }
+    public List<Master> records(String query,long agent,long before,int limit){
+        return use(h->{
+            byte[][] a=nRecords(h,utf8(query),agent,before,limit);
+            List<Master> out=new ArrayList<>();
+            long seq=-1;String key="";List<Fragment> members=new ArrayList<>();
+            for(int i=0;i<a.length;i+=7){
+                long next=Long.parseLong(text(a[i]));
+                if(next!=seq){
+                    if(!members.isEmpty())out.add(new Master(seq,key,java.util.Collections.unmodifiableList(members)));
+                    members=new ArrayList<>();seq=next;key=text(a[i+3]);
+                }
+                members.add(new Fragment(Long.parseLong(text(a[i+1])),text(a[i+2]),text(a[i+3]),text(a[i+4]),text(a[i+5]),Long.parseLong(text(a[i+6]))));
+            }
+            if(!members.isEmpty())out.add(new Master(seq,key,java.util.Collections.unmodifiableList(members)));
+            return out;
+        });
+    }
     private final ReentrantReadWriteLock life=new ReentrantReadWriteLock();
     private long handle;
     public NativeTree(String path) {
@@ -112,6 +139,7 @@ public final class NativeTree implements AutoCloseable {
     private static native void nClose(long h);
     private static native long nObserve(long h,byte[][] rows,long[] times);
     private static native byte[][] nQuery(long h,byte[] term,long agent,long before,int limit);
+    private static native byte[][] nRecords(long h,byte[] term,long agent,long before,int limit);
     private static native byte[][] nAgents(long h);
     private static native long nCreateAgent(long h,byte[] name,byte[] term);
     private static native void nRemoveAgent(long h,long id);

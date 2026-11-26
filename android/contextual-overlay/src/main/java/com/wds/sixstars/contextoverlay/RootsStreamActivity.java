@@ -27,12 +27,12 @@ import java.util.concurrent.Executors;
 /** First screen: actual retained local observations, never synthetic social data. */
 public final class RootsStreamActivity extends Activity {
     private final ExecutorService reader=Executors.newSingleThreadExecutor();
-    private final ArrayList<NativeTree.Fragment> rows=new ArrayList<>();
+    private final ArrayList<NativeTree.Master> rows=new ArrayList<>();
     private TreeRuntime runtime;
     private TextView status,empty,more,capture;
     private EditText search;
     private ListView feed;
-    private FeedAdapter adapter;
+    private KnowledgeRecordAdapter adapter;
     private long generation,cursor;
     private String term="";
     private boolean loading,ended,closed;
@@ -64,9 +64,9 @@ public final class RootsStreamActivity extends Activity {
         capture=RootsUi.action(this,"Enable local capture",this::toggleCapture);tools.addView(capture);
         feed=new ListView(this);feed.setDivider(null);feed.setClipToPadding(false);
         feed.setPadding(dp(16),dp(4),dp(16),dp(8));feed.setSelector(android.R.color.transparent);
-        adapter=new FeedAdapter();
+        adapter=new KnowledgeRecordAdapter(this,rows);
         // Footer before setAdapter, to keep the explicit pagination control.
-        more=RootsUi.action(this,"Load older observations",this::load);feed.addFooterView(more,null,false);
+        more=RootsUi.action(this,"Load older records",this::load);feed.addFooterView(more,null,false);
         feed.setAdapter(adapter);
         empty=RootsUi.text(this,"No observations yet.",16,RootsUi.MUTED,false);
         empty.setPadding(dp(20),dp(16),dp(20),dp(16));empty.setGravity(Gravity.CENTER);
@@ -123,16 +123,16 @@ public final class RootsStreamActivity extends Activity {
         reader.execute(()->{
             try {
                 long count=runtime.count();
-                List<NativeTree.Fragment> page=runtime.query(q,0,b,PAGE);
+                List<NativeTree.Master> page=runtime.records(q,0,b,PAGE);
                 runOnUiThread(()->{
                     if(closed||generation!=g)return;
                     rows.addAll(page);
                     if(!page.isEmpty())cursor=page.get(page.size()-1).sequence();
                     ended=page.size()<PAGE;loading=false;adapter.notifyDataSetChanged();
                     showEmpty(rows.isEmpty());
-                    status.setText(count+" stored fragments · capture "+(runtime.enabled()?"on":"off"));
-                    empty.setText(count==0?"Your stream is empty. Enable local capture, then browse X.":"No fragments match your search.");
-                    more.setText(ended?"All matching observations loaded":"Load older observations");
+                    status.setText(rows.size()+" records loaded · "+count+" fragments · capture "+(runtime.enabled()?"on":"off"));
+                    empty.setText(count==0?"Your stream is empty. Enable local capture, then browse X.":"No grouped records match yet. Browse X to acquire new records; older unassociated text remains available in Tree of Life.");
+                    more.setText(ended?"All matching records loaded":"Load older observations");
                     more.setEnabled(!ended);
                 });
             }catch(Exception error){runOnUiThread(()->{
@@ -144,30 +144,4 @@ public final class RootsStreamActivity extends Activity {
         });
     }
 
-    private final class FeedAdapter extends BaseAdapter {
-        @Override public int getCount(){return rows.size();}
-        @Override public Object getItem(int p){return rows.get(p);}
-        @Override public long getItemId(int p){return rows.get(p).sequence();}
-        @Override public boolean hasStableIds(){return true;}
-        @Override public View getView(int position,View convert,ViewGroup parent){
-            NativeTree.Fragment f=rows.get(position);
-            LinearLayout outer=RootsUi.column(RootsStreamActivity.this);
-            LinearLayout card=RootsUi.card(RootsStreamActivity.this,outer);
-            LinearLayout top=new LinearLayout(RootsStreamActivity.this);top.setGravity(Gravity.CENTER_VERTICAL);
-            TextView source=RootsUi.text(RootsStreamActivity.this,"X  ·  Local observation",13,RootsUi.ACCENT,true);
-            top.addView(source,new LinearLayout.LayoutParams(0,-2,1));
-            String code=f.language().isEmpty()?"Unknown":f.language().toUpperCase(Locale.ROOT);
-            TextView lang=RootsUi.text(RootsStreamActivity.this,code,12,RootsUi.MUTED,true);
-            lang.setBackground(RootsUi.rounded(RootsStreamActivity.this,0xFF1C393E,8,RootsUi.STROKE));
-            lang.setPadding(dp(8),dp(4),dp(8),dp(4));top.addView(lang);
-            card.addView(top);
-            TextView when=RootsUi.text(RootsStreamActivity.this,DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(new Date(f.at())),12,RootsUi.MUTED,false);
-            when.setPadding(0,dp(5),0,dp(9));card.addView(when);
-            TextView text=RootsUi.text(RootsStreamActivity.this,f.body(),16,RootsUi.TEXT,false);
-            text.setTextIsSelectable(true);text.setLineSpacing(dp(3),1f);card.addView(text);
-            TextView footer=RootsUi.text(RootsStreamActivity.this,"Original · fragment #"+f.sequence(),12,RootsUi.MUTED,false);
-            footer.setPadding(0,dp(10),0,0);card.addView(footer);
-            return outer;
-        }
-    }
 }

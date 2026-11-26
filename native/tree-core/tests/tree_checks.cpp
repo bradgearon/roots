@@ -18,6 +18,9 @@ int collect(void *p,const roots_fragment *f){static_cast<std::vector<item>*>(p)-
 std::vector<item> query(roots_tree *t,const char *term="",int64_t agent=0,int64_t before=0,unsigned limit=100){
     std::vector<item> result;ok(roots_tree_query(t,term,agent,before,limit,collect,&result));return result;
 }
+int record_member(void *p,int64_t master,const roots_fragment *f){
+    static_cast<std::vector<std::pair<int64_t,std::string>>*>(p)->emplace_back(master,f->body);return 0;
+}
 int edge(void *p,const char *s,const char *pred,const char *o){static_cast<std::vector<std::string>*>(p)->push_back(std::string(s)+" "+pred+" "+o);return 0;}
 int agent(void *p,int64_t,const char*,const char*){++*static_cast<int*>(p);return 0;}
 struct reader {
@@ -62,6 +65,20 @@ int main(){
     try {
         auto db=(dir/"tree.db").u8string();
         ok(roots_tree_open(db.c_str(),&t));need(roots_tree_abi_version()==1,"abi");
+        {
+            roots_observation parts[]={{"record.x.body","local:x:a","body one","en",1},
+                {"record.x.author","local:x:a","name","en",1},
+                {"record.x.body","local:x:b","body two","en",2},
+                {"record.x.author","local:x:b","name","en",2}};
+            size_t n=0;ok(roots_tree_observe(t,parts,4,&n));need(n==4,"distinct master membership");
+            std::vector<std::pair<int64_t,std::string>> records;
+            ok(roots_tree_records(t,"body two",0,0,1,record_member,&records));
+            need(records.size()==2&&records[0].first==records[1].first,"whole matching master");
+            auto cursor=records[0].first;records.clear();
+            ok(roots_tree_records(t,"",0,cursor,1,record_member,&records));
+            need(records.size()==2&&records[0].first<cursor,"whole master paging");
+            ok(roots_tree_clear(t));
+        }
         const char *parts[]={"Is","Part","Of"};char key[64];
         ok(roots_tree_predicate(parts,3,key,sizeof(key)));need(std::string(key)=="is.part.of","predicate components");
         const char *bad[]={"is","a.b"};need(roots_tree_predicate(bad,2,key,sizeof(key))==ROOTS_TREE_INVALID,"predicate injection");

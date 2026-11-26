@@ -168,7 +168,7 @@ public final class TreeRuntime {
             accepted.addAndGet(observations.size());
             for(NativeTree.Observation o:observations){
                 if(!valid(o)){invalidText.incrementAndGet();dropped.incrementAndGet();continue;}
-                String key=o.body();
+                String key=observationKey(o);
                 if(!pending.add(key)){duplicate.incrementAndGet();continue;}
                 if(!queue.offer(new Queued(o,epoch))){pending.remove(key);dropped.incrementAndGet();queueDrops.incrementAndGet();}
                 else queued.incrementAndGet();
@@ -176,13 +176,20 @@ public final class TreeRuntime {
         }
         scheduleStats();scheduleDrain();
     }
+    private static String observationKey(NativeTree.Observation o){
+        return o.source()+"\u001f"+o.externalId()+"\u001f"+o.body();
+    }
+    public List<NativeTree.Master> records(String term,long agent,long before,int limit){
+        if(clearing)throw new IllegalStateException("Tree is clearing");
+        return tree().records(term,agent,before,limit);
+    }
     private void scheduleDrain(){if(!queue.isEmpty()&&draining.compareAndSet(false,true))writer.execute(this::drain);}
     private void drain(){
         ArrayList<Queued> batch=new ArrayList<>(BATCH_SIZE);
         try {
             synchronized(intakeLock){
                 queue.drainTo(batch,BATCH_SIZE);
-                for(Queued q:batch)pending.remove(q.observation.body());
+                for(Queued q:batch)pending.remove(observationKey(q.observation));
             }
             long epoch=captureEpoch.get();
             List<NativeTree.Observation> observations=new ArrayList<>();

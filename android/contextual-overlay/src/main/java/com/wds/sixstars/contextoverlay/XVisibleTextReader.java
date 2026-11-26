@@ -62,6 +62,7 @@ public final class XVisibleTextReader {
     public List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
             boolean retainKnowledge) {
         Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> observations=new LinkedHashMap<>();
+        List<XKnowledgeRecords.Sample> knowledgeSamples=new ArrayList<>();
         long observedAt=System.currentTimeMillis();
         lastKnowledge=Collections.emptyList();
         lastKnowledgeBounded=false;
@@ -114,6 +115,8 @@ public final class XVisibleTextReader {
                     if(XPostSpatialAnalyzer.onScreen(observedBounds,width,height)){
                         retain(observations,node.getText(),observedAt);
                         retain(observations,node.getContentDescription(),observedAt);
+                        XKnowledgeRecords.sample(knowledgeSamples,node.getText(),node.getViewIdResourceName(),observedBounds,false);
+                        XKnowledgeRecords.sample(knowledgeSamples,node.getContentDescription(),node.getViewIdResourceName(),observedBounds,true);
                     }
                 }
 
@@ -207,7 +210,8 @@ public final class XVisibleTextReader {
         }
 
         lastKnowledgeBounded|=!queue.isEmpty();
-        lastKnowledge=Collections.unmodifiableList(new ArrayList<>(observations.values()));
+        // The raw lane remains intact. Structural associations are added
+        // only after resolving the same measured post/header candidates.
         // Associate each readable body with its nearest profile image. The
         // spatial analyzer may then deduplicate header/body descriptions of
         // the SAME tweet even when X omits recognizable post-container IDs.
@@ -229,6 +233,12 @@ public final class XVisibleTextReader {
         // Keep recognized author roles out of the body compositor even
         // when the generic body scorer selected their text.
         selected.removeIf(body -> !body.knownPostTextId && overlapsAuthor(body,authorNames));
+        if(retainKnowledge){
+            List<com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> all=new ArrayList<>(
+                    XKnowledgeRecords.assemble(selected,knowledgeSamples,observedAt));
+            all.addAll(observations.values());
+            lastKnowledge=Collections.unmodifiableList(all);
+        }
         Map<String, TextCandidate> work = new LinkedHashMap<>();
         for (TextCandidate name : authorNames) work.put(name.fingerprint, name);
         for (TextCandidate body : selected) work.put(body.fingerprint, body);

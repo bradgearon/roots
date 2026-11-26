@@ -72,6 +72,17 @@ void add_edges(std::vector<edge> &edges,const row &r){
     auto key=fragment_key(r.id);
     edges.push_back({key,"is.a","type:observed-text-fragment"});
     edges.push_back({key,"is.from","source:"+r.source});
+    // Explicit master membership is preserved in the compiled graph. Legacy
+    // unassociated fragments retain their original provenance.
+    if(r.source.rfind("record.",0)==0 && r.external.rfind("local:",0)==0){
+        auto end=r.source.find('.',7);
+        if(end!=std::string::npos){
+            auto master="master:"+r.external;
+            edges.push_back({key,"is.part.of",master});
+            edges.push_back({key,"has.role","role:"+r.source.substr(end+1)});
+            edges.push_back({master,"is.in","network:"+r.source.substr(7,end-7)});
+        }
+    }
 }
 void membership_edges(sqlite3 *db,std::vector<edge> &edges,int64_t id){
     statement s(db,"SELECT agent_id,fragment_seq FROM branch_members WHERE (?=0 OR fragment_seq=?) ORDER BY fragment_seq,agent_id");
@@ -146,6 +157,7 @@ roots_tree_result roots_tree_open(const char *path,roots_tree **out){
                    "CREATE TABLE IF NOT EXISTS agents(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,term TEXT NOT NULL);"
                    "CREATE TABLE IF NOT EXISTS branch_members(agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,fragment_seq INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,PRIMARY KEY(agent_id,fragment_seq));"
                    "CREATE INDEX IF NOT EXISTS branch_fragment ON branch_members(fragment_seq);"
+                   "CREATE INDEX IF NOT EXISTS fragment_master ON fragments(external_id,seq) WHERE source GLOB 'record.*';"
                    "CREATE TABLE IF NOT EXISTS work_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,fragment INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,operation TEXT NOT NULL,profile TEXT NOT NULL,priority INTEGER NOT NULL,deadline INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,state INTEGER NOT NULL DEFAULT 0,worker TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,token INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,output TEXT NOT NULL DEFAULT '',UNIQUE(fragment,operation,profile));"
                    "CREATE INDEX IF NOT EXISTS work_dispatch ON work_jobs(operation,state,priority DESC,deadline,id);"
                    "PRAGMA user_version=1;");
@@ -185,6 +197,33 @@ roots_tree_result roots_tree_query(roots_tree *t,const char *term,int64_t agent_
             while(s.next())rows.push_back(read_row(s));
         }
         for(const auto &r:rows){roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};if(cb(user,&f))break;}
+    });
+}
+roots_tree_result roots_tree_records(roots_tree *t,const char *term,int64_t agent_id,
+        int64_t before,uint32_t limit,roots_record_member_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&agent_id>=0&&before>=0&&limit>0&&limit<=100);bounded(term,512);
+        std::vector<std::pair<int64_t,row>> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            // Match at member level, paginate at master level, then retrieve
+            // every member. Never cut a record at a page boundary.
+            statement s(t->db,
+                "WITH members AS (SELECT * FROM fragments WHERE source GLOB 'record.*' AND external_id GLOB 'local:*'), "
+                "masters AS (SELECT external_id,min(seq) AS master_seq FROM members GROUP BY external_id "
+                "HAVING (?=0 OR min(seq)<?) AND max(CASE WHEN instr(lower(body),lower(?))>0 "
+                "AND (?=0 OR EXISTS(SELECT 1 FROM branch_members b WHERE b.fragment_seq=members.seq AND b.agent_id=?)) "
+                "THEN 1 ELSE 0 END)=1 ORDER BY master_seq DESC LIMIT ?) "
+                "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms,m.master_seq "
+                "FROM masters m JOIN members f ON f.external_id=m.external_id ORDER BY m.master_seq DESC,f.seq");
+            s.number(1,before);s.number(2,before);s.text(3,term);
+            s.number(4,agent_id);s.number(5,agent_id);s.number(6,limit);
+            while(s.next())rows.emplace_back(s.integer(6),read_row(s));
+        }
+        for(const auto &entry:rows){const auto &r=entry.second;
+            roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};
+            if(cb(user,entry.first,&f))break;
+        }
     });
 }
 roots_tree_result roots_tree_count(roots_tree *t,int64_t *out){return guard([&]{require(t&&out);std::lock_guard<std::mutex> lock(t->mutex);*out=scalar(t->db,"SELECT count(*) FROM fragments");});}

@@ -57,6 +57,13 @@ ROOTS_TREE_API roots_tree_result roots_tree_observe(roots_tree *tree,
 ROOTS_TREE_API roots_tree_result roots_tree_query(roots_tree *tree,
     const char *term, int64_t agent_id, int64_t before, uint32_t limit,
     roots_fragment_callback callback, void *user);
+/* Structured observations use source record.<network>.<role> and an
+ * explicitly local master key in external_id (not a verified remote ID).
+ * Page by first fragment sequence; return every member of matching masters.
+ * A member match selects the whole master, including branch searches. */
+typedef int (*roots_record_member_callback)(void *user,int64_t master_sequence,const roots_fragment *fragment);
+ROOTS_TREE_API roots_tree_result roots_tree_records(roots_tree *tree,const char *term,
+    int64_t agent_id,int64_t before,uint32_t limit,roots_record_member_callback callback,void *user);
 ROOTS_TREE_API roots_tree_result roots_tree_count(roots_tree *tree, int64_t *count);
 ROOTS_TREE_API roots_tree_result roots_tree_agent_create(roots_tree *tree,
     const char *name, const char *term, int64_t *id);

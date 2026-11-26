@@ -62,6 +62,11 @@ int collect(void *user,const roots_fragment *r) {
         return 0;
     }catch(...){f.failed=true;return 1;}
 }
+int record_member(void *user,int64_t master,const roots_fragment *r){
+    auto &f=*static_cast<Fields*>(user);
+    try {f.data.insert(f.data.end(),{std::to_string(master),std::to_string(r->sequence),r->source,r->external_id,r->body,r->language,std::to_string(r->observed_ms)});return 0;}
+    catch(...){f.failed=true;return 1;}
+}
 int agents(void *user,int64_t id,const char *name,const char *term) {
     auto &f=*static_cast<Fields*>(user);
     try{f.data.insert(f.data.end(),{std::to_string(id),name,term});return 0;}
@@ -106,6 +111,9 @@ JNIEXPORT jlong JNICALL JNI_TREE(nObserve)(JNIEnv *e,jclass,jlong h,jobjectArray
 }
 JNIEXPORT jobjectArray JNICALL JNI_TREE(nQuery)(JNIEnv *e,jclass,jlong h,jbyteArray term,jlong agent,jlong before,jint limit) {
     return guard<jobjectArray>(e,nullptr,[&]{auto q=bytes(e,term);Fields f;checked(roots_tree_query(ptr(h),q.c_str(),agent,before,static_cast<uint32_t>(limit),collect,&f));if(f.failed)throw std::runtime_error("query collection failed");return output(e,f.data);});
+}
+JNIEXPORT jobjectArray JNICALL JNI_TREE(nRecords)(JNIEnv *e,jclass,jlong h,jbyteArray term,jlong agent,jlong before,jint limit) {
+    return guard<jobjectArray>(e,nullptr,[&]{auto q=bytes(e,term);Fields f;checked(roots_tree_records(ptr(h),q.c_str(),agent,before,static_cast<uint32_t>(limit),record_member,&f));if(f.failed)throw std::runtime_error("record collection failed");return output(e,f.data);});
 }
 JNIEXPORT jobjectArray JNICALL JNI_TREE(nAgents)(JNIEnv *e,jclass,jlong h) {
     return guard<jobjectArray>(e,nullptr,[&]{Fields f;checked(roots_tree_agent_list(ptr(h),agents,&f));if(f.failed)throw std::runtime_error("agent collection failed");return output(e,f.data);});
