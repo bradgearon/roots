@@ -93,13 +93,13 @@ final class AxonSubscription {
         catch(Exception e){f.failWrite(stream);throw e;}
     }
     static void clear(Context c){file(c).delete();}
-    record Allocation(List<AxonPlanner.Share> shares,int observedRequests,long waveRevision){}
+    record Allocation(List<AxonPlanner.Share> shares,int observedRequests,long waveRevision,boolean mappedFlow){}
     Allocation allocation(Context context,TreeRuntime tree,List<NativeTree.Master> records,String language){
         KnowledgeWave.Field field=tree.coordination();
         long now=SystemClock.elapsedRealtime();
         ElementFlow.Profile profile=ElementFlow.read(context,model,operation);
         Map<String,Double> element=ElementFlow.ffnShares(profile);
-        List<AxonPlanner.Lane> masses=new ArrayList<>();
+        List<AxonPlanner.Need> masses=new ArrayList<>();boolean mappedFlow=false;
         for(Lane lane:lanes){
             double knowledge=0;int matches=0;
             for(NativeTree.Master record:records){
@@ -114,14 +114,16 @@ final class AxonSubscription {
             // A prior keeps a requested topic with no local records from starvation.
             // Element mass contributes only for explicitly mapped, observed groups.
             double observed=0;for(String group:lane.elements())observed+=element.getOrDefault(group,0.0);
-            double need=1+knowledge/Math.sqrt(Math.max(1,matches))+10*observed;
-            masses.add(new AxonPlanner.Lane(lane.topic(),need));
+            double need=1+knowledge/Math.sqrt(Math.max(1,matches));
+            if(observed>0)mappedFlow=true;
+            masses.add(new AxonPlanner.Need(lane.topic(),need,observed));
         }
-        return new Allocation(AxonPlanner.shares(masses),profile.requests(),field.revision());
+        return new Allocation(AxonPlanner.allocate(masses),profile.requests(),field.revision(),mappedFlow);
     }
     String describe(Allocation allocation){
         StringBuilder out=new StringBuilder("Axon · "+pins.size()+" peer identities\n"+model.label+" · "+operation+"\n");
         out.append(allocation.observedRequests()).append(" observed model requests · wave revision ").append(allocation.waveRevision()).append('\n');
+        out.append(allocation.mappedFlow()?"50% knowledge demand + 50% mapped element flow\n":"Knowledge demand only · no mapped observations yet\n");
         for(AxonPlanner.Share share:allocation.shares())out.append(String.format(Locale.ROOT,"%.1f%%  %s\n",100*share.fraction(),share.topic()));
         return out.toString();
     }

@@ -131,7 +131,7 @@ public final class MeshActivity extends Activity {
         try{peers=parseInvitations();old=AxonSubscription.load(this);}
         catch(Exception e){axonStatus.setText(e.getMessage());return;}
         LinearLayout box=RootsUi.column(this);box.setPadding(dp(16),0,dp(16),0);box.setBackgroundColor(RootsUi.CARD);
-        box.addView(RootsUi.text(this,"One topic per line; optional FFN group addresses from the Gemma flow analyzer. Example: music | 7:12,8:2. Use * to receive other topics too. No automatic claim about an element's meaning.",13,RootsUi.MUTED,false));
+        box.addView(RootsUi.text(this,"One topic per line; optional FFN group addresses from the Gemma flow analyzer. Example: music | 7:12,8:2. Use * to receive other topics too. No automatic claim about an element's meaning. Observed mapped flow gets half the allocation; local knowledge demand gets the other half.",13,RootsUi.MUTED,false));
         android.widget.Spinner model=new android.widget.Spinner(this);RootsUi.styleSpinner(this,model,IntelligenceModel.labels());
         model.setSelection((old==null?IntelligenceModel.selected(this):old.model).ordinal());box.addView(model);
         android.widget.Spinner op=new android.widget.Spinner(this);RootsUi.styleSpinner(this,op,ElementFlow.OPERATIONS);

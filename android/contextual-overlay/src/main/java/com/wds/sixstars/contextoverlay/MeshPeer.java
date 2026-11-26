@@ -367,6 +367,7 @@ final class MeshPeer {
                     JSONObject answer=exchange(network,source,new JSONObject().put("op","want").put("id",o.id));
                     MeshItem item=MeshItem.parse(answer.getJSONObject("item"));
                     if(!item.id().equals(o.id))throw new IOException("Unexpected content ID.");
+                    if(!item.topic().equals(o.topic)||!item.language().equals(o.language))throw new IOException("Inventory does not match verified content.");
                     long added=item.store(tree,epoch);if(added>0)received++;ok=true;break;
                 }catch(Exception e){/* Try another advertised replica. */}
             }
