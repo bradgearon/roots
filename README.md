@@ -43,6 +43,8 @@ Open android/ in Android Studio. Use the Gradle version specified in android/gra
 3. On-device inference is default. Choose manual or automatic mode, target language and overlay theme.
 4. To use desktop inference instead, start launch.cmd --lan on your PC, save http://YOUR-PC:8123 and the Roots token in the app, and explicitly enable "Use desktop host instead of on-device PLaMo". Disable that toggle to return to local inference. No silent fallback or transmission in local mode.
 
+The local model and inference context remain resident; each request clears the context's memory before processing independent text. Android debug builds optimize native C/C++ inference code while retaining debug symbols/assertions. Lifecycle diagnostics include queue delay, context reuse/setup, tokenization, prompt prefill, generation, token counts and thread count. Device latency and memory usage must be measured; no particular speedup is guaranteed. To test, run the same short translation three times, then alternate two different samples to confirm state isolation. No prompt or output text is written to the lifecycle log.
+
 Android uses the existing eligibility heuristics and a CPU llama.cpp provider; desktop/Chrome uses the existing FastText model. GPU/NPU acceleration on Android and a native FastText mobile provider are follow-up work. The existing Android automatic overlay covers original text; Chrome continues to show translations underneath.
 
 ## Forge integration
