@@ -151,6 +151,18 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         Button saveKey = button("Save translation connection");
         saveKey.setOnClickListener(v -> saveTranslationConnection());
         content.addView(saveKey);
+        TextView desktopTestStatus=text("Tests only the desktop, with a fixed sample. Never falls back to phone.",13,0xFFAAC8D4);
+        Button testDesktop=button("Test desktop only");
+        content.addView(testDesktop);
+        content.addView(desktopTestStatus);
+        testDesktop.setOnClickListener(v->{
+            testDesktop.setEnabled(false);desktopTestStatus.setText("Sending sample to desktop…");
+            FastestComputeRouter.testDesktop(this,(message,error)->runOnUiThread(()->{
+                if(isDestroyed())return;
+                testDesktop.setEnabled(true);desktopTestStatus.setText(error==null?message:error);
+                refreshStatus();
+            }));
+        });
 
         Button clearKey = button("Clear translation key");
         clearKey.setOnClickListener(v -> {

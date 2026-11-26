@@ -47,7 +47,14 @@ final class FamiliarComputeNetworks {
     }
     private String key(String base,String fp){return TextFingerprint.of(base+"|"+fp);}
     synchronized boolean contains(String base,String fp){
-        return !fp.isEmpty()&&prefs.getStringSet("seen",Collections.emptySet()).contains(key(base,fp));
+        if(fp.isEmpty())return false;
+        Set<String> seen=prefs.getStringSet("seen",Collections.emptySet());
+        if(seen.contains(key(base,fp)))return true;
+        String legacy=base.replaceFirst(":8223$",":8123");
+        if(!legacy.equals(base)&&seen.contains(key(legacy,fp))){
+            remember(base,fp);return true;
+        }
+        return false;
     }
     synchronized boolean remember(String base,String fp){
         if(fp.isEmpty())return false;

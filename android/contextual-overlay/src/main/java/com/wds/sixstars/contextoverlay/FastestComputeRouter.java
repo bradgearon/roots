@@ -98,6 +98,43 @@ final class FastestComputeRouter implements TranslationProvider {
     static void forgetNetworks(Context context){
         FastestComputeRouter r=get(context);r.familiar.clear();r.updateNetworkState();
     }
+    interface DesktopTestResult {void completed(String message,String error);}
+    static void testDesktop(Context context,DesktopTestResult result){
+        FastestComputeRouter r=get(context);
+        if(!r.prefs.enabled()||!r.prefs.desktopTranslationEnabled()){
+            result.completed(null,"Enable X processing and automatic paired compute first.");return;
+        }
+        final String base=r.prefs.bridgeUrl(),key=OverlayTranslationKeyStore.read(r.app);
+        final Network network=r.wifi();
+        if(key.isEmpty()){result.completed(null,"Save the desktop key first.");return;}
+        if(network==null){result.completed(null,"No active Wi-Fi. Check Wi-Fi or VPN routing.");return;}
+        try{r.routes.execute(()->{
+            if(!r.authorized(base,key)||!network.equals(r.wifi())){result.completed(null,"Network or desktop configuration changed.");return;}
+            r.socket.disconnect(); // manual retry clears connection cooldown
+            long start=SystemClock.elapsedRealtime();
+            InferenceHistory.Attempt attempt=InferenceHistory.get(r.app).begin("Desktop","PLaMo","Desktop-only test","Explicit sample; no local fallback");
+            try{
+                JSONObject input=new JSONObject().put("text","Bonjour à tous!").put("sourceLang","fr").put("targetLang","en").put("maxTokens",64);
+                JSONObject reply=r.socket.translate(network,base,key,new JSONObject().put("kind","translate").put("request",input),()->attempt.running("Sent"));
+                String translated=reply.optString("translation","").trim();
+                if(translated.isEmpty())throw new SecureComputeSocket.Failure("Desktop returned empty translation");
+                if(!r.authorized(base,key)||!network.equals(r.wifi()))throw new SecureComputeSocket.Failure("Configuration or network changed during test");
+                long elapsed=SystemClock.elapsedRealtime()-start;
+                String fp=r.familiar.fingerprint(network);
+                boolean remembered=r.familiar.remember(base,fp);
+                r.updateNetworkState();
+                r.observe("desktop:"+base+":"+fp,15,elapsed);
+                status="Paired desktop PLaMo · encrypted";
+                r.connection="Authenticated desktop response";
+                attempt.finish(true,"Authenticated desktop sample");
+                result.completed("Desktop confirmed: "+translated+" · "+elapsed+" ms"+(remembered?" · network remembered":" · network fingerprint unavailable"),null);
+            }catch(Exception e){
+                String why=SecureComputeSocket.reason(e);
+                attempt.finish(false,why);r.connection=why;
+                result.completed(null,why);
+            }
+        });}catch(java.util.concurrent.RejectedExecutionException e){result.completed(null,"Compute routing queue busy.");}
+    }
     private boolean authorized(String base,String key){
         return prefs.enabled()&&prefs.desktopTranslationEnabled()&&base.equals(prefs.bridgeUrl())&&key.equals(OverlayTranslationKeyStore.read(app));
     }
@@ -187,8 +224,9 @@ final class FastestComputeRouter implements TranslationProvider {
             observe(route,text.length(),SystemClock.elapsedRealtime()-start);
             finish(callback,finished,translated,null);return true;
         }catch(Exception e){
-            attempt.finish(false,"Desktop connection, authentication or inference failed; local fallback");
-            connection="Desktop request failed";
+            String why=SecureComputeSocket.reason(e);
+            attempt.finish(false,why+" · local fallback");
+            connection=why;
             status="Desktop route unavailable · falling back to phone";return false;
         }
     }

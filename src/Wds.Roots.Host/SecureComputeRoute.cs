@@ -68,7 +68,19 @@ internal sealed class SecureComputeRoute
 
                 var wire = JsonSerializer.Deserialize<Envelope>(message.ToArray(), Json);
                 var (code, reply) = await ExchangeCoreAsync(wire, token);
-                if (code != 200 || reply == null) return;
+                if (code != 200 || reply == null)
+                {
+                    Console.Error.WriteLine("Paired compute rejected request: status=" + code);
+                    // Report only a coarse failure category; never emit request data,
+                    // key material or crypto internals.
+                    using var closeDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    closeDeadline.CancelAfter(TimeSpan.FromSeconds(1));
+                    var closeStatus = code == 429 ? (WebSocketCloseStatus)1013
+                        : code >= 500 ? WebSocketCloseStatus.InternalServerError
+                        : WebSocketCloseStatus.PolicyViolation;
+                    await socket.CloseOutputAsync(closeStatus, "Compute request failed", closeDeadline.Token);
+                    return;
+                }
                 verified = true;
                 byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(reply, Json);
                 await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);

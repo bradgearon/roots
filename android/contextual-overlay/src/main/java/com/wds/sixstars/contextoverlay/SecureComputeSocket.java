@@ -20,6 +20,17 @@ import okhttp3.WebSocketListener;
  * WebSocket upgrade, establishes readiness. One in-flight envelope per socket. */
 final class SecureComputeSocket {
     private static final long RETRY_MS=8000;
+    static final class Failure extends IOException {
+        Failure(String reason){super(reason);}
+    }
+    static String reason(Exception error){
+        if(error instanceof Failure)return error.getMessage();
+        if(error instanceof javax.crypto.AEADBadTagException)return "Desktop reply authentication failed; check key";
+        if(error instanceof java.net.UnknownHostException)return "Desktop address not resolved";
+        if(error instanceof java.net.ConnectException)return "Desktop connection refused";
+        if(error instanceof java.net.SocketTimeoutException)return "Desktop connection timed out";
+        return "Desktop exchange failed ("+error.getClass().getSimpleName()+")";
+    }
     private final ReentrantLock exchange=new ReentrantLock();
     private final Object lifecycle=new Object();
     private volatile Session current;
@@ -37,13 +48,15 @@ final class SecureComputeSocket {
         final AtomicReference<Pending> pending=new AtomicReference<>();
         volatile WebSocket socket;
         volatile boolean open,ready,closed;
+        volatile String failure="Desktop socket disconnected";
          
         Session(Network network,String base,String key){
             this.network=network;this.base=base;this.key=key;
             client=new OkHttpClient.Builder().socketFactory(network.getSocketFactory())
                 .dns(host->Arrays.asList(network.getAllByName(host)))
                 .followRedirects(false).followSslRedirects(false)
-                .connectTimeout(1200,TimeUnit.MILLISECONDS).build();
+                .proxy(java.net.Proxy.NO_PROXY)
+                .connectTimeout(3000,TimeUnit.MILLISECONDS).build();
         }
         boolean matches(Network n,String b,String k){return network.equals(n)&&base.equals(b)&&key.equals(k);}
     }
@@ -77,7 +90,7 @@ final class SecureComputeSocket {
             if(old!=null&&!old.matches(network,base,key)){fail(old);retryAt=0;}
             if(current!=null)return current;
             long now=SystemClock.elapsedRealtime();
-            if(now<retryAt&&Objects.equals(retryNetwork,network)&&retryBase.equals(base)&&retryKey.equals(key))return null;
+            if(now<retryAt&&Objects.equals(retryNetwork,network)&&retryBase.equals(base)&&retryKey.equals(key))throw new Failure("Desktop retry cooldown after failed connection");
             s=new Session(network,base,key);
             String url;
             if(base.startsWith("https://"))url="wss://"+base.substring(8);
@@ -93,14 +106,29 @@ final class SecureComputeSocket {
                         p.reply=message;p.done.countDown();
                     }
                     @Override public void onMessage(WebSocket ws,okio.ByteString bytes){fail(s);}
-                    @Override public void onClosing(WebSocket ws,int code,String reason){fail(s);}
-                    @Override public void onClosed(WebSocket ws,int code,String reason){fail(s);}
-                    @Override public void onFailure(WebSocket ws,Throwable error,Response response){fail(s);}
+                    @Override public void onClosing(WebSocket ws,int code,String reason){s.failure=closeReason(code);fail(s);}
+                    @Override public void onClosed(WebSocket ws,int code,String reason){s.failure=closeReason(code);fail(s);}
+                    @Override public void onFailure(WebSocket ws,Throwable error,Response response){
+                        s.failure=response!=null?"Desktop WebSocket HTTP "+response.code():
+                            error instanceof java.net.ConnectException?"Desktop connection refused; check IP, port 8223 and LAN listener":
+                            error instanceof java.net.SocketTimeoutException?"Desktop connection timed out; check firewall":
+                            error instanceof java.net.UnknownHostException?"Desktop address not resolved":
+                            error instanceof javax.net.ssl.SSLException?"Desktop TLS connection failed":
+                            "Desktop socket failed ("+error.getClass().getSimpleName()+")";
+                        fail(s);
+                    }
                 });
             }catch(Exception e){fail(s);throw e;}
         }
-        if(!s.opened.await(1800,TimeUnit.MILLISECONDS)||!s.open||s.closed){fail(s);return null;}
+        if(!s.opened.await(3500,TimeUnit.MILLISECONDS)){fail(s);throw new Failure("Desktop WebSocket connect timed out; check IP and firewall");}
+        if(!s.open||s.closed){fail(s);throw new Failure(s.failure);}
         return s;
+    }
+    private static String closeReason(int code){
+        if(code==1008)return "Desktop rejected authentication or request; check key and device clocks";
+        if(code==1011)return "Desktop model inference unavailable";
+        if(code==1013)return "Desktop temporarily busy";
+        return "Desktop closed socket ("+code+")";
     }
     /** No discovery or heartbeat. Connect only to send actual requested work. */
     JSONObject translate(Network network,String base,String key,JSONObject payload,Runnable started)throws Exception{
@@ -125,7 +153,8 @@ final class SecureComputeSocket {
             if(!s.pending.compareAndSet(null,pending))throw new IOException("Compute socket busy");
             if(s.closed||!s.socket.send(packet.wire))throw new IOException("Compute send failed");
             started.run();
-            if(!pending.done.await(timeout,TimeUnit.MILLISECONDS)||s.closed||pending.reply==null)throw new IOException("Compute reply unavailable");
+            if(!pending.done.await(timeout,TimeUnit.MILLISECONDS))throw new Failure("Desktop inference response timed out");
+            if(s.closed||pending.reply==null)throw new Failure(s.failure);
             return packet.open(pending.reply);
         }finally{s.pending.compareAndSet(pending,null);packet.clear();}
     }
