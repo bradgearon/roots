@@ -64,7 +64,7 @@ function Copy-PrivateFile([string]$Remote,[string]$Local,[bool]$Optional) {
         if ($process.ExitCode -ne 0) { throw "ADB export failed: $Remote ($errorText)" }
         $actual = (Get-Item -LiteralPath $partial).Length
         if ($actual -ne $expected) {
-            if ($LogsOnly) { Write-Warning "Log changed during live export: $Remote ($expected -> $actual bytes)." }
+            if ($Remote -like 'files/diagnostics/*') { Write-Warning "Log changed during live export: $Remote ($expected -> $actual bytes)." }
             else { throw "Unexpected file length for $Remote ($expected expected, $actual copied)." }
         }
         Move-Item -LiteralPath $partial -Destination $Local
@@ -74,6 +74,57 @@ function Copy-PrivateFile([string]$Remote,[string]$Local,[bool]$Optional) {
         if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force }
         $process.Dispose()
     }
+}
+
+# Compare the database and recovery journal bytes on both sides of the copy.
+# SHM is transient WAL-index state and is intentionally not exported; SQLite
+# rebuilds it when opening the copied DB and WAL in a writable directory.
+function Read-TreeHashes {
+    $hashes = [ordered]@{}
+    foreach ($name in @('tree.db','tree.db-wal','tree.db-journal','tree.gguf')) {
+        $remote = "no_backup/roots-tree/$name"
+        & $adbExe -s $Serial shell run-as $package test -f $remote
+        if ($LASTEXITCODE -eq 1) { $hashes[$name] = ''; continue }
+        if ($LASTEXITCODE -ne 0) { throw "Cannot check Tree file: $remote" }
+        $line = (& $adbExe -s $Serial shell run-as $package sha256sum $remote | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $line -notmatch '^([0-9a-fA-F]{64})\s+') {
+            throw "Could not hash $remote (file may have changed)."
+        }
+        $hashes[$name] = $Matches[1].ToLowerInvariant()
+    }
+    return ,$hashes
+}
+
+function Copy-StableTree {
+    for ($attempt=1; $attempt -le 3; $attempt++) {
+        try {
+            $before = Read-TreeHashes
+            foreach ($name in $before.Keys) {
+                $local = Join-Path $tree $name
+                if (Test-Path -LiteralPath $local) { Remove-Item -LiteralPath $local -Force }
+                if ($before[$name]) {
+                    [void](Copy-PrivateFile "no_backup/roots-tree/$name" $local $false)
+                }
+            }
+            $after = Read-TreeHashes
+            foreach ($name in $before.Keys) {
+                if ($before[$name] -ne $after[$name]) { throw "Tree changed while copying $name" }
+                if ($before[$name]) {
+                    $local = Join-Path $tree $name
+                    $hash = (Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash.ToLowerInvariant()
+                    if ($hash -ne $before[$name]) { throw "Copied bytes changed for $name" }
+                }
+            }
+            if (-not $before['tree.db']) { Write-Warning 'No Tree database yet. Enable local capture and browse X.' }
+            return
+        } catch {
+            Write-Warning "Tree export attempt ${attempt}: $($_.Exception.Message)"
+            if ($attempt -lt 3) { Start-Sleep -Milliseconds 500 }
+        }
+    }
+    # Do not package a mixed or unverifiable database set.
+    Get-ChildItem -LiteralPath $tree -File | Remove-Item -Force
+    throw 'Tree is changing or inaccessible. Switch from X to Roots, allow pending writes to finish, and retry. The app has not been stopped.'
 }
 
 try {
@@ -103,20 +154,9 @@ try {
     Write-Host "Export : $dest"
 
     if (-not $LogsOnly) {
-        # Stop the app before copying the database + WAL as a coherent set.
-        # No files are removed, no app data is cleared. Pending memory-only
-        # acquisition can be lost; pause capture in Roots before exporting.
-        Write-Host 'Stopping Roots to obtain a stable SQLite snapshot. Reopen Roots afterward.'
-        & $adbExe -s $Serial shell am force-stop $package
-        if ($LASTEXITCODE -ne 0) { throw 'Could not stop Roots; refusing to copy a live SQLite database.' }
+        Write-Host 'Exporting Tree without force-stopping Roots (accessibility stays enabled).'
         New-Item -ItemType Directory -Path $tree -Force | Out-Null
-        $db = Copy-PrivateFile 'no_backup/roots-tree/tree.db' (Join-Path $tree 'tree.db') $true
-        if ($db) {
-            foreach ($name in @('tree.db-wal','tree.db-shm','tree.db-journal')) {
-                [void](Copy-PrivateFile "no_backup/roots-tree/$name" (Join-Path $tree $name) $true)
-            }
-        } else { Write-Warning 'No Tree database yet. Enable capture in Roots and browse the X Home timeline.' }
-        [void](Copy-PrivateFile 'no_backup/roots-tree/tree.gguf' (Join-Path $tree 'tree.gguf') $true)
+        Copy-StableTree
     }
     foreach ($name in @('plamo-lifecycle.jsonl','plamo-lifecycle.previous.jsonl','functiongemma-lifecycle.jsonl','functiongemma-lifecycle.previous.jsonl','tree-lifecycle.jsonl','tree-lifecycle.previous.jsonl')) {
         [void](Copy-PrivateFile "files/diagnostics/$name" (Join-Path $logs $name) $true)
@@ -128,9 +168,9 @@ try {
             sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         }
     })
-    [ordered]@{ exportedUtc = [DateTime]::UtcNow.ToString('o'); package = $package; logsOnly = [bool]$LogsOnly; files = $entries } |
+    [ordered]@{ exportedUtc = [DateTime]::UtcNow.ToString('o'); package = $package; logsOnly = [bool]$LogsOnly; treeCopy = $(if ($LogsOnly) { 'omitted' } else { 'verified-stable-file-set' }); files = $entries } |
         ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $dest 'manifest.json') -Encoding UTF8
-    if (-not $LogsOnly) { Write-Host 'Reopen Roots. Check that its accessibility service is still enabled.' }
+    if (-not $LogsOnly) { Write-Host 'Tree copied without stopping Roots. No accessibility settings changed.' }
     if (-not $NoZip) {
         $zip = "$dest.zip"
         $zipExe = $null
