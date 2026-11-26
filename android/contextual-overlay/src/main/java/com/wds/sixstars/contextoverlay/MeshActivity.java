@@ -108,7 +108,7 @@ public final class MeshActivity extends Activity {
         if(busy||!NativeTree.available())return;
         final List<MeshPeer.Invite> peers=new ArrayList<>();
         try{
-            for(String line:invitations.getText().toString().split("\\r?\\n"))if(!line.isBlank())peers.add(MeshPeer.Invite.parse(line));
+            for(String line:invitations.getText().toString().split("\\r?\\n"))if(!line.trim().isEmpty())peers.add(MeshPeer.Invite.parse(line));
             if(peers.isEmpty()||peers.size()>8)throw new IllegalArgumentException("Enter one to eight invitations.");
         }catch(Exception e){status.setText(e.getMessage());return;}
         final String wanted=interests.getText().toString(),lang=new OverlayPreferences(this).targetLanguage();

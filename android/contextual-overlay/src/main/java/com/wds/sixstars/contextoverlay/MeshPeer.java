@@ -65,7 +65,7 @@ final class MeshPeer {
     private final ConnectivityManager cm;
     private final SecureRandom random=new SecureRandom();
     private final Map<String,Integer> requested=new ConcurrentHashMap<>();
-    private volatile Map<String,Integer> observedReplicas=Map.of(), observedDemand=Map.of();
+    private volatile Map<String,Integer> observedReplicas=java.util.Collections.emptyMap(), observedDemand=java.util.Collections.emptyMap();
     private volatile String invitation="";
     private volatile String status="Not serving";
     private volatile Server active;
@@ -318,18 +318,18 @@ final class MeshPeer {
         if(peers==0)throw new IOException("No peer inventory was reachable. Check invitations and Wi-Fi.");
         Map<String,Integer> replicas=new HashMap<>(),demand=new HashMap<>();
         for(Offer o:offers.values()){replicas.put(o.id,o.sources.size());demand.put(o.id,o.demand);}
-        observedReplicas=Map.copyOf(replicas);observedDemand=Map.copyOf(demand);
+        observedReplicas=java.util.Collections.unmodifiableMap(new HashMap<>(replicas));observedDemand=java.util.Collections.unmodifiableMap(new HashMap<>(demand));
         Set<String> known=new HashSet<>();
         List<String> terms=new ArrayList<>();
         for(NativeTree.Master record:tree.allRecords("",10000)){
             if(record.key().startsWith("local:mesh:"))known.add(record.key().substring(11));
             if(!record.latest("want").isEmpty()){
                 String topic=record.latest("topic");
-                if(!topic.isBlank())terms.add(topic.toLowerCase(Locale.ROOT));
+                if(!topic.trim().isEmpty())terms.add(topic.toLowerCase(Locale.ROOT));
             }
         }
-        for(NativeTree.Agent agent:tree.agents())if(!agent.term().isBlank())terms.add(agent.term().toLowerCase(Locale.ROOT));
-        for(String word:interests.toLowerCase(Locale.ROOT).split("[,;\\n]"))if(!word.isBlank())terms.add(word.trim());
+        for(NativeTree.Agent agent:tree.agents())if(!agent.term().trim().isEmpty())terms.add(agent.term().toLowerCase(Locale.ROOT));
+        for(String word:interests.toLowerCase(Locale.ROOT).split("[,;\\n]"))if(!word.trim().isEmpty())terms.add(word.trim());
         List<Offer> want=new ArrayList<>();
         for(Offer o:offers.values())if(!known.contains(o.id)){
             for(String term:terms)if(o.topic.toLowerCase(Locale.ROOT).contains(term))o.interest++;
@@ -337,9 +337,9 @@ final class MeshPeer {
         }
         // Want locally relevant material first, then rarest among the offered
         // items, then observed demand and local-language preference.
-        want.sort(Comparator.comparingInt((Offer o)->o.interest).reversed()
-            .thenComparingInt(o->o.sources.size()).thenComparing(Comparator.comparingInt((Offer o)->o.demand).reversed())
-            .thenComparingInt(o->o.language.equals(language)?0:1).thenComparing(o->o.id));
+        want.sort((a,b)->MeshPriority.compare(
+            new MeshPriority.Score(a.id,a.interest,a.sources.size(),a.demand,a.language.equals(language)),
+            new MeshPriority.Score(b.id,b.interest,b.sources.size(),b.demand,b.language.equals(language))));
         int received=0,attempted=0;
         for(Offer o:want){
             if(attempted++>=MAX_FETCH)break;

@@ -27,9 +27,17 @@ public final class NativeTreeJniChecks {
                 need(tree.compile(gguf.toString())==tree.revision(),"revision");
                 byte[] magic=Files.readAllBytes(gguf);
                 need(magic.length>4&&magic[0]=='G'&&magic[1]=='G'&&magic[2]=='U'&&magic[3]=='F',"GGUF");
+                need(tree.observe(List.of(new NativeTree.Observation("record.x.body","local:x:translation","PRIVATE_SOURCE_SENTINEL","ja",4),
+                    new NativeTree.Observation("record.x.en.translation","local:x:translation","LOCAL_TRANSLATION_SENTINEL","en",5)))==2,"localized insert");
+                var record=tree.records("",0,0,10).get(0);
+                need(record.localized("en").body().equals("LOCAL_TRANSLATION_SENTINEL"),"localized master");
+                Path localized=dir.resolve("localized.gguf");
+                need(tree.compileLocalized(localized.toString(),"en")==tree.revision(),"localized revision");
+                String projection=new String(Files.readAllBytes(localized),java.nio.charset.StandardCharsets.ISO_8859_1);
+                need(projection.contains("LOCAL_TRANSLATION_SENTINEL")&&!projection.contains("PRIVATE_SOURCE_SENTINEL"),"localized JNI projection");
             }
             try(NativeTree tree=new NativeTree(db.toString())){
-                need(tree.count()==3&&tree.query("",agent,0,10).size()==2,"persistence");
+                need(tree.count()==5&&tree.query("",agent,0,10).size()==2,"persistence");
                 tree.clear();need(tree.count()==0,"clear");
             }
             System.out.println("Host JNI Tree binding checks passed.");

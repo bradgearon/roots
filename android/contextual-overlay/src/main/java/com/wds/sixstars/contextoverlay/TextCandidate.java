@@ -7,6 +7,7 @@ public final class TextCandidate {
     public final String fingerprint;
     // Assigned by the reader before publishing the snapshot.
     String knowledgeKey="";
+    long knowledgeEpoch=-1;
     public final boolean authorName;
     public final String text;
     public final String languageHint;

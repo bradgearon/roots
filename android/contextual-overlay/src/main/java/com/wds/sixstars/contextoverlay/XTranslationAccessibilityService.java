@@ -274,6 +274,10 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             // Recheck foreground and consent after traversal; no extra tree walk.
             boolean stillX=isXRoot(findXApplicationWindow());
             treeRuntime.acceptVisibleSnapshot(reader.lastKnowledge(),epoch,stillX,reader.lastKnowledgeBounded());
+            if(stillX&&treeRuntime.enabled()&&treeRuntime.captureEpoch()==epoch){
+                for(TextCandidate candidate:found)candidate.knowledgeEpoch=epoch;
+                for(TextCandidate candidate:reader.lastDiscovered())candidate.knowledgeEpoch=epoch;
+            }
         }
         readerStatus = found.isEmpty()
                 ? (reader.lastPostDetail() ? "X active; post detail heading found, no body text" : "X active; no eligible visible text found")

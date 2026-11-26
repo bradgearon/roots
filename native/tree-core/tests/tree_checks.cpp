@@ -13,6 +13,7 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <iterator>
 namespace {
 void need(bool b,const char *why){if(!b)throw std::runtime_error(why);}
 void ok(roots_tree_result r){need(r==ROOTS_TREE_OK,"native operation failed");}
@@ -118,6 +119,30 @@ int main(){
             ok(roots_tree_compile(t,path.u8string().c_str(),&revision));
             check_gguf(path,4,revision,query(t),true);
             ok(roots_tree_clear(t));
+        }
+        {
+            roots_observation localized[]={
+                {"record.x.body","local:x:localization","ORIGINAL_JA_PRIVATE_SENTINEL","ja",1},
+                {"record.x.en.translation","local:x:localization","OLD_EN_TRANSLATION_SENTINEL","en",2},
+                {"record.x.en.translation","local:x:localization","LATEST_EN_TRANSLATION_SENTINEL","en",3},
+                {"record.x.en.understanding","local:x:localization","UNDERSTANDING_EN_SENTINEL","en",4},
+                {"record.x.author","local:x:localization","PRIVATE_AUTHOR_SENTINEL","en",1},
+                {"record.mesh.body","local:mesh:example","RECEIVED_EN_SENTINEL","en",2},
+                {"record.mesh.offer","local:mesh:example","OFFER_PRIVATE_METADATA_SENTINEL","",2},
+                {"raw.x","","RAW_PRIVATE_SENTINEL","en",1},
+                {"record.x.body","local:x:unknown","UNKNOWN_LANGUAGE_SENTINEL","",2}};
+            size_t n=0;ok(roots_tree_observe(t,localized,9,&n));need(n==9,"localized rows");
+            auto path=dir/"localized.gguf";int64_t revision=0;
+            ok(roots_tree_compile_localized(t,path.u8string().c_str(),"en",&revision));
+            std::ifstream stream(path,std::ios::binary);std::string bytes((std::istreambuf_iterator<char>(stream)),std::istreambuf_iterator<char>());
+            for(auto expected:{"LATEST_EN_TRANSLATION_SENTINEL","UNDERSTANDING_EN_SENTINEL","RECEIVED_EN_SENTINEL","roots.local.language"})
+                need(bytes.find(expected)!=std::string::npos,"localized GGUF content");
+            for(auto excluded:{"ORIGINAL_JA_PRIVATE_SENTINEL","OLD_EN_TRANSLATION_SENTINEL","PRIVATE_AUTHOR_SENTINEL","OFFER_PRIVATE_METADATA_SENTINEL","RAW_PRIVATE_SENTINEL","UNKNOWN_LANGUAGE_SENTINEL"})
+                need(bytes.find(excluded)==std::string::npos,"private text excluded from localized GGUF");
+            int64_t count=0;ok(roots_tree_count(t,&count));need(count==9,"originals retained in DB");
+            auto empty=dir/"empty-localized.gguf";ok(roots_tree_compile_localized(t,empty.u8string().c_str(),"fr",&revision));
+            need(!std::filesystem::exists(empty),"empty local projection");
+            stream.close();ok(roots_tree_clear(t));
         }
         const char *parts[]={"Is","Part","Of"};char key[64];
         ok(roots_tree_predicate(parts,3,key,sizeof(key)));need(std::string(key)=="is.part.of","predicate components");

@@ -39,7 +39,7 @@ public final class OverlayTranslationCoordinator {
     private final java.util.LinkedHashMap<String,Boolean> savedTranslations=new java.util.LinkedHashMap<>();
     void setTree(com.wds.sixstars.contextoverlay.tree.TreeRuntime runtime){tree=runtime;}
     private void retainTranslation(TextCandidate candidate,String target,String translated,long epoch){
-        if(tree==null||candidate==null||candidate.authorName||candidate.knowledgeKey.isEmpty()||!tree.enabled()||tree.captureEpoch()!=epoch)return;
+        if(tree==null||candidate==null||candidate.authorName||candidate.knowledgeKey.isEmpty()||candidate.knowledgeEpoch!=epoch||!tree.enabled()||tree.captureEpoch()!=epoch)return;
         String key=epoch+":"+candidate.knowledgeKey+":"+target+":"+TextFingerprint.of(translated);
         if(savedTranslations.containsKey(key))return;
         if(tree.recordTranslation(candidate.knowledgeKey,candidate.text,candidate.languageHint,target,translated,epoch)){

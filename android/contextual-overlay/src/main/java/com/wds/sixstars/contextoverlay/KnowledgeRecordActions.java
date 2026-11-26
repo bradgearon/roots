@@ -80,8 +80,8 @@ final class KnowledgeRecordActions {
         new LocalPLaMoTranslationProvider(activity).translate(original.body(),original.language(),language,new TranslationProvider.Result(){
             @Override public void started(){attempt.running("Running");}
             @Override public void completed(String text,String error){
-                attempt.finish(error==null&&text!=null&&!text.isBlank(),error==null?"Local generation completed":"Local generation failed");
-                if(error!=null||text==null||text.isBlank()){activity.runOnUiThread(()->toast(activity,error==null?"No translation returned.":error));return;}
+                attempt.finish(error==null&&text!=null&&!text.trim().isEmpty(),error==null?"Local generation completed":"Local generation failed");
+                if(error!=null||text==null||text.trim().isEmpty()){activity.runOnUiThread(()->toast(activity,error==null?"No translation returned.":error));return;}
                 store(activity,record,"translation",text,language,epoch,changed);
             }
         });
@@ -91,7 +91,7 @@ final class KnowledgeRecordActions {
         WORK.execute(()->{
             String error=null;
             try{String source=prefix(record)+((role.equals("translation")||role.equals("localized")||role.equals("understanding"))?language+".":"")+role;
-                tree.storeExplicit(List.of(new NativeTree.Observation(source,record.key(),text,language,System.currentTimeMillis())),epoch);}
+                tree.storeExplicit(java.util.Collections.singletonList(new NativeTree.Observation(source,record.key(),text,language,System.currentTimeMillis())),epoch);}
             catch(Exception|LinkageError e){error="Could not save record: "+e.getMessage();}
             String message=error;
             activity.runOnUiThread(()->{if(activity.isDestroyed())return;if(message==null){changed.run();toast(activity,"Knowledge updated.");}else toast(activity,message);});

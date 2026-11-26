@@ -133,3 +133,6 @@ The export also includes `tree-lifecycle.jsonl` and its rotated predecessor when
 
 ### Desktop mobile TLS
 `launch.cmd` creates a persistent self-signed TLS identity in `%LOCALAPPDATA%/Roots`. The LAN mobile socket is `wss://YOUR-PC:8223/api/translation/v1/socket`. Run `get-key.cmd` and paste its combined token and certificate SHA-256 fingerprint into the existing Android key field once; existing bare tokens need this update. The Chrome extension uses the loopback-only HTTP bridge on port 8224 and its existing bare token. The model stays on 8081. Standard TLS protects JSON messages, no custom message encryption.
+
+### Roots Mesh and knowledge stream
+Open **Roots Mesh** from Home to publish a shareable remembrance, start the Wi-Fi TLS listener, or receive from a `roots://mesh/v1` invitation. The ranked home feed prefers localized knowledge; tap a captured exact X status link, hold for record actions. Raw capture and originals stay private in SQLite. See [Roots Mesh v1](design/roots-mesh.md) for protocol, ranking, localization, and two-device smoke test.
