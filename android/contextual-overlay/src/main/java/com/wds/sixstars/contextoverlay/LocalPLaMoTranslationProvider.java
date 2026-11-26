@@ -22,6 +22,11 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
     private static final ThreadPoolExecutor WORK = new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(3));
     private static long verifiedLength=-1, verifiedModified=-1;
     private static String loadedPath;
+    private static boolean loadedVulkan;
+    private static String loadedAcceleration="";
+    public static boolean vulkanBuilt() {
+        try { return Native.vulkanBuilt(); } catch (LinkageError | RuntimeException e) { return false; }
+    }
     private final Context app;
     private static final String TAG = "RootsPLaMo";
     // Targeted model lifecycle trace only. No prompts, translations, credentials or tweet text.
@@ -124,7 +129,10 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
             long queueMs=started-submitted;
             String stage="verify_model";
             try {
-                if(!new OverlayPreferences(app).enabled() || new OverlayPreferences(app).desktopTranslationEnabled()){callback.completed(null,"Translation mode changed.");return;}
+                OverlayPreferences preferences=new OverlayPreferences(app);
+                if(!preferences.enabled() || preferences.desktopTranslationEnabled()){callback.completed(null,"Translation mode changed.");return;}
+                boolean useVulkan=preferences.localVulkanEnabled();
+                int threads=preferences.localThreads();
                 File file=model(app);
                 if(downloading(app,(DownloadManager)app.getSystemService(Context.DOWNLOAD_SERVICE))){callback.completed(null,"Local model download is still in progress.");return;}
                 if(!file.isFile()||file.length()!=verifiedLength||file.lastModified()!=verifiedModified){
@@ -136,23 +144,26 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                 Native.ensure();
                 String revision=Native.revision();
                 String path=file.getAbsolutePath();
-                if(!path.equals(loadedPath)){
+                if(useVulkan&&!Native.vulkanBuilt())throw new IllegalStateException("Vulkan is not compiled into this APK; choose CPU in settings.");
+                String requestedBackend=useVulkan?"vulkan":"cpu";
+                if(!path.equals(loadedPath)||loadedVulkan!=useVulkan){
                     stage="model_load";loadedPath=null;
                     long loadStart=SystemClock.elapsedRealtime();
-                    trace(app,stage,"start",loadStart,"runtime="+revision+" bytes="+file.length());
-                    Native.load(path);loadedPath=path;
-                    trace(app,stage,"ok",loadStart,"runtime="+revision);
+                    trace(app,stage,"start",loadStart,"runtime="+revision+" requested_backend="+requestedBackend+" bytes="+file.length());
+                    Native.load(path,useVulkan);loadedPath=path;loadedVulkan=useVulkan;
+                    loadedAcceleration=Native.accelerationInfo();
+                    trace(app,stage,"ok",loadStart,"runtime="+revision+" "+loadedAcceleration);
                 }
                 String prompt="<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input"+
                     (source!=null&&source.matches("[a-z]{2,3}")?"<|plamo:key|>lang<|plamo:val|>"+source:"")+
                     "<|plamo:msg|>"+text+"<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>"+target+"<|plamo:msg|>";
                 stage="inference";
                 long inferenceStart=SystemClock.elapsedRealtime();
-                trace(app,stage,"start",inferenceStart,"runtime="+revision,null,queueMs);
+                trace(app,stage,"start",inferenceStart,"runtime="+revision+" requested_backend="+requestedBackend+" requested_threads="+threads,null,queueMs);
                 long[] stats=new long[8];
-                byte[] result=Native.generate(prompt.getBytes(StandardCharsets.UTF_8),stats);
+                byte[] result=Native.generate(prompt.getBytes(StandardCharsets.UTF_8),stats,threads);
                 if(result==null)throw new IllegalStateException("Native runtime returned no result buffer");
-                trace(app,stage,"ok",inferenceStart,"runtime="+revision+" result_bytes="+result.length,stats,queueMs);
+                trace(app,stage,"ok",inferenceStart,"runtime="+revision+" "+loadedAcceleration+" result_bytes="+result.length,stats,queueMs);
                 String translated=new String(result,StandardCharsets.UTF_8).trim();
                 if(translated.isEmpty())callback.completed(null,"No translation returned.");else callback.completed(translated,null);
             } catch(Exception|LinkageError ex){
@@ -167,8 +178,10 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         static { System.loadLibrary("roots_plamo"); }
         static void ensure(){}
         static native String revision();
-        static native void load(String path);
+        static native boolean vulkanBuilt();
+        static native String accelerationInfo();
+        static native void load(String path,boolean useVulkan);
         static native void unload();
-        static native byte[] generate(byte[] prompt,long[] stats);
+        static native byte[] generate(byte[] prompt,long[] stats,int threads);
     }
 }
