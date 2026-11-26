@@ -1,6 +1,8 @@
 package com.wds.sixstars.contextoverlay;
 
 import java.util.Collections;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -10,13 +12,14 @@ public final class FunctionGemmaProtocol {
     private FunctionGemmaProtocol() {}
     private static final String START="<start_function_call>", END="<end_function_call>", ESC="<escape>";
     public static final int MAX_INPUT=1200;
+    private static Set<String> set(String... values){return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(values)));}
     private static final Map<String,Set<String>> REQUIRED;
     static {
         Map<String,Set<String>> r=new LinkedHashMap<>();
-        r.put("search_knowledge",Set.of("query"));
-        r.put("compare_meanings",Set.of("left","right"));
-        r.put("propose_displacement",Set.of("source","target","property"));
-        r.put("abstain",Set.of("reason"));
+        r.put("search_knowledge",set("query"));
+        r.put("compare_meanings",set("left","right"));
+        r.put("propose_displacement",set("source","target","property"));
+        r.put("abstain",set("reason"));
         REQUIRED=Collections.unmodifiableMap(r);
     }
     private static String literal(String value){return ESC+value+ESC;}
@@ -42,7 +45,7 @@ public final class FunctionGemmaProtocol {
         tool("abstain","Use when none of the offered operations is appropriate or the request lacks information.",
             new String[]{"reason"},new String[]{"Short reason"});
     public static String prompt(String request){
-        if(request==null||request.trim().isEmpty()||request.length()>MAX_INPUT||request.indexOf('<')>=0||request.indexOf('>')>=0||request.indexOf('\u0000')>=0)
+        if(request==null||request.trim().isEmpty()||request.length()>MAX_INPUT||request.indexOf('<')>=0||request.indexOf('>')>=0||request.indexOf(0)>=0)
             throw new IllegalArgumentException("Enter 1–1200 characters without angle brackets or NUL.");
         // BOS is added by llama_tokenize; use the model's native developer/user/model turns.
         return "<start_of_turn>developer\nYou are a model that can do function calling with the following functions"+
