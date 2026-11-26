@@ -4,8 +4,9 @@ import java.util.Properties
 plugins {
     id("com.android.library")
 }
-val rootsTreeEnabled = providers.gradleProperty("rootsEnableTree").orElse("false")
+val rootsTreeEnabled = providers.gradleProperty("rootsEnableTree").orElse("true")
 val rootsSqliteDir = providers.gradleProperty("rootsSqliteAmalgamationDir")
+    .orElse(providers.environmentVariable("ROOTS_SQLITE_DIR"))
 val rootsKleidiAI = providers.gradleProperty("rootsEnableKleidiAI").orElse("true")
 val rootsVulkan = providers.gradleProperty("rootsEnableVulkan").orElse("false")
 val rootsVulkanSdk = providers.gradleProperty("rootsVulkanSdk")
@@ -46,6 +47,7 @@ if (usePrebuiltBrain) {
     }
     logger.lifecycle("Roots: reusing cached ARM64 brain (${manifest.getProperty("kleidiai")} KleidiAI, ${manifest.getProperty("vulkan")} Vulkan)")
 }
+logger.lifecycle("Roots: native Tree ${if (rootsTreeEnabled.get().toBoolean()) "enabled" else "disabled"}")
 android {
     namespace = "com.wds.sixstars.contextoverlay"
     compileSdk = 36

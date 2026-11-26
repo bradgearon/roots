@@ -26,7 +26,7 @@ cmake -S native/tree-core -B build/tree-android \
   -DROOTS_TREE_TESTS=OFF
 cmake --build build/tree-android
 ```
-This produces libroots_tree.so. Use a pinned, security-reviewed SQLite release for shipping. The build deliberately does not download or silently select a dependency.
+This produces libroots_tree.so. Use a pinned, security-reviewed SQLite release for shipping. The default Android build provisions SQLite 3.54.1 from the official HTTPS source and verifies the pinned published SHA3-256 digest; an explicitly supplied amalgamation overrides it. Desktop builds still accept system SQLite or an approved amalgamation.
 
 ## Initial semantics and limits
 
@@ -42,13 +42,13 @@ This produces libroots_tree.so. Use a pinned, security-reviewed SQLite release f
 
 ### Android
 
-From the android directory, supply an explicitly approved SQLite amalgamation (sqlite3.c and sqlite3.h):
+From the android directory, build normally to use the pinned automatic download, or explicitly supply an approved SQLite amalgamation (sqlite3.c and sqlite3.h):
 
 ```sh
 ./gradlew :app:assembleDebug -ProotsEnableTree=true -ProotsSqliteAmalgamationDir=/absolute/path/to/sqlite-amalgamation
 ```
 
-On Windows use gradlew.bat. If the checkout lacks the wrapper, generate it with the documented Gradle version first. Default builds omit the optional Tree native target and preserve translation. With the Tree-enabled build installed, grant the existing X accessibility permission, open Tree of Life from the translation settings, and separately consent to local timeline capture. Search / refresh feed and branch agents use the native database. New local observations feed literal-interest branches. No automatic external research, remote upload, or semantic Lily engine is implied. The app retains text fragments, not verified tweet identities or author metadata. The Home route gate, private-surface exclusions and bounded capture diagnostics need testing against current X builds. Home may include protected posts; storage is local, not a claim of public redistribution rights.
+On Windows use gradlew.bat. If the checkout lacks the wrapper, generate it with the documented Gradle version first. Default Android builds include the Tree native target and automatically provision a pinned SQLite amalgamation. Set -ProotsEnableTree=false only for an explicit translation-only build. With the Tree-enabled build installed, grant the existing X accessibility permission, open Tree of Life from the translation settings, and separately consent to local timeline capture. Search / refresh feed and branch agents use the native database. New local observations feed literal-interest branches. No automatic external research, remote upload, or semantic Lily engine is implied. The app retains text fragments, not verified tweet identities or author metadata. The Home route gate, private-surface exclusions and bounded capture diagnostics need testing against current X builds. Home may include protected posts; storage is local, not a claim of public redistribution rights.
 
 The intake handler snapshots eligible accessibility nodes on a dedicated thread, a bounded queue feeds one batch writer, and a separate compiler creates revision-checked GGUF snapshots approximately four seconds after work is scheduled. It retries when the revision changes. This is not a hard timing guarantee; capacity, coalescing and missing accessibility content can lose observations. Pause drops queued intake; an in-flight transaction may finish. Clear serializes after writes and removes managed snapshots. No automatic capture while X is not foreground. The Tree UI uses cursor pagination and a worker for search. The lexical feed is not yet weighted semantic feed assembly.
 

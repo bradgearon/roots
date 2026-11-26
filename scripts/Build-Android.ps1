@@ -135,6 +135,11 @@ try {
     Write-Host "Android SDK : $sdk"
     Write-Host "JDK         : $java"
     Write-Host "Gradle      : $gradle (project requires $version)"
+    # The native Tree is included by default. Its CMake target provisions
+    # the pinned SQLite source into android/.roots-deps when necessary.
+    # Gradle and Android Studio use the same provisioner. Do not override
+    # explicit Gradle properties or a caller's ROOTS_SQLITE_DIR.
+    Write-Host "Tree        : enabled by default; SQLite auto-provisioned by CMake (unless overridden)"
     Write-Host "Tasks       : $($tasks -join ' ')"
     Push-Location -LiteralPath $project
     try {

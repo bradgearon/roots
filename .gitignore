@@ -10,3 +10,6 @@ logs/
 
 # Independent Android native build outputs
 android/.roots-brain/
+
+# Verified native dependency download cache
+android/.roots-deps/

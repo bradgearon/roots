@@ -75,7 +75,7 @@ If the optional upstream KleidiAI dependency cannot build, `-ProotsEnableKleidiA
 
 Tensor G5's TPU is a separate backend path: Google Tensor SDK/LiteRT-LM requires a compatible converted/compiled model and tokenizer. The existing GGUF is not a TPU executable. Do not claim TPU support or measured GPU speedup from this implementation.
 
-With the cached brain, the optional Tree Core is compiled separately when rootsEnableTree=true. Switching branches with different native sources invalidates the cache; rerun build-brain.cmd if requested.
+The Tree Core is enabled by default and compiled separately when the brain is cached. Android CMake automatically downloads and verifies the pinned SQLite amalgamation into android/.roots-deps; use -ProotsSqliteAmalgamationDir=<directory> or ROOTS_SQLITE_DIR to override, or -ProotsEnableTree=false for a translation-only build. Switching branches with different native sources invalidates the cache; rerun build-brain.cmd if requested.
 
 Android uses the existing eligibility heuristics and a CPU llama.cpp provider; desktop/Chrome uses the existing FastText model. GPU/NPU acceleration on Android and a native FastText mobile provider are follow-up work. The existing Android automatic overlay covers original text; Chrome continues to show translations underneath.
 
