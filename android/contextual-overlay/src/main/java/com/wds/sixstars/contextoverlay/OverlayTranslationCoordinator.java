@@ -72,6 +72,7 @@ public final class OverlayTranslationCoordinator {
     public void noteUncertainScroll() {
         demand.invalidate();
         main.removeCallbacks(motionWake);
+        publishActivity();
     }
     public void noteSceneChanged() {
         noteUncertainScroll();
@@ -137,7 +138,11 @@ public final class OverlayTranslationCoordinator {
             // Reader currently exposes only authorized visible nodes.
             // Layout rejection must not lower their translation priority.
             for(TextCandidate candidate:discovered)visible.add(candidate.fingerprint);
-            if(automatic){remember(discovered,target);remember(current,target);}
+            if(automatic){
+                ArrayList<TextCandidate> combined=new ArrayList<>(discovered);
+                combined.addAll(current);
+                remember(combined,target);
+            }
         }
         if(!automatic)pool.clear();
         publishCached();
@@ -163,7 +168,7 @@ public final class OverlayTranslationCoordinator {
 
     private void publishActivity(){
         Set<String> ids=new HashSet<>();
-        if(active && preferences.autoPreview() && preferences.showTranslationActivity()){
+        if(active && demand.trusted() && preferences.autoPreview() && preferences.showTranslationActivity()){
             String target=preferences.targetLanguage();
             for(TextCandidate candidate:latestCandidates)
                 if(executing.contains(key(candidate,target)))ids.add(candidate.fingerprint);
@@ -191,21 +196,23 @@ public final class OverlayTranslationCoordinator {
             if(p==null)pool.put(k,new Pending(candidate,now));
             else {p.candidate=candidate;p.lastSeen=now;}
         }
+        final String backend=profile();
+        final double velocity=demand.velocity(now);
         while(pool.size()>MAX_PENDING){
             String lowest=null;long lowestScore=Long.MAX_VALUE;
             for(Map.Entry<String,Pending> item:pool.entrySet()){
-                long score=priority(item.getValue(),now);
+                long score=priority(item.getValue(),now,backend,velocity);
                 if(score<lowestScore){lowestScore=score;lowest=item.getKey();}
             }
             pool.remove(lowest);
         }
     }
 
-    private long priority(Pending p,long now){
+    private long priority(Pending p,long now,String backend,double velocity){
         TextCandidate c=p.candidate;
         return TranslationWorkPriority.score(visible.contains(c.fingerprint),c.authorName,
-                c.bounds.top,c.bounds.bottom,demand.height(),demand.offset(),demand.velocity(now),
-                latency.predict(profile(),c.text.length()),now-p.firstSeen,now-p.lastSeen);
+                c.bounds.top,c.bounds.bottom,demand.height(),demand.offset(),velocity,
+                latency.predict(backend,c.text.length()),now-p.firstSeen,now-p.lastSeen);
     }
 
     /** Main-thread admission. Select work only when a provider slot is free. */
@@ -230,19 +237,22 @@ public final class OverlayTranslationCoordinator {
                 if (manualCandidate != null) return;
             }
         }
-        if (!preferences.autoPreview() || !preferences.translationEnabled() || !demand.trusted()) return;
+        if (!preferences.autoPreview() || !preferences.translationEnabled() || !demand.trusted() || !target.equals(poolTarget)) return;
         main.removeCallbacks(retryWake);
+        if(!admission.hasRoom(limit))return;
         long now=SystemClock.uptimeMillis();
+        final String backend=profile();
+        final double velocity=demand.velocity(now);
         pool.values().removeIf(p->now-p.lastSeen>RETAIN_MS
                 ||cache.read(p.candidate.text,target)!=null);
         ArrayList<Pending> ranked=new ArrayList<>(pool.values());
-        ranked.sort(Comparator.comparingLong((Pending p)->priority(p,now)).reversed()
+        ranked.sort(Comparator.comparingLong((Pending p)->priority(p,now,backend,velocity)).reversed()
                 .thenComparingInt(p->p.candidate.bounds.top)
                 .thenComparingInt(p->p.candidate.order));
         long nextRetry=Long.MAX_VALUE;
         for(Pending p:ranked){
             if(!admission.hasRoom(limit))break;
-            if(priority(p,now)<=0)break;
+            if(priority(p,now,backend,velocity)<=0)break;
             TextCandidate candidate=p.candidate;
             if(!shouldTranslateAutomatically(candidate,target))continue;
             String k=key(candidate,target);
