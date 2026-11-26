@@ -196,6 +196,11 @@ def scan(args,inv):
     groups=ranges_for(inv,args.scope,args.chunks,args.match)
     if not groups: raise ValueError("no supported matching tensor ranges")
     keys=list(groups)
+    if args.region:
+        if len(set(args.region))!=len(args.region) or any(k not in groups for k in args.region):
+            raise ValueError("unknown or duplicate requested region; use plan with identical scope/chunks")
+        keys=args.region
+    if args.region and len(keys)>args.limit: raise ValueError("raise --limit to include explicit regions")
     if len(keys)>args.limit:
         keys=[keys[i*(len(keys)-1)//max(1,args.limit-1)] for i in range(args.limit)]
     source=args.model.resolve(); exe=args.scorer.resolve()
@@ -208,7 +213,7 @@ def scan(args,inv):
     if shutil.disk_usage(root).free<source.stat().st_size+16*COPY: raise ValueError("insufficient scratch disk space")
     report=dict(schema="roots.atlas.gguf/1",source_sha256=digest(source),scorer_sha256=digest(exe),
                 tasks_sha256=digest(args.tasks),inventory=inv,mode=args.mode,scope=args.scope,split=args.split,
-                threads=args.threads,gpu_layers=args.gpu_layers,selected=keys,experiments=[],status="running")
+                threads=args.threads,gpu_layers=args.gpu_layers,selected=keys,scope_match=args.match,chunks=args.chunks,experiments=[],status="running")
     with tempfile.TemporaryDirectory(prefix="roots-atlas-",dir=root) as directory:
         temp=Path(directory); tasks=temp/"tasks.tsv"; variant=temp/"variant.gguf"
         cases=load_tasks(args.tasks,args.split,tasks)
@@ -256,6 +261,23 @@ def extract(args,inv):
     save(args.out/"manifest.json",dict(source_sha256=digest(args.model),region=args.region,ranges=rr,
          inventory_format=inv["format"],warning="Opaque weight fragments; not a runnable model. Original license applies."))
 
+def rank(args):
+    report=json.loads(args.report.read_text(encoding="utf-8"))
+    if report["status"]!="complete": raise ValueError("scan is not complete")
+    by_category={}
+    for e in report["experiments"]:
+        for x in e["results"]:
+            # Screen out abilities the unmodified model did not demonstrate, and broad collapse.
+            if x["baseline_accuracy"]<0.75 or x["baseline_margin"]<=0: continue
+            if x["selectivity"] is None: continue
+            if x["margin_loss"]<=max(0.0,2*x["repeat_noise"]) or x["selectivity"]<=0: continue
+            by_category.setdefault(x["category"]+"/"+x["split"],[]).append({
+                "region":e["id"],"bytes":sum(r["nbytes"] for r in e["ranges"]),**x})
+    for k in by_category:
+        by_category[k]=sorted(by_category[k],key=lambda x:x["selectivity"],reverse=True)[:args.top]
+    print(json.dumps(dict(status="exploratory, not proof; compare independently held-out tasks",
+                          source_sha256=report["source_sha256"],categories=by_category),indent=2))
+
 def selftest():
     # Construct a valid tiny GGUF directory with an aligned Q8_0 tensor and a float tensor.
     def st(s):
@@ -282,6 +304,7 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     sub=ap.add_subparsers(dest="command",required=True)
     sub.add_parser("selftest")
+    s=sub.add_parser("rank");s.add_argument("report",type=Path);s.add_argument("--top",type=int,default=5)
     for name in ("inspect","plan","scan","extract"):
         s=sub.add_parser(name);s.add_argument("model",type=Path)
         if name=="inspect": continue
@@ -293,11 +316,12 @@ def main():
             s.add_argument("--split",choices=["discovery","holdout","all"],default="discovery")
             s.add_argument("--mode",choices=["base","it"],default="it");s.add_argument("--limit",type=int,default=12)
             s.add_argument("--threads",type=int,default=4);s.add_argument("--gpu-layers",type=int,default=0)
-            s.add_argument("--scratch",type=Path)
+            s.add_argument("--scratch",type=Path);s.add_argument("--region",action="append")
         elif name=="extract":
             s.add_argument("--region",required=True);s.add_argument("--out",type=Path,required=True)
     args=ap.parse_args()
     if args.command=="selftest": return selftest()
+    if args.command=="rank": return rank(args)
     inv=inventory(args.model)
     if args.command=="inspect": print(json.dumps(inv,indent=2))
     elif args.command=="plan": print(json.dumps(ranges_for(inv,args.scope,args.chunks,args.match),indent=2))
