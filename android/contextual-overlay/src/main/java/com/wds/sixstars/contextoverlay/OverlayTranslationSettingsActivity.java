@@ -24,6 +24,8 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import com.wds.sixstars.contextoverlay.tree.TreeActivity;
+import com.wds.sixstars.contextoverlay.tree.TreeRuntime;
 
 /**
  * Explicit in-app disclosure and settings; self-contained so the library can be
@@ -68,7 +70,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         TextView disclosure = text(
             "If enabled, Roots can read text and on-screen positions exposed by the X (Twitter) Android app while it is in the foreground. " +
             "This may include sensitive text shown inside X, including private messages. Small translation badges are drawn over the X screen using an Android accessibility overlay. " +
-            "The feature does not take screenshots, press buttons in X, read other apps' text, or persist the captured text. " +
+            "The feature does not take screenshots, press buttons in X, read other apps' text, or persist translation input. The optional Tree feature separately asks permission to retain local timeline fragments. " +
             "With desktop translation enabled, the text you tap may be sent to your configured Roots desktop over the local network for PLaMo inference. " +
             "If automatic translation is also enabled, eligible visible X text may be sent automatically. The X content could include private messages. " +
             "Plain HTTP does not encrypt text or the access key; use only a trusted home Wi-Fi network, or an HTTPS/VPN bridge. " +
@@ -95,6 +97,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         Button stop = button("Stop X text processing");
         stop.setOnClickListener(v -> {
             prefs.setEnabled(false);
+            TreeRuntime.get(this).setEnabled(false);
             prefs.setDesktopTranslationEnabled(false);
             prefs.setAutoPreview(false);
             TranslationRuntime.disconnect();
@@ -103,6 +106,10 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             refreshStatus();
         });
         content.addView(stop);
+
+        Button tree = button("Open Tree of Life — local search and capture");
+        tree.setOnClickListener(v -> startActivity(new Intent(this, TreeActivity.class)));
+        content.addView(tree);
 
         Button download = button("Download local PLaMo model (~550 MB)");
         download.setOnClickListener(v -> LocalPLaMoTranslationProvider.downloadModel(this, (message, error) -> runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(error == null ? message : error).setPositiveButton("OK", null).show())));
