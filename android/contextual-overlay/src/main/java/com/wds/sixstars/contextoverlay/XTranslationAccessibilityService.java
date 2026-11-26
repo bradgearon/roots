@@ -11,7 +11,6 @@ import android.view.accessibility.AccessibilityWindowInfo;
 
 import com.wds.sixstars.contextoverlay.tree.NativeTree;
 import com.wds.sixstars.contextoverlay.tree.TreeRuntime;
-import com.wds.sixstars.contextoverlay.tree.XTreeCapture;
 
 import java.util.Collections;
 import java.util.List;
@@ -29,7 +28,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private AccessibilityOverlayRenderer renderer;
     private OverlayTranslationCoordinator coordinator;
     private boolean destroyed;
-    private XTreeCapture treeCapture;
+    private TreeRuntime treeRuntime;
     private String readerStatus = "Service not scanned yet";
     private boolean scanScheduled;
     private boolean scrollSinceLastScan;
@@ -51,24 +50,15 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 ? "Accessibility service connected; ready for X"
                 : "Accessibility service connected; enable consent inside Roots",
                 0, 0, 0, 0, "");
-        if (treeCapture != null) treeCapture.close();
-        treeCapture = NativeTree.available() ? new XTreeCapture(TreeRuntime.get(this), this::findXApplicationWindow, preferences::enabled) : null;
-        signalTree();
+        treeRuntime=NativeTree.available()?TreeRuntime.get(this):null;
         scheduleScan();
-    }
-
-    private void signalTree() {
-        if (treeCapture == null) return;
-        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-        treeCapture.signal(metrics.widthPixels, metrics.heightPixels);
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || destroyed || preferences == null) return;
         if (!preferences.enabled()) {
-            if (treeCapture != null) treeCapture.invalidate();
-            main.removeCallbacks(scan);
+                main.removeCallbacks(scan);
         scanScheduled = false;
             coordinator.clear();
             TranslationRuntime.disconnect();
@@ -100,8 +90,6 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             return;
         }
 
-        if (kind == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && treeCapture != null) treeCapture.invalidate();
-        signalTree();
         if (kind == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             scrollSinceLastScan = true;
             if (preferences.autoPreview() && renderer != null) {
@@ -138,7 +126,6 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     }
 
     private void hideOutsideX() {
-        if (treeCapture != null) treeCapture.invalidate();
         main.removeCallbacks(scan);
         scanScheduled = false;
         scrollSinceLastScan = false;
@@ -234,7 +221,12 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             readerStatus = "In-app consent OFF";
             return Collections.emptyList();
         }
-        AccessibilityNodeInfo root = getRootInActiveWindow();
+        // Retention requires a positively verified foreground application.
+        // Translation can still use its existing active-root fallback.
+        AccessibilityNodeInfo foreground=findXApplicationWindow();
+        boolean retain=treeRuntime!=null && treeRuntime.enabled() && isXRoot(foreground);
+        long epoch=retain?treeRuntime.captureEpoch():-1L;
+        AccessibilityNodeInfo root = retain?foreground:getRootInActiveWindow();
         if (!isXRoot(root)) {
             // Android may report the keyboard or our tiny language/More
             // control as the active window while X remains the foreground
@@ -249,7 +241,12 @@ public final class XTranslationAccessibilityService extends AccessibilityService
 
         android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
         // All coordinates and overlay windows use screen pixels, not dp.
-        List<TextCandidate> found = reader.find(root, metrics.widthPixels, metrics.heightPixels, metrics.scaledDensity);
+        List<TextCandidate> found = reader.find(root, metrics.widthPixels, metrics.heightPixels, metrics.scaledDensity,retain);
+        if(retain){
+            // Recheck foreground and consent after traversal; no extra tree walk.
+            boolean stillX=isXRoot(findXApplicationWindow());
+            treeRuntime.acceptVisibleSnapshot(reader.lastKnowledge(),epoch,stillX,reader.lastKnowledgeBounded());
+        }
         readerStatus = found.isEmpty()
                 ? (reader.lastPostDetail() ? "X active; post detail heading found, no body text" : "X active; no eligible visible text found")
                 : (reader.lastPostDetail() ? "X active; post detail text found" : "X active; candidate text found");
@@ -287,7 +284,6 @@ public final class XTranslationAccessibilityService extends AccessibilityService
 
     @Override
     public void onInterrupt() {
-        if (treeCapture != null) treeCapture.invalidate();
         main.removeCallbacks(scan);
         scanScheduled = false;
         if (coordinator != null) coordinator.clear();
@@ -298,7 +294,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     @Override
     public void onDestroy() {
         destroyed = true;
-        if (treeCapture != null) { treeCapture.close(); treeCapture = null; }
+        treeRuntime=null;
         main.removeCallbacks(scan);
         scanScheduled = false;
         if (coordinator != null) coordinator.destroy();

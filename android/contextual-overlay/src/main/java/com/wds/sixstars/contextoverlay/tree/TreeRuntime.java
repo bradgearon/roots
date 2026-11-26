@@ -123,12 +123,14 @@ public final class TreeRuntime {
             && o.externalId().getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=512
             && o.language().getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=64;
     }
-    public boolean enabled(){return NativeTree.available()&&!clearing&&overlay.enabled()&&prefs.getBoolean("capture_enabled",false);}
+    public boolean enabled(){return NativeTree.available()&&!clearing&&overlay.enabled()&&prefs.getBoolean("capture_enabled",false)&&prefs.getInt("capture_scope_version",0)==2;}
     public long captureEpoch(){return captureEpoch.get();}
     public void setEnabled(boolean value) {
         synchronized(intakeLock) {
             if(value&&(!NativeTree.available()||clearing||!overlay.enabled()))return;
-            prefs.edit().putBoolean("capture_enabled",value).apply();
+            SharedPreferences.Editor consent=prefs.edit().putBoolean("capture_enabled",value);
+            if(value)consent.putInt("capture_scope_version",2);
+            consent.apply();
             captureEpoch.incrementAndGet();
             cancelled.addAndGet(queue.size());dropped.addAndGet(queue.size());queue.clear();pending.clear();
         }
@@ -145,6 +147,21 @@ public final class TreeRuntime {
         if(n==1||n%25==0)writer.execute(()->trace("scan_summary",found,eligible?1:0,
             "home="+home+" private="+privateSurface+" bounded="+incomplete));
     }
+    /** Raw shared-reader snapshots. Bounded scans retain what they actually
+     * observed; no Home, language, interest, or post-ID gate. */
+    public void acceptVisibleSnapshot(List<NativeTree.Observation> observations,long epoch,
+            boolean foregroundX,boolean incomplete){
+        if(!enabled() || epoch!=captureEpoch.get())return;
+        scans.incrementAndGet();discovered.addAndGet(observations.size());
+        if(incomplete)truncated.incrementAndGet();
+        if(!foregroundX)rejected.incrementAndGet();
+        scheduleStats();
+        long n=scans.get();
+        if(n==1||n%25==0)writer.execute(()->trace("visible_scan",observations.size(),foregroundX?1:0,
+                "scope=visible_x bounded="+incomplete+" foreground="+foregroundX));
+        if(foregroundX)accept(observations,epoch);
+    }
+
     void accept(List<NativeTree.Observation> observations,long epoch){
         synchronized(intakeLock){
             if(!enabled()||epoch!=captureEpoch.get())return;
@@ -229,7 +246,7 @@ public final class TreeRuntime {
             "\nWrites attempted "+writeAttempts.get()+" · Failed "+writeFailures.get()+
             "\nLifetime inserted "+inserted.get()+" · Duplicate "+duplicate.get()+" · Dropped/refused "+dropped.get()+
             "\nQueue full "+queueDrops.get()+" · Cancelled "+cancelled.get()+" · Invalid "+invalidText.get()+
-            "\nNo Home "+noHome.get()+" · Private "+privateScans.get()+
+            "\nScope: visible X text · legacy Home rejections "+noHome.get()+
             "\nGGUF "+snapshotStatus+(error.isEmpty()?"":"\n"+error);
     }
     // Call these from a presentation worker, never from the UI thread.

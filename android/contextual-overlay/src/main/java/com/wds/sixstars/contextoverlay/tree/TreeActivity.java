@@ -56,7 +56,7 @@ public final class TreeActivity extends Activity {
         runtime=TreeRuntime.get(this);
         status=new TextView(this);layout.addView(status);
         Button refresh=button("Refresh status",()->refreshStatus());layout.addView(refresh);
-        layout.addView(button("Enable timeline capture",this::consent));
+        layout.addView(button("Enable X text capture",this::consent));
         layout.addView(button("Pause capture",()->{runtime.setEnabled(false);refreshStatus();}));
         layout.addView(button("Compile GGUF",()->{runtime.requestSnapshot();refreshStatus();}));
         search=new EditText(this);search.setSingleLine(true);search.setHint("Search retained text");layout.addView(search);
@@ -92,8 +92,8 @@ public final class TreeActivity extends Activity {
         if(!new OverlayPreferences(this).enabled()){
             new AlertDialog.Builder(this).setMessage("First enable the Roots X accessibility permission in translation settings. Tree storage is a separate opt-in.").setPositiveButton("OK",null).show();return;
         }
-        new AlertDialog.Builder(this).setTitle("Retain home timeline text locally?")
-            .setMessage("Roots will try to retain eligible text from X's foreground Home timeline, including posts you scroll past quickly and accessible lookahead. It cannot guarantee that every fragment is public or complete. It rejects unknown or private-looking surfaces. Text is retained in a private local database and derived GGUF, not uploaded. Pause stops new capture; an in-flight write may finish. Clear removes retained records and generated snapshots.")
+        new AlertDialog.Builder(this).setTitle("Retain all visible X text locally?")
+            .setMessage("Roots will retain accessible text displayed in foreground X across Home, profiles, replies, search and other screens, including potentially private messages and sensitive content. Editable fields and passwords are excluded. Text is stored in a private local database and derived GGUF; capture does not upload it. No screenshots or other apps are captured. Pause stops new capture; an in-flight write may finish. Clear removes retained records and generated snapshots.")
             .setNegativeButton("Not now",null).setPositiveButton("Enable local capture",(d,w)->{runtime.setEnabled(true);refreshStatus();}).show();
     }
     private void reset(){

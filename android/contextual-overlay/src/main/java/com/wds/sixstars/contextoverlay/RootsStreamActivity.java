@@ -98,8 +98,8 @@ public final class RootsStreamActivity extends Activity {
                 .setNegativeButton("Cancel",null).setPositiveButton("Settings",(d,w)->startActivity(new Intent(this,OverlayTranslationSettingsActivity.class))).show();
             return;
         }
-        new AlertDialog.Builder(this).setTitle("Retain X Home timeline text locally?")
-            .setMessage("Roots will try to retain eligible text from the foreground X Home timeline, including accessible lookahead. It rejects unknown and private-looking surfaces, but cannot guarantee every fragment is public or complete. Text stays in a private local database and derived GGUF; this capture does not upload it. Pause stops new capture; an in-flight write may finish. Clear is available in Tree of Life.")
+        new AlertDialog.Builder(this).setTitle("Retain all visible X text locally?")
+            .setMessage("Roots will retain accessible text displayed in foreground X across Home, profiles, replies, search and other screens, including potentially private messages and sensitive content. Editable fields and passwords are excluded. Text is stored in a private local database and derived GGUF; capture does not upload it. No screenshots or other apps are captured. Pause stops new capture; an in-flight write may finish. Clear removes retained records and generated snapshots.")
             .setNegativeButton("Not now",null).setPositiveButton("Enable local capture",(d,w)->{runtime.setEnabled(true);reset();}).show();
     }
     private void reset(){
@@ -131,7 +131,7 @@ public final class RootsStreamActivity extends Activity {
                     ended=page.size()<PAGE;loading=false;adapter.notifyDataSetChanged();
                     showEmpty(rows.isEmpty());
                     status.setText(count+" stored fragments · capture "+(runtime.enabled()?"on":"off"));
-                    empty.setText(count==0?"Your stream is empty. Enable local capture, then browse X Home.":"No fragments match your search.");
+                    empty.setText(count==0?"Your stream is empty. Enable local capture, then browse X.":"No fragments match your search.");
                     more.setText(ended?"All matching observations loaded":"Load older observations");
                     more.setEnabled(!ended);
                 });
@@ -154,7 +154,7 @@ public final class RootsStreamActivity extends Activity {
             LinearLayout outer=RootsUi.column(RootsStreamActivity.this);
             LinearLayout card=RootsUi.card(RootsStreamActivity.this,outer);
             LinearLayout top=new LinearLayout(RootsStreamActivity.this);top.setGravity(Gravity.CENTER_VERTICAL);
-            TextView source=RootsUi.text(RootsStreamActivity.this,"X  ·  Home observation",13,RootsUi.ACCENT,true);
+            TextView source=RootsUi.text(RootsStreamActivity.this,"X  ·  Local observation",13,RootsUi.ACCENT,true);
             top.addView(source,new LinearLayout.LayoutParams(0,-2,1));
             String code=f.language().isEmpty()?"Unknown":f.language().toUpperCase(Locale.ROOT);
             TextView lang=RootsUi.text(RootsStreamActivity.this,code,12,RootsUi.MUTED,true);

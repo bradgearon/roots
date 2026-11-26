@@ -34,6 +34,10 @@ public final class XVisibleTextReader {
     // In-memory discovery snapshot, independent of the chosen render layout.
     private List<TextCandidate> lastDiscovered = Collections.emptyList();
     public List<TextCandidate> lastDiscovered() { return lastDiscovered; }
+    private List<com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> lastKnowledge=Collections.emptyList();
+    private boolean lastKnowledgeBounded;
+    public List<com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> lastKnowledge(){return lastKnowledge;}
+    public boolean lastKnowledgeBounded(){return lastKnowledgeBounded;}
 
     public int lastVisitedNodes() { return lastVisited; }
     public int lastTextNodes() { return lastTextNodes; }
@@ -52,6 +56,15 @@ public final class XVisibleTextReader {
 
     public List<TextCandidate> find(AccessibilityNodeInfo root,
             int width, int height, float scaledDensity) {
+        return find(root,width,height,scaledDensity,false);
+    }
+
+    public List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
+            boolean retainKnowledge) {
+        Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> observations=new LinkedHashMap<>();
+        long observedAt=System.currentTimeMillis();
+        lastKnowledge=Collections.emptyList();
+        lastKnowledgeBounded=false;
         List<TextCandidate> raw = new ArrayList<>();
         List<Rect> avatars = new ArrayList<>();
         List<AuthorSample> authorSamples = new ArrayList<>();
@@ -78,7 +91,12 @@ public final class XVisibleTextReader {
             try {
                 // Descendants of custom X containers can still be readable even
                 // when the container itself is not considered visible.
+                // Never descend into editable or password controls. The raw
+                // knowledge lane is limited to foreground X, not the keyboard.
+                if(node.isEditable() || node.isPassword())continue;
+                if(node.getPackageName()!=null && !X_PACKAGE.contentEquals(node.getPackageName()))continue;
                 int childCount = Math.min(node.getChildCount(), 45);
+                if(node.getChildCount()>childCount)lastKnowledgeBounded=true;
                 for (int i = 0; i < childCount; i++) {
                     AccessibilityNodeInfo child = node.getChild(i);
                     if (child != null) queue.add(child);
@@ -86,6 +104,18 @@ public final class XVisibleTextReader {
                 if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
                 if (node.getPackageName() != null && !X_PACKAGE.contentEquals(node.getPackageName()))
                     continue;
+
+                // Record visible accessibility text before translation or
+                // post-role eligibility, including English and short labels.
+                if(retainKnowledge && node.getPackageName()!=null
+                        && X_PACKAGE.contentEquals(node.getPackageName())){
+                    Rect observedBounds=new Rect();
+                    node.getBoundsInScreen(observedBounds);
+                    if(XPostSpatialAnalyzer.onScreen(observedBounds,width,height)){
+                        retain(observations,node.getText(),observedAt);
+                        retain(observations,node.getContentDescription(),observedAt);
+                    }
+                }
 
                 // Avatar identity is a separate card element, not translatable
                 // body text. Capture its rectangle without retaining X nodes.
@@ -176,6 +206,8 @@ public final class XVisibleTextReader {
             }
         }
 
+        lastKnowledgeBounded|=!queue.isEmpty();
+        lastKnowledge=Collections.unmodifiableList(new ArrayList<>(observations.values()));
         // Associate each readable body with its nearest profile image. The
         // spatial analyzer may then deduplicate header/body descriptions of
         // the SAME tweet even when X omits recognizable post-container IDs.
@@ -225,6 +257,14 @@ public final class XVisibleTextReader {
             if (item.author.truncated) lastClippedNameCount++;
         }
         return scene;
+    }
+
+    private static void retain(Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> out,
+            CharSequence value,long at){
+        for(String text:KnowledgeText.fragments(value)){
+            if(!out.containsKey(text))out.put(text,new com.wds.sixstars.contextoverlay.tree.NativeTree.Observation(
+                    "x.android.visible.fragment","",text,languageHint(text),at));
+        }
     }
 
     private static boolean overlapsAuthor(TextCandidate body, List<TextCandidate> names) {
