@@ -34,10 +34,53 @@ if(ROOTS_ENABLE_VULKAN AND ANDROID)
     set(Vulkan_LIBRARY "${ROOTS_ANDROID_VULKAN_LIBRARY}" CACHE FILEPATH "Android Vulkan loader" FORCE)
     set(Vulkan_INCLUDE_DIR "${ROOTS_VULKAN_INCLUDE}" CACHE PATH "Vulkan headers" FORCE)
     set(Vulkan_GLSLC_EXECUTABLE "${ROOTS_HOST_GLSLC}" CACHE FILEPATH "Host shader compiler" FORCE)
-    # SPIRV-Headers is a host-independent header/config package from Vulkan SDK.
-    set(ROOTS_SPIRV_HEADERS_DIR "" CACHE PATH "Directory containing SPIRV-HeadersConfig.cmake")
+    # SPIRV-Headers is header-only. Some Windows SDK distributions contain
+    # spirv.hpp but no standalone CMake package. The Android toolchain also
+    # excludes host prefixes from package search unless explicitly permitted.
+    set(ROOTS_SPIRV_HEADERS_DIR "" CACHE PATH "Optional directory containing SPIRV-HeadersConfig.cmake")
     if(ROOTS_SPIRV_HEADERS_DIR)
         set(SPIRV-Headers_DIR "${ROOTS_SPIRV_HEADERS_DIR}" CACHE PATH "SPIRV-Headers config" FORCE)
+        find_package(SPIRV-Headers CONFIG REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+    else()
+        # Discard cached automatic resolution when SDK/profile changes.
+        unset(SPIRV-Headers_DIR CACHE)
+        find_package(SPIRV-Headers CONFIG QUIET
+            PATHS "${ROOTS_VULKAN_SDK}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+        if(NOT SPIRV-Headers_FOUND)
+            # Prefer the matching SDK headers, even if no package was installed.
+            unset(ROOTS_SPIRV_INCLUDE CACHE)
+            find_path(ROOTS_SPIRV_INCLUDE spirv/unified1/spirv.hpp
+                PATHS "${ROOTS_VULKAN_SDK}/Include" "${ROOTS_VULKAN_SDK}/include"
+                NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+            if(NOT ROOTS_SPIRV_INCLUDE)
+                message(STATUS "SDK lacks SPIRV-Headers; fetching pinned Khronos headers")
+                FetchContent_Declare(roots_spirv_headers
+                    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers.git
+                    GIT_TAG vulkan-sdk-1.4.350.0 GIT_SHALLOW TRUE)
+                FetchContent_GetProperties(roots_spirv_headers)
+                if(NOT roots_spirv_headers_POPULATED)
+                    FetchContent_Populate(roots_spirv_headers)
+                endif()
+                set(ROOTS_SPIRV_INCLUDE "${roots_spirv_headers_SOURCE_DIR}/include")
+            endif()
+            if(NOT EXISTS "${ROOTS_SPIRV_INCLUDE}/spirv/unified1/spirv.hpp")
+                message(FATAL_ERROR "SPIRV-Headers is incomplete: ${ROOTS_SPIRV_INCLUDE}")
+            endif()
+            # Create a build-local config for the standard header-only target.
+            # No host binary or Android-compiled library is needed.
+            set(_roots_spirv_config "${CMAKE_CURRENT_BINARY_DIR}/roots-spirv-package")
+            file(MAKE_DIRECTORY "${_roots_spirv_config}")
+            file(WRITE "${_roots_spirv_config}/SPIRV-HeadersConfig.cmake"
+                "if(NOT TARGET SPIRV-Headers::SPIRV-Headers)\n"
+                "  add_library(SPIRV-Headers::SPIRV-Headers INTERFACE IMPORTED GLOBAL)\n"
+                "  set_target_properties(SPIRV-Headers::SPIRV-Headers PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${ROOTS_SPIRV_INCLUDE}\")\n"
+                "endif()\n")
+            set(SPIRV-Headers_DIR "${_roots_spirv_config}" CACHE PATH "SPIRV-Headers config" FORCE)
+            find_package(SPIRV-Headers CONFIG REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+            message(STATUS "Roots SPIRV-Headers: ${ROOTS_SPIRV_INCLUDE} (generated package)")
+        else()
+            message(STATUS "Roots SPIRV-Headers package: ${SPIRV-Headers_DIR}")
+        endif()
     endif()
 endif()
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
@@ -47,6 +90,10 @@ set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 set(ROOTS_PLAMO_LLAMA_REVISION b11960)
 FetchContent_Declare(llama GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git GIT_TAG ${ROOTS_PLAMO_LLAMA_REVISION} GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(llama)
+if(ROOTS_ENABLE_VULKAN AND ANDROID AND TARGET ggml-vulkan)
+    # The upstream package check does not itself propagate header include paths.
+    target_link_libraries(ggml-vulkan PRIVATE SPIRV-Headers::SPIRV-Headers)
+endif()
 add_library(roots_plamo SHARED roots_plamo.cpp)
 target_link_libraries(roots_plamo PRIVATE llama android log)
 target_compile_definitions(roots_plamo PRIVATE ROOTS_PLAMO_LLAMA_REVISION="${ROOTS_PLAMO_LLAMA_REVISION}"
