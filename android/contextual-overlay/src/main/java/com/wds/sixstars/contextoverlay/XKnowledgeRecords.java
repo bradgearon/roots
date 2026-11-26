@@ -22,6 +22,12 @@ final class XKnowledgeRecords {
     }
     static void sample(List<Sample> out,CharSequence value,String id,Rect bounds,boolean description){
         if(out.size()>=1800 || value==null)return;
+        if(value instanceof android.text.Spanned && id!=null && (id.toLowerCase(Locale.ROOT).contains("timestamp")||id.toLowerCase(Locale.ROOT).contains("tweet_time")||id.toLowerCase(Locale.ROOT).contains("permalink"))){
+            android.text.Spanned spans=(android.text.Spanned)value;
+            for(android.text.style.URLSpan span:spans.getSpans(0,spans.length(),android.text.style.URLSpan.class)){
+                String link=XPostLink.canonical(span.getURL());if(!link.isEmpty()&&out.size()<1800)out.add(new Sample(link,id,bounds,description));
+            }
+        }
         for(String text:KnowledgeText.fragments(value)){
             if(out.size()>=1800)break;
             out.add(new Sample(text,id,bounds,description));
@@ -38,17 +44,27 @@ final class XKnowledgeRecords {
             // Do not silently merge uncertain authors across cards.
             String identity=handle.isEmpty()?author:handle;
             String key="local:x:"+TextFingerprint.of(identity.length()+":"+identity+":"+body.text);
+            body.knowledgeKey=key;
             add(out,key,"body",body.text,at);
             if(!author.isEmpty())add(out,key,"author",author,at);
             if(!handle.isEmpty())add(out,key,"handle",handle,at);
+            String permalink="";boolean ambiguous=false;
             for(Sample sample:samples){
                 if(!belongs(body,sample,bodies))continue;
                 if(TextFingerprint.normalized(sample.text).equals(body.text)
                         || TextFingerprint.normalized(sample.text).equals(author)
                         || sample.text.equals(handle))continue;
+                if(sample.id.contains("permalink")||sample.id.contains("tweet_time")||sample.id.contains("timestamp")){
+                    String link=XPostLink.canonical(sample.text);
+                    if(!link.isEmpty()){
+                        if(!permalink.isEmpty()&&!permalink.equals(link))ambiguous=true;
+                        permalink=link;
+                    }
+                }
                 String role=role(sample);
                 if(role!=null)add(out,key,role,sample.text,at);
             }
+            if(!ambiguous&&!permalink.isEmpty())add(out,key,"link",permalink,at);
         }
         return new ArrayList<>(out.values());
     }

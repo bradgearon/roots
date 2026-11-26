@@ -176,6 +176,28 @@ public final class TreeRuntime {
         }
         scheduleStats();scheduleDrain();
     }
+    /** Final translation, never a streamed prefix. Same master as source body. */
+    public boolean recordTranslation(String key,String original,String source,String target,String translated,long epoch){
+        if(!enabled()||captureEpoch.get()!=epoch||key==null||!key.startsWith("local:x:")||!target.matches("[a-z]{2,3}"))return false;
+        long now=System.currentTimeMillis();
+        NativeTree.Observation body=new NativeTree.Observation("record.x.body",key,original,source,now);
+        NativeTree.Observation text=new NativeTree.Observation("record.x.translation",key,translated,target,now);
+        if(!valid(body)||!valid(text))return false;
+        accept(java.util.Arrays.asList(body,text),epoch);
+        return true;
+    }
+    /** Explicit local edits/imports do not require screen-capture permission.
+     * Call from a worker, never the accessibility/UI thread. */
+    public long storeExplicit(List<NativeTree.Observation> observations){
+        if(observations.isEmpty()||observations.size()>256)throw new IllegalArgumentException("Invalid batch");
+        for(NativeTree.Observation observation:observations)if(!valid(observation))throw new IllegalArgumentException("Invalid record");
+        synchronized(mutationLock){
+            if(clearing)throw new IllegalStateException("Tree clearing");
+            long added=tree().observe(observations);
+            if(added>0)requestSnapshot();
+            return added;
+        }
+    }
     private static String observationKey(NativeTree.Observation o){
         return o.source()+"\u001f"+o.externalId()+"\u001f"+o.body();
     }

@@ -71,6 +71,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 : "Accessibility service connected; enable consent inside Roots",
                 0, 0, 0, 0, "");
         treeRuntime=NativeTree.available()?TreeRuntime.get(this):null;
+        coordinator.setTree(treeRuntime);
         TranslationRuntime.startCompute(this);
         scheduleScan();scheduleSettledScan();
     }

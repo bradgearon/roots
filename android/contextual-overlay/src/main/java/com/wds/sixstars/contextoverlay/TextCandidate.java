@@ -5,6 +5,8 @@ import android.graphics.Rect;
 /** An immutable screen snapshot. Never retain an AccessibilityNodeInfo after a scan. */
 public final class TextCandidate {
     public final String fingerprint;
+    // Assigned by the reader before publishing the snapshot.
+    String knowledgeKey="";
     public final boolean authorName;
     public final String text;
     public final String languageHint;

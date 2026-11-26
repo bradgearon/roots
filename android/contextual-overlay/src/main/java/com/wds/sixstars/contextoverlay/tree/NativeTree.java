@@ -40,6 +40,17 @@ public final class NativeTree implements AutoCloseable {
             for(Fragment f:members)if(f.source().endsWith("."+role))return f.body();
             return "";
         }
+        public Fragment localized(String language){
+            for(int i=members.size()-1;i>=0;i--){
+                Fragment f=members.get(i);
+                if(f.source().endsWith(".translation")&&language.equals(f.language()))return f;
+            }
+            return body();
+        }
+        public String latest(String role){
+            for(int i=members.size()-1;i>=0;i--)if(members.get(i).source().endsWith("."+role))return members.get(i).body();
+            return "";
+        }
         public Fragment body(){
             for(Fragment f:members)if(f.source().endsWith(".body"))return f;
             return members.get(0);

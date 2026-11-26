@@ -35,6 +35,18 @@ public final class OverlayTranslationCoordinator {
     private final OverlayChangeReactor changeReactor;
     private final FreshView freshView;
     private final TranslationCache cache = new TranslationCache();
+    private com.wds.sixstars.contextoverlay.tree.TreeRuntime tree;
+    private final java.util.LinkedHashMap<String,Boolean> savedTranslations=new java.util.LinkedHashMap<>();
+    void setTree(com.wds.sixstars.contextoverlay.tree.TreeRuntime runtime){tree=runtime;}
+    private void retainTranslation(TextCandidate candidate,String target,String translated,long epoch){
+        if(tree==null||candidate==null||candidate.authorName||candidate.knowledgeKey.isEmpty()||!tree.enabled()||tree.captureEpoch()!=epoch)return;
+        String key=epoch+":"+candidate.knowledgeKey+":"+target+":"+TextFingerprint.of(translated);
+        if(savedTranslations.containsKey(key))return;
+        if(tree.recordTranslation(candidate.knowledgeKey,candidate.text,candidate.languageHint,target,translated,epoch)){
+            savedTranslations.put(key,true);
+            if(savedTranslations.size()>2048)savedTranslations.remove(savedTranslations.keySet().iterator().next());
+        }
+    }
     private final Map<String, Long> retryAfter = new HashMap<>();
     // Latest immutable candidate list; network results must NEVER re-scan X.
     private List<TextCandidate> latestCandidates = Collections.emptyList();
@@ -162,6 +174,7 @@ public final class OverlayTranslationCoordinator {
         for(TextCandidate candidate:latestCandidates){
             String existing=cache.read(candidate.text,target);
             if(existing==null)continue;
+            if(tree!=null)retainTranslation(candidate,target,existing,tree.captureEpoch());
             if(automatic){
                 if(shouldTranslateAutomatically(candidate,target))
                     changeReactor.translated(candidate,existing);
@@ -287,6 +300,7 @@ public final class OverlayTranslationCoordinator {
         String k=key(candidate,target);
         if(!admission.tryAcquire(k,PROVIDER_SLOTS))return;
         long epoch=consentEpoch;
+        final long treeEpoch=tree!=null&&tree.enabled()?tree.captureEpoch():-1;
         final String submittedProfile=profile();
         final long submittedAt=SystemClock.elapsedRealtime();
         final long predicted=latency.predict(submittedProfile,candidate.text.length());
@@ -337,6 +351,7 @@ public final class OverlayTranslationCoordinator {
                         " elapsed_ms="+elapsed+" predicted_ms="+predicted+
                         " still_visible="+currentlyVisible(latest==null?match(latestCandidates,candidate.fingerprint):latest.candidate));
                 cache.write(candidate.text,target,translated);
+                retainTranslation(candidate,target,translated,treeEpoch);
                 retryAfter.remove(k);
             }else{
                 if(retryAfter.size()>100)retryAfter.clear();
@@ -371,7 +386,7 @@ public final class OverlayTranslationCoordinator {
         String target=preferences.targetLanguage();
         String cached=cache.read(current.text,target);
         manualCandidate=null;manualTarget=null;
-        if(cached!=null){renderer.showDetail(current,cached);return;}
+        if(cached!=null){if(tree!=null)retainTranslation(current,target,cached,tree.captureEpoch());renderer.showDetail(current,cached);return;}
         manualCandidate=current;manualTarget=target;
         renderer.showDetail(current,"Translating with PLaMo…");
         pump();
