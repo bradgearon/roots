@@ -66,6 +66,23 @@ public final class OverlayPreferences {
         }
         prefs.edit().putString(INLINE_THEME, value).apply();
     }
+    /** Experimental GPU mode is opt-in; normal builds use accelerated CPU kernels. */
+    public boolean localVulkanEnabled() { return prefs.getBoolean("local_vulkan", false); }
+    public void setLocalVulkanEnabled(boolean value) { prefs.edit().putBoolean("local_vulkan", value).apply(); }
+    public int localThreadSetting() {
+        int n=prefs.getInt("local_threads",0);
+        return n==2||n==4||n==6||n==8?n:0;
+    }
+    public void setLocalThreadSetting(int n) {
+        if(n!=0&&n!=2&&n!=4&&n!=6&&n!=8)throw new IllegalArgumentException("Unsupported thread count");
+        prefs.edit().putInt("local_threads",n).apply();
+    }
+    public int localThreads() {
+        int requested=localThreadSetting();
+        // Six is a starting point for Tensor G5's six performance/mid cores,
+        // not an affinity promise or a universally optimal thread count.
+        return Math.max(1,Math.min(Runtime.getRuntime().availableProcessors(),requested==0?6:requested));
+    }
     public boolean autoPreview() { return prefs.getBoolean(AUTO_PREVIEW, false); }
     public void setAutoPreview(boolean value) { prefs.edit().putBoolean(AUTO_PREVIEW, value).apply(); }
     public String targetLanguage() { return prefs.getString(TARGET, "en"); }
