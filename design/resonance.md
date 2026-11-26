@@ -6,7 +6,7 @@ Status: proposal. See [design index](README.md).
 
 Observe authorized social notifications using a platform-specific adapter (Android NotificationListenerService where available), content observations and permitted API metrics. Normalize events with source identity, content reference, event time, observation time, type, actor reference, deduplication key, scope and provenance. Notifications may be delayed, batched, suppressed or incomplete: never equate notification counts with total engagement. Estimate coverage and reconcile with authorized source metrics when possible.
 
-Use a time-versioned graph to study early supporters, mutual interactions, community growth, bridge accounts, rediscovery, cross-language propagation, creative lineage, and audience overlap. Separate actual observed edges from inferred relationships. Report missing data, not invented network structure.
+Use the Tree of Life's time-versioned relationship representation to study early supporters, mutual interactions, community growth, bridge accounts, rediscovery, cross-language propagation, creative lineage, and audience overlap. Separate actual observed edges from inferred relationships. Report missing data, not invented network structure.
 
 Detect unusual activity by comparing content-specific trajectories with appropriate historical baselines (author, format, exposure where known, audience size, time elapsed, topic and platform). Record acceleration, change points, observed sharing waves, source/community crossings, attention to older creations, and eventual decay or persistence. Do not infer who caused propagation without evidence.
 
@@ -18,7 +18,7 @@ Virality is the speed and extent of spread. Vitality is multidimensional: attent
 
 Record conditions before, during and after a publication: subject, wording, format, imagery, language, timing, earlier conversations, audience history, early reception, source platform, community state and related external events. Compare successes with similar ordinary and unsuccessful publications, not just other hits. Preserve a Resonance Fingerprint with features, baseline, evidence, missingness, model version, observation window and uncertainty.
 
-Hypothesis engine: use statistics and matched comparisons to establish associations; use LLMs to interpret and propose mechanisms, not manufacture causality. Distinguish repeatable choices, dependencies on other people, unique events, possible coincidences and unknowns. Suggest a follow-up creative approach and evaluate the outcome. Where feasible, test one changed condition at a time; avoid spam, engagement manipulation and exploitative recommendations.
+Hypothesis engine: use statistics and matched comparisons to establish associations; use specialized micro-cognitive operations to interpret and propose mechanisms, not manufacture causality. Written findings must follow the [actual writing process](tree-of-life.md). Distinguish repeatable choices, dependencies on other people, unique events, possible coincidences and unknowns. Suggest a follow-up creative approach and evaluate the outcome. Where feasible, test one changed condition at a time; avoid spam, engagement manipulation and exploitative recommendations.
 
 Example: a game-development demo gains attention from musicians after a relevant community repost. Compare prior demos and plain text posts, examine measured audience differences, identify whether other works experienced renewed interest, suggest sharing a new demonstration or explaining its music-related aspects, then evaluate results.
 
@@ -33,6 +33,10 @@ Current-events research records topic, geography, event time, publication time, 
 Kairos matches personal creative history and intentions to current events, poetic motifs, cultural state and network readiness. Surface timely opportunities to create, rediscover, learn or connect, with explanation and uncertainty. A user can dismiss, snooze, or ask for more detail. Do not exploit grief or crises for attention.
 
 Compare environmental conditions from 30 days, 7 days, 24 hours before posting, publication time, early reception and subsequent windows. Snapshot collection should precede outcomes when possible to reduce hindsight bias. Reconstructed history must be explicitly labeled.
+
+## Whirlwind and Honeycomb integration
+
+Resonance may supply Wind observations, time baselines, environmental conditions and outcome evidence to [Whirlwind and Honeycomb](honeycomb-whirlwind.md). Virality alone cannot establish circulation, novelty, benefit or understanding. A bounded episode requires evidence of reciprocal influence; retention and reweaving require separately evaluated benefit and authorization. Record counterexamples, adverse outcomes and uncertainty alongside constructive cases.
 
 ## Background work
 
