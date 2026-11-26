@@ -83,6 +83,15 @@ public final class OverlayPreferences {
         // not an affinity promise or a universally optimal thread count.
         return Math.max(1,Math.min(Runtime.getRuntime().availableProcessors(),requested==0?6:requested));
     }
+    /** Outstanding overlay requests, not simultaneous native contexts. */
+    public int translationRequestLimit() {
+        int n=prefs.getInt("translation_request_limit",1);
+        return n>=1&&n<=4?n:1;
+    }
+    public void setTranslationRequestLimit(int n) {
+        if(n<1||n>4)throw new IllegalArgumentException("Unsupported request limit");
+        prefs.edit().putInt("translation_request_limit",n).apply();
+    }
     public boolean autoPreview() { return prefs.getBoolean(AUTO_PREVIEW, false); }
     public void setAutoPreview(boolean value) { prefs.edit().putBoolean(AUTO_PREVIEW, value).apply(); }
     public String targetLanguage() { return prefs.getString(TARGET, "en"); }

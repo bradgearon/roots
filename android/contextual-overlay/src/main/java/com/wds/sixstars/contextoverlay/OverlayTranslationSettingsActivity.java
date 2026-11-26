@@ -230,6 +230,23 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             refreshStatus();
         });
         content.addView(translationMode);
+        content.addView(text("Translation scheduling — outstanding requests", 13, 0xFFAAC8D4));
+        Spinner requests = new Spinner(this);
+        String[] requestLabels = {"1 — One at a time (recommended)", "2 — One active + one ahead",
+                "3 — Up to three outstanding", "4 — Up to four outstanding"};
+        ArrayAdapter<String> requestAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, requestLabels);
+        requestAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        requests.setAdapter(requestAdapter);
+        requests.setSelection(prefs.translationRequestLimit()-1);
+        requests.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                prefs.setTranslationRequestLimit(position+1);
+                refreshStatus();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        content.addView(requests);
+        content.addView(text("One at a time waits for the actual provider callback before submitting another request, even when scrolling. Higher values allow a bounded queue, not extra native inference contexts. Manual requests take the next available slot.", 12, 0xFFAAC8D4));
         content.addView(text("Auto inline appearance (match your X theme)", 13, 0xFFAAC8D4));
         inlineAppearance = new Spinner(this);
         String[] appearanceLabels = { "Follow Android system", "X Black", "X Dim", "X Light" };
@@ -421,7 +438,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 "\nDisplay mode: " + (prefs.autoPreview()
                         ? "Automatic — show translations while scrolling"
                         : "Manual — tap ⇄ to translate") +
-                "\nBridge: " + prefs.bridgeUrl() +
+                "\nOutstanding request limit: " + prefs.translationRequestLimit() + "\nBridge: " + prefs.bridgeUrl() +
                 "\nTransport: " + TranslationRuntime.transportStatus());
         if (diagnostics != null) {
             diagnostics.setText(OverlayDiagnostics.summary(this));

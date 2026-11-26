@@ -2,7 +2,6 @@ package com.wds.sixstars.contextoverlay;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,11 +35,13 @@ public final class OverlayTranslationCoordinator {
     private List<TextCandidate> latestCandidates = Collections.emptyList();
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    private long requestSequence;
-    private long automaticGeneration;
-    private String autoPendingFingerprint;
-    private long autoPendingMissingSince;
-    private boolean active;
+    // The provider owns submitted work until its callback, not until a post
+    // leaves the viewport. Manual and automatic requests share admission.
+    private final TranslationAdmission admission = new TranslationAdmission();
+    private long consentEpoch;
+    private boolean active, destroyed;
+    private TextCandidate manualCandidate;
+    private String manualTarget;
 
     public OverlayTranslationCoordinator(TranslationProvider provider,
             OverlayPreferences preferences,
@@ -58,6 +59,7 @@ public final class OverlayTranslationCoordinator {
     }
 
     public void refresh(List<TextCandidate> current, boolean scrolling) {
+        if(destroyed)return;
         latestCandidates = Collections.unmodifiableList(new ArrayList<>(current));
         active = preferences.enabled();
         if (!active) {
@@ -66,26 +68,6 @@ public final class OverlayTranslationCoordinator {
         }
 
         boolean automatic = preferences.autoPreview();
-        if (autoPendingFingerprint != null) {
-            if (match(current, autoPendingFingerprint) != null) {
-                autoPendingMissingSince = 0L;
-            } else if (scrolling) {
-                ++automaticGeneration;
-                autoPendingFingerprint = null;
-                autoPendingMissingSince = 0L;
-            } else {
-                long now = SystemClock.uptimeMillis();
-                if (autoPendingMissingSince == 0L) {
-                    autoPendingMissingSince = now;
-                } else if (!AutoInlinePresencePolicy.retainAbsent(
-                        autoPendingMissingSince, now, false)) {
-                    ++automaticGeneration;
-                    autoPendingFingerprint = null;
-                    autoPendingMissingSince = 0L;
-                }
-            }
-        }
-
         changeReactor.observe(current, automatic, this::translateAtTap, scrolling);
         String target = preferences.targetLanguage();
         for (TextCandidate candidate : current) {
@@ -99,92 +81,103 @@ public final class OverlayTranslationCoordinator {
             }
         }
 
-        // Only one auto request initiated at a time. A later scan may start
-        // the next post; no timer/polling and no unbounded request queue.
-        if (automatic && preferences.translationEnabled()
-                && autoPendingFingerprint == null) {
-            for (TextCandidate candidate : current) {
-                if (!shouldTranslateAutomatically(candidate, target)) continue;
-                if (cache.read(candidate.text, target) != null) continue;
-                String key = candidate.fingerprint + ":" + target;
-                Long retry = retryAfter.get(key);
-                if (retry != null && System.currentTimeMillis() < retry) continue;
-                prefetch(candidate, target);
-                break;
-            }
-        }
+        pump();
     }
 
     private static boolean shouldTranslateAutomatically(TextCandidate c, String target) {
         return AutoTranslationEligibilityService.accepts(c, target);
     }
 
-    private void prefetch(TextCandidate candidate, String target) {
-        final String fingerprint = candidate.fingerprint;
-        final String retryKey = fingerprint + ":" + target;
-        final long generation = ++automaticGeneration;
-        autoPendingFingerprint = fingerprint;
-        autoPendingMissingSince = 0L;
+    private static String key(TextCandidate candidate,String target) {
+        return candidate.fingerprint + ":" + target;
+    }
 
-        provider.translate(candidate.text, candidate.languageHint, target,
-                (translated, error) -> main.post(() -> {
-                    if (generation != automaticGeneration) return;
-                    autoPendingFingerprint = null;
-                    autoPendingMissingSince = 0L;
-                    if (!active || !preferences.enabled() ||
-                            !preferences.translationEnabled() ||
-                            !preferences.autoPreview()) return;
+    /** Main-thread admission. Never queue obsolete automatic work locally. */
+    private void pump() {
+        if (destroyed || !active || !preferences.enabled()) return;
+        int limit = preferences.translationRequestLimit();
+        String target = preferences.targetLanguage();
+        if (manualCandidate != null) {
+            TextCandidate current = match(latestCandidates, manualCandidate.fingerprint);
+            if (current == null || !target.equals(manualTarget)) {
+                manualCandidate = null; manualTarget = null;
+            } else {
+                String cached = cache.read(current.text, target);
+                if (cached != null) {
+                    manualCandidate = null; manualTarget = null;
+                    renderer.showDetail(current, cached);
+                } else if (!admission.contains(key(current,target))) {
+                    if (!admission.hasRoom(limit)) return;
+                    submit(current,target);
+                }
+                // Do not let speculative jobs jump ahead of an explicit tap.
+                if (manualCandidate != null) return;
+            }
+        }
+        if (!preferences.autoPreview() || !preferences.translationEnabled()) return;
+        for (TextCandidate candidate : latestCandidates) {
+            if (!admission.hasRoom(limit)) break;
+            if (!shouldTranslateAutomatically(candidate,target) ||
+                    cache.read(candidate.text,target)!=null) continue;
+            String k=key(candidate,target);
+            Long retry=retryAfter.get(k);
+            if (admission.contains(k) || (retry!=null && System.currentTimeMillis()<retry)) continue;
+            submit(candidate,target);
+        }
+    }
 
-                    if (error == null && translated != null && !translated.trim().isEmpty()) {
-                        cache.write(candidate.text, target, translated);
-                        retryAfter.remove(retryKey);
-                    } else {
-                        if (retryAfter.size() > 100) retryAfter.clear();
-                        retryAfter.put(retryKey,
-                                System.currentTimeMillis() + AUTO_RETRY_COOLDOWN_MS);
-                    }
-                    // Deliver through the latest published scene snapshot.
-                    // NEVER perform an accessibility traversal from a PLaMo
-                    // completion: the next Choreographer frame owns painting.
-                    refresh(latestCandidates);
-                }));
+    private void submit(TextCandidate candidate,String target) {
+        String k=key(candidate,target);
+        if(!admission.tryAcquire(k,preferences.translationRequestLimit()))return;
+        long epoch=consentEpoch;
+        TranslationProvider.Result callback=(translated,error)->main.post(()->{
+            // Always release the actual outstanding request, including on
+            // scroll, mode changes and X exit. Duplicate callbacks are ignored.
+            if(!admission.release(k))return;
+            if(destroyed)return;
+            if(!preferences.enabled()||epoch!=consentEpoch){
+                if(active&&preferences.enabled())pump();
+                return;
+            }
+            boolean ok=error==null&&translated!=null&&!translated.trim().isEmpty();
+            if(ok){
+                cache.write(candidate.text,target,translated);
+                retryAfter.remove(k);
+            }else{
+                if(retryAfter.size()>100)retryAfter.clear();
+                retryAfter.put(k,System.currentTimeMillis()+AUTO_RETRY_COOLDOWN_MS);
+            }
+            // Results remain useful after scrolling away; render only against
+            // the latest scene, never the original request's geometry.
+            if(!active)return;
+            TextCandidate current=match(latestCandidates,candidate.fingerprint);
+            if(manualCandidate!=null&&k.equals(key(manualCandidate,manualTarget))){
+                manualCandidate=null;manualTarget=null;
+                if(current!=null&&target.equals(preferences.targetLanguage()))
+                    renderer.showDetail(current,ok?translated:"Translation unavailable: "+(error==null?"No translation returned.":error));
+            }
+            refresh(latestCandidates);
+        });
+        try {
+            provider.translate(candidate.text,candidate.languageHint,target,callback);
+        }catch(RuntimeException ex){
+            callback.completed(null,"Translation provider unavailable.");
+        }
     }
 
     private void translateAtTap(TextCandidate tapped) {
-        if (!active || !preferences.enabled() ||
-                !preferences.translationEnabled()) return;
-
-        List<TextCandidate> fresh = freshView.capture();
-        TextCandidate current = match(fresh, tapped.fingerprint);
-        if (current == null) return;
-
-        String target = preferences.targetLanguage();
-        String cached = cache.read(current.text, target);
-        if (cached != null) {
-            renderer.showDetail(current, cached);
-            return;
-        }
-
-        final long sequence = ++requestSequence;
-        renderer.showDetail(current, "Translating with PLaMo…");
-        provider.translate(current.text, current.languageHint, target,
-                (translation, error) -> main.post(() -> {
-                    if (sequence != requestSequence || !active ||
-                            !preferences.enabled() ||
-                            !preferences.translationEnabled()) return;
-
-                    String output = error == null
-                            ? (translation == null ? "No translation returned." : translation)
-                            : "Translation unavailable: " + error;
-                    if (error == null && translation != null)
-                        cache.write(current.text, target, translation);
-
-                    List<TextCandidate> latest = freshView.capture();
-                    refresh(latest);
-                    TextCandidate stillVisible = match(latest, tapped.fingerprint);
-                    if (stillVisible != null)
-                        renderer.showDetail(stillVisible, output);
-                }));
+        if(destroyed||!active||!preferences.enabled())return;
+        List<TextCandidate> fresh=freshView.capture();
+        TextCandidate current=match(fresh,tapped.fingerprint);
+        if(current==null)return;
+        latestCandidates=Collections.unmodifiableList(new ArrayList<>(fresh));
+        String target=preferences.targetLanguage();
+        String cached=cache.read(current.text,target);
+        manualCandidate=null;manualTarget=null;
+        if(cached!=null){renderer.showDetail(current,cached);return;}
+        manualCandidate=current;manualTarget=target;
+        renderer.showDetail(current,"Translating with PLaMo…");
+        pump();
     }
 
     private static TextCandidate match(List<TextCandidate> candidates, String fingerprint) {
@@ -195,16 +188,19 @@ public final class OverlayTranslationCoordinator {
     }
 
     public void clear() {
-        ++automaticGeneration;
-        autoPendingFingerprint = null;
-        autoPendingMissingSince = 0L;
-        ++requestSequence;
+        // Leaving X drops presentation and pending manual demand, but does
+        // not pretend an already-submitted native job has finished.
+        if(!preferences.enabled()){
+            ++consentEpoch; cache.clear(); retryAfter.clear();
+        }
+        manualCandidate=null;manualTarget=null;
         active = false;
         latestCandidates = Collections.emptyList();
         changeReactor.clear();
     }
 
     public void destroy() {
+        destroyed=true;
         clear();
         cache.clear();
         retryAfter.clear();
