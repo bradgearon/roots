@@ -7,3 +7,6 @@
 *.gguf
 *.partial
 logs/
+
+# Independent Android native build outputs
+android/.roots-brain/
