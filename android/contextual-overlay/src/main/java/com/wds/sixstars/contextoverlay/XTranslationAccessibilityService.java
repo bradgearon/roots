@@ -115,11 +115,13 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 XMeasuredScrollTracker.Result movement = scrollTracker.observe(
                         origin, directY, event.getScrollY());
                 if (movement.measured) {
+                    coordinator.noteMeasuredScroll(movement.deltaY,android.os.SystemClock.uptimeMillis());
                     if (movement.deltaY != 0)
                         renderer.measuredScroll(0, movement.deltaY);
                 } else {
                     // X supplied no reliable vertical pixel displacement.
                     // Hide rather than let old labels hover until rescanning.
+                    coordinator.noteUncertainScroll();
                     renderer.uncertainScroll();
                 }
             }
@@ -127,6 +129,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 preferences.autoPreview() && renderer != null) {
             // A new X page invalidates the last scroll source and geometry.
             scrollTracker.reset();
+            coordinator.noteSceneChanged();
             scrollSinceLastScan = true;
             renderer.uncertainScroll();
             renderer.resetAutoWindowAttachment();
@@ -191,6 +194,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         scrollSinceLastScan = false;
         // Never treat a single empty accessibility snapshot as app exit.
         // A reply composer may briefly make X's virtual text tree empty.
+        coordinator.setViewportHeight(getResources().getDisplayMetrics().heightPixels);
         coordinator.refresh(candidates,
                 readerStatus.startsWith("X active;") ? reader.lastDiscovered() : Collections.emptyList(),
                 scrolling);
