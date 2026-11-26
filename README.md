@@ -26,10 +26,10 @@ Open chrome://extensions, enable developer mode, and load unpacked chrome-extens
 
 ## Android
 
-Open android/ in Android Studio. Use the Gradle version specified in android/gradle/wrapper/gradle-wrapper.properties, SDK 36, compatible Android Gradle Plugin/JDK, NDK and CMake 3.22.1. Generate the Gradle wrapper with installed Gradle if needed. Build :app:assembleDebug on an ARM64 device. The CMake build retrieves llama.cpp b10724. Existing X accessibility rendering, viewport and placement services are retained.
+Open android/ in Android Studio. Use the Gradle version specified in android/gradle/wrapper/gradle-wrapper.properties, SDK 36, compatible Android Gradle Plugin/JDK, NDK and CMake 3.22.1. Generate the Gradle wrapper with installed Gradle if needed. Build :app:assembleDebug on an ARM64 device. The CMake build retrieves llama.cpp b11960 (PLaMo 3 tokenizer support). Existing X accessibility rendering, viewport and placement services are retained.
 
 1. Open Roots and grant the in-app disclosure and Android Accessibility permission.
-2. Tap Download local PLaMo model (~550 MB); Android DownloadManager downloads it over Wi-Fi. Once complete, test translation.
+2. Tap Download local PLaMo model (~550 MB); Android DownloadManager downloads it over Wi-Fi. Once complete, test translation. The Android runtime uses the publisher-tested llama.cpp b11960; an existing verified GGUF can be reused. Inference failures now report the actual stage and native error rather than only IllegalStateException. Local model lifecycle events (no prompt or completion text) are recorded in app-private files/diagnostics/plamo-lifecycle.jsonl with one rotated predecessor.
 3. On-device inference is default. Choose manual or automatic mode, target language and overlay theme.
 4. To use desktop inference instead, start launch.cmd --lan on your PC, save http://YOUR-PC:8123 and the Roots token in the app, and explicitly enable "Use desktop host instead of on-device PLaMo". Disable that toggle to return to local inference. No silent fallback or transmission in local mode.
 
