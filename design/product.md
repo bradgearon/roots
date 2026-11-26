@@ -10,9 +10,9 @@ Users can award particular content: Golden Star, Hidden Gem, Brilliance, Inspira
 
 Recognition from someone whose taste a user trusts is a discovery signal, not a reason to rank all creators by popularity. Display metrics with source and observation time; distinguish likes, impressions, awards and bookmarks.
 
-## Cross-network graph and Gardens
+## Cross-network Tree of Life and Gardens
 
-Represent people, verified external identities, content, events, interests, resources and typed relationships. Candidate adapters: X, Bluesky, Mastodon, GitHub, YouTube and personal sites, subject to platform permissions and rules. A manually shared URL provides a fallback. Verify identity ownership; never merge people solely because handles match. Respect deletions and visibility changes; retain only authorized previews or references.
+The [Tree of Life](tree-of-life.md) represents development, while a graph is one possible storage mechanism. Represent people, verified external identities, content, events, interests, resources and typed relationships. Candidate adapters: X, Bluesky, Mastodon, GitHub, YouTube and personal sites, subject to platform permissions and rules. A manually shared URL provides a fallback. Verify identity ownership; never merge people solely because handles match. Respect deletions and visibility changes; retain only authorized previews or references.
 
 Gardens are shared collections of people, knowledge, interests and creations. A creation can belong to multiple Gardens. Curators and community awards support discovery. Creative lineage links include inspired-by, builds-upon, translates, explains, implements, remixes and collaborates-with; distinguish explicit attribution from inferred links.
 
@@ -32,6 +32,10 @@ Proposed pipeline:
 Android overlays cannot reliably resize another app's layout. Clip or choose content appropriate for existing bounds; never cover unrelated UI or system prompts. Cancel stale work on scroll, row reuse, content mutation or identity change. Fail open to original content on unsupported screens, latency or uncertainty. Preserve gestures, original accessibility and translation controls. A complete replacement feed is a separate future option.
 
 Modes: natural, inspiration, fellowship, exploration, knowledge, nostalgia, peace. A content mixer balances original content, new discovery, historical highlights and other sources; allow an exploration budget instead of merely reinforcing existing preferences.
+
+## Native web and Garden experience
+
+Roots converges with a native web presence: profiles, portfolios, publications, highlights, recognition, Gardens and scoped opportunities. The Android, browser and desktop experience remains useful independently. See [Garden participation](garden.md) for optional local anonymous presence, swipe discovery, patrols, Forge voices, delayed character callbacks and the Serpent. [Honeycomb and Whirlwind](honeycomb-whirlwind.md) organize sustainable patterns and detect emerging reciprocal activity rather than promote attention alone.
 
 ## Experience
 

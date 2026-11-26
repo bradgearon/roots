@@ -24,11 +24,15 @@ Offer ideas during or after a conversation, as appropriate to the interface, wit
 
 ## Discovery and coordination
 
-Agents operate on the authorized Roots graph. One may find a creator, another recognize a relevant interest, another connect a current event to a past work. Share structured, scoped findings and evidence; never leak private source context across permissions. Rank opportunities by relevance, complementary interests, novelty, availability, feasibility and evidence quality; no universal popularity requirement.
+Agents operate on the authorized Tree of Life and its underlying relationship representation. One may find a creator, another recognize a relevant interest, another connect a current event to a past work. Share structured, scoped findings and evidence; never leak private source context across permissions. Rank opportunities by relevance, complementary interests, novelty, availability, feasibility and evidence quality; no universal popularity requirement.
 
 Support deliberate interest expansion: familiar topics, adjacent disciplines and an adjustable exploration budget for unfamiliar areas. Offer discovered content to the timeline mixer, highlights or an inbox. A dismissed finding should not recur unless meaningfully changed.
 
 Opt-in opportunity exchange allows two users' agents to match shared goals or complementary skills via minimal, explicitly shared opportunity descriptors; mutual availability and approval gate any introduction. No profile or private-message export is implied.
+
+## Patrols, writing and emergence
+
+Purpose-driven patrols extend exploration into unfamiliar public or explicitly authorized areas; see [Garden participation](garden.md). Foreign actors may participate through Forge under scoped capability and authorship contracts. Agent observations may become candidate Winds, but agents do not fabricate activity or force interpersonal connections. The [Whirlwind and Honeycomb design](honeycomb-whirlwind.md) governs reciprocal development and retention. Agent-written findings and ideas must follow the [actual writing process](tree-of-life.md), not direct model generation.
 
 ## Execution and UX
 
@@ -40,6 +44,6 @@ Agent output: recommendation with evidence, why it matches the user's intention,
 
 - Create and edit an agent from a short natural-language intent.
 - Suggest a novel adjacent interest, a relevant person and a feasible opportunity with source evidence.
-- Generate a useful idea from an authorized sample conversation without asserting another person's hidden intention.
+- Develop a useful idea from an authorized sample conversation without asserting another person's hidden intention.
 - Pausing or revoking an agent stops its work and prevents further discoveries from being presented.
 - An unavailable or blocked person never appears in a matchmaking result for that mode.

@@ -6,7 +6,7 @@ Status: proposal; not implemented. See [design index](README.md).
 
 Roots is a local-first translation and social integration platform. The repository README documents the Android accessibility overlay and on-device PLaMo 0.8B model, Chrome extension and Windows desktop host (.NET 9, llama.cpp, PLaMo 2B by default). The existing translation API and transport-neutral Wds.Roots.Api Forge contracts (ForgeActorReference, ForgeServiceRequest, ForgeServicePacket, IForgeService.InvokeAsync, correlation IDs and state update notices) are the starting point. Do not replace the existing viewport or translation implementations to introduce social intelligence.
 
-The general reasoning and embedding providers proposed here are distinct from the translation provider; do not assume the translation model can reliably classify or reason about social content. No silent cloud fallback.
+The Tree of Life is the developmental architecture, not the storage graph. Roots converges with a native web presence; see [Tree of Life](tree-of-life.md). Specialized micro-cognitive operations, including a deliberate writing process, are architectural units rather than a generative model. The general reasoning and embedding providers proposed here are distinct from the translation provider; do not assume the translation model can reliably classify or reason about social content. No silent cloud fallback.
 
 ## Logical service boundaries
 
@@ -15,7 +15,7 @@ The general reasoning and embedding providers proposed here are distinct from th
 | Source adapters | Authorized platform observations, capability flags, normalization and provenance |
 | Viewport observation / presentation | Stable content identity, lookahead, bounded substitution, cancellation and original reveal |
 | Event intake | Deduplication, idempotency, ordering, consent and retention |
-| Graph projector | Time-versioned relationships and queryable current state |
+| Tree of Life projector | Time-versioned developmental relationships and queryable current state |
 | Highlights / recognition | Local favorites, collections, awards and trophy cabinet |
 | Policy / availability | Per-mode permissions, scopes, mutual eligibility, revocation and blocks |
 | Ratings | Peer submissions, validation, aggregate projection, moderation |
@@ -27,18 +27,27 @@ The general reasoning and embedding providers proposed here are distinct from th
 | Kairos / discovery | Match creative history and intentions to environmental opportunities |
 | Inference providers | Task-specific local or expressly approved remote models |
 | Worker scheduler | Event-triggered jobs, batching, backoff, budgets and cancellation |
+| WindObserver / WindCouplingService | Evidence-linked Wind observations and candidate interactions |
+| WhirlwindDetector / WhirlwindEngine | Reciprocal influence, bounded episodes and transformation hypotheses |
+| HoneycombTopology / CombCellProjector | Logical Mesh neighborhoods and versioned projections |
+| VitalityEvaluator / DiscernmentService | Independent judgment of outcomes and harms |
+| HoneyRetentionService / HoneycombReweavingService | Evaluated feedback and authorized reversible structural adaptation |
+| WritingProcessService | Intention, knowledge, understanding, composition, judgment, revision and expression |
+| Garden presence / patrol services | Scoped exploration, optional coarse local discovery and independent availability |
+| Forge actor connection / expression routing | Foreign actor identity, attributable voice, permissions and presentation |
+| Native web service | Profiles, public/scoped publications and social operations under shared policy |
 
 Keep models/data records simple; place decisions in testable service implementations. UI should call operations rather than own business logic.
 
-## Shared graph and events
+## Tree of Life storage and events
 
-Suggested entities: Person, NetworkIdentity, Content, Observation, Relationship, Garden, Highlight, Recognition, Rating, AvailabilityPolicy, ProfileFact, Intent, Agent, Opportunity, EnvironmentSnapshot, ResonanceFingerprint and Insight.
+Suggested entities: Person, NetworkIdentity, Content, Observation, Relationship, Garden, Highlight, Recognition, Rating, AvailabilityPolicy, ProfileFact, Intent, Agent, Opportunity, EnvironmentSnapshot, ResonanceFingerprint and Insight. Add the proposed WindEvent, WhirlwindEpisode, CombCell, CellRelation, HoneyDeposit, ReweaveProposal, WritingRecord, ActorConnection, ExpressionEnvelope and NearbyPresence records in the dedicated design documents.
 
 A source observation includes source/platform, external ID, canonical URL when permitted, event timestamp, observed timestamp, schema version, provenance, permission scope and dedup key. Store a reference to authorized source content rather than unrestricted copies. Temporal graph edges carry type, origin, validity interval and visibility; inferred edges retain confidence and evidence. Immutable event IDs do not imply immutable personal data: support deletion/redaction and derived projection rebuilding.
 
 Use a local transactional database (SQLite is a candidate) for events, projection tables, preferences, model metadata and durable jobs. Index by source ID, time, person/content and topic. Store embeddings only where needed and treat them as personal data. Keep raw notification/conversation content in a separately scoped store with short configurable retention. Secrets use platform keystores. Initial implementation need not require a graph database or a distributed event bus.
 
-A later opt-in sync/service tier may hold public event context, approved cross-user recognition, ratings, availability and agent introductions. Private histories do not sync by default. Distinguish local-only capabilities from operations requiring shared state. Use authenticated access, encrypted transport, server-side permission checks, audit, revocation and replay-safe writes. Existing desktop LAN HTTP is documented as a trusted-network development mode; do not extend it to public social services.
+The native web presence and opt-in sync/service tier may hold public event context, approved cross-user recognition, ratings, availability and agent introductions. Private histories do not sync by default. Distinguish local-only capabilities from operations requiring shared state. Use authenticated access, encrypted transport, server-side permission checks, audit, revocation and replay-safe writes. Existing desktop LAN HTTP is documented as a trusted-network development mode; do not extend it to public social services.
 
 ## Proposed Forge operations
 
@@ -55,8 +64,13 @@ Names below are illustrative and not existing endpoints. Use versioned inputs/ou
 | agent | intent.compile, create, run, pause, discovery.list |
 | conversation | analyze, suggest |
 | opportunity | discover, introduction.request |
+| wind / whirlwind | wind.observe, wind.couple, whirlwind.detect, whirlwind.evaluate, whirlwind.close |
+| honeycomb / honey | honeycomb.cell.query, honeycomb.reweave.propose, honeycomb.reweave.commit, honeycomb.measure, honey.deposit |
+| writing | intention.set, knowledge.attach, understanding.review, composition.revise, judgment.record, expression.commit |
+| actor / expression / voice | actor.connect, actor.capabilities, actor.disconnect, expression.submit, expression.schedule, expression.revoke, voice.capabilities, voice.render |
+| patrol / nearby | patrol.configure, patrol.run, nearby.presence.set, nearby.discovery.query, nearby.introduction.request |
 
-Maintain compatibility with language.detect and language.translate. Define contracts and use fixture/mock providers before binding to Android/Chrome/desktop. An LLM may propose an intent or policy rule, but only a validated, user-approved structured policy can authorize actions.
+Maintain compatibility with language.detect and language.translate. Define contracts and use fixture/mock providers before binding to Android/Chrome/desktop. A micro-cognitive operation may propose an intent or policy rule, but only a validated, user-approved structured policy can authorize actions.
 
 ## Background execution
 
@@ -74,6 +88,10 @@ Job envelope: job ID, actor, purpose, policy version, input references, dependen
 
 Phases are flexible; implement availability policy foundations before any cross-user interactions. Dating and ratings must not be prerequisites for other functionality.
 
+## Integrated delivery constraints
+
+Implement the Tree of Life and writing contracts before shipping system-authored reports; preserve the existing translation flow. Add deterministic synthetic Wind and Comb Cell fixtures before implementing the Whirlwind detector or structural reweaving. Introduce native web identity and policy enforcement before cross-user interactions. Deploy optional presence, patrols, foreign voices and the Serpent independently, after scoped consent and abuse controls. Require explicit human authorization for interpersonal changes and separate independent judgment from discovery. See [Honeycomb and Whirlwind](honeycomb-whirlwind.md) and [Garden participation](garden.md).
+
 ## Verification and open decisions
 
 - Unit/contract tests: normalized events, deduplication, projection rebuild, scope enforcement, rating aggregation, time-based expiry, prompt-injection resistance, cancellation and inference budget.
@@ -81,5 +99,8 @@ Phases are flexible; implement availability policy foundations before any cross-
 - Analytics tests: synthetic spike streams, missing observations, comparison cohorts, forward-only snapshots, calibrated uncertainty, no future leakage and no unsupported causality.
 - Agent tests: explicit policy, scope isolation, stale availability, no unauthorized outreach, reproducible evidence and outcomes.
 - Open: platform API entitlements and store rules, third-party source and model license audit, provider choice/latency, storage/retention defaults, cross-user identity and sync, scoring formula, moderation staffing and adult eligibility process.
+
+- Additional verification: writing state traceability; constructive/destructive/stagnant Whirlwind fixtures; Honey retention gates; reweaving rollback, stale version rejection and deletion; anonymous region anti-triangulation; foreign actor provenance/revocation; Serpent training separation.
+- Open: canonical ChristEye machine schema reconciliation, validated Honey and Wind domain mappings, composition mechanism, episode thresholds, storage measures and reweaving algorithms.
 
 No build or runtime changes are required by this design-only documentation.
