@@ -43,6 +43,7 @@ try {
     $studioHomes = @(
         'G:\sdk\jbr',
         'G:\sdk\Android Studio\jbr',
+        'G:\sdk\studio\jbr',
         (Join-Path $env:ProgramFiles 'Android\Android Studio\jbr'),
         (Join-Path $env:LOCALAPPDATA 'Programs\Android Studio\jbr')
     )
@@ -85,7 +86,7 @@ try {
     } else {
         # Android Studio normally extracts Gradle beneath wrapper/dists, even
         # if Gradle is not globally installed and this repo lacks gradlew.bat.
-        $homes = @($env:GRADLE_USER_HOME, (Join-Path $env:USERPROFILE '.gradle'), 'G:\sdk\.gradle', 'G:\sdk\gradle')
+        $homes = @($env:GRADLE_USER_HOME, (Join-Path $env:USERPROFILE '.gradle'), 'G:\sdk\.gradle', 'G:\sdk\gradle', 'G:\sdk')
         foreach ($homeDir in $homes) {
             if (-not $homeDir) { continue }
             foreach ($kind in @('bin','all')) {
