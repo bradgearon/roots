@@ -137,6 +137,8 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         Console.WriteLine("LOCAL TRANSLATION WebSocket ws://127.0.0.1:" + _port + "/api/translation/v1/socket");
         Console.WriteLine("LOCAL TRANSLATION HTTP fallback http://127.0.0.1:" + _port + "/api/translation/v1/translate");
         Console.WriteLine("LOCAL TRANSLATION token file: " + TokenPath());
+        Console.WriteLine("PAIRED COMPUTE WebSocket /api/compute/v1/socket port=" + _port + " lan=" + _lan);
+        Console.WriteLine("PAIRED COMPUTE log: " + Wds.Roots.Host.Runtime.RootsDailyLog.CurrentPath);
     }
 
     internal static bool IsAuthorized(string provided, string secret)

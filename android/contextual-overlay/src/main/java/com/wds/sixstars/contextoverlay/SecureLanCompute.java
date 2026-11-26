@@ -28,6 +28,12 @@ final class SecureLanCompute {
             try{return new JSONObject(new String(plain,StandardCharsets.UTF_8));}
             finally{java.util.Arrays.fill(plain,(byte)0);}
         }
+        String traceId()throws Exception{
+            byte[] hash=java.security.MessageDigest.getInstance("SHA-256").digest(nonce);
+            StringBuilder id=new StringBuilder();
+            for(int i=0;i<6;i++)id.append(String.format(java.util.Locale.ROOT,"%02x",hash[i]&255));
+            return id.toString();
+        }
         void clear(){java.util.Arrays.fill(responseKey,(byte)0);}
     }
     static Packet seal(String secret,JSONObject payload)throws Exception{

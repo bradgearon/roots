@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Diagnostics;
+using Wds.Roots.Host.Runtime;
 using System.Net.WebSockets;
 using System.IO;
 using System.Text;
@@ -29,6 +31,12 @@ internal sealed class SecureComputeRoute
         _translator = translator;
     }
 
+    private static void Trace(string message)
+    {
+        Console.WriteLine("[Roots compute] " + message);
+        RootsDailyLog.Write("compute", message);
+    }
+
     public async Task<IResult> ExchangeAsync(HttpContext context)
     {
         Envelope? wire;
@@ -44,8 +52,14 @@ internal sealed class SecureComputeRoute
     public async Task RunSocketAsync(HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest || !string.IsNullOrEmpty(context.Request.Headers["Origin"]))
-        { context.Response.StatusCode = 400; return; }
-        using var socket = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext { KeepAliveInterval = TimeSpan.Zero });
+        { Trace("upgrade rejected: websocket=" + context.WebSockets.IsWebSocketRequest + " origin_present=" + !string.IsNullOrEmpty(context.Request.Headers["Origin"])); context.Response.StatusCode = 400; return; }
+        string session = Guid.NewGuid().ToString("N")[..12];
+        Trace("session=" + session + " upgrade requested");
+        WebSocket accepted;
+        try { accepted = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext { KeepAliveInterval = TimeSpan.Zero }); }
+        catch (Exception e) { Trace("session=" + session + " upgrade failed: " + e.GetType().Name); throw; }
+        using var socket = accepted;
+        Trace("session=" + session + " upgrade accepted");
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var token = lifetime.Token;
         try
@@ -61,16 +75,17 @@ internal sealed class SecureComputeRoute
                 do
                 {
                     part = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), readDeadline.Token);
-                    if (part.MessageType == WebSocketMessageType.Close) return;
-                    if (part.MessageType != WebSocketMessageType.Text || message.Length + part.Count > 32768) return;
+                    if (part.MessageType == WebSocketMessageType.Close) { Trace("session=" + session + " peer closed"); return; }
+                    if (part.MessageType != WebSocketMessageType.Text || message.Length + part.Count > 32768) { Trace("session=" + session + " invalid frame type or size"); return; }
                     message.Write(buffer, 0, part.Count);
                 } while (!part.EndOfMessage);
 
+                Trace("session=" + session + " frame received bytes=" + message.Length);
                 var wire = JsonSerializer.Deserialize<Envelope>(message.ToArray(), Json);
                 var (code, reply) = await ExchangeCoreAsync(wire, token);
                 if (code != 200 || reply == null)
                 {
-                    Console.Error.WriteLine("Paired compute rejected request: status=" + code);
+                    Trace("session=" + session + " request rejected status=" + code);
                     // Report only a coarse failure category; never emit request data,
                     // key material or crypto internals.
                     using var closeDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -84,18 +99,22 @@ internal sealed class SecureComputeRoute
                 verified = true;
                 byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(reply, Json);
                 await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
+                Trace("session=" + session + " encrypted response sent");
             }
         }
-        catch (OperationCanceledException) { }
-        catch (WebSocketException) { }
-        catch (JsonException) { }
-        finally { socket.Abort(); }
+        catch (OperationCanceledException) { Trace("session=" + session + " canceled or first-frame timeout"); }
+        catch (WebSocketException e) { Trace("session=" + session + " websocket error=" + e.WebSocketErrorCode); }
+        catch (JsonException) { Trace("session=" + session + " invalid envelope JSON"); }
+        catch (Exception e) { Trace("session=" + session + " unexpected error=" + e.GetType().Name); }
+        finally { socket.Abort(); Trace("session=" + session + " ended"); }
     }
 
     private async Task<(int Code, Envelope? Reply)> ExchangeCoreAsync(
         Envelope? wire, CancellationToken cancellationToken)
     {
         byte[] nonce;
+        string requestId = "unknown", stage = "decode_envelope";
+        var timer = Stopwatch.StartNew();
         JsonDocument request;
         try
         {
@@ -103,37 +122,44 @@ internal sealed class SecureComputeRoute
             nonce = Convert.FromBase64String(wire.Nonce);
             byte[] sealedBytes = Convert.FromBase64String(wire.Data);
             if (nonce.Length != 12 || sealedBytes.Length < 16 || sealedBytes.Length > 16000) return (400, null);
+            requestId = Convert.ToHexString(SHA256.HashData(nonce))[..12].ToLowerInvariant();
+            Trace("request=" + requestId + " encrypted envelope received");
+            stage = "decrypt";
             byte[] plain = new byte[sealedBytes.Length - 16];
             try
             {
                 using var aes = new AesGcm(_requestKey, 16);
                 aes.Decrypt(nonce, sealedBytes.AsSpan(0,plain.Length), sealedBytes.AsSpan(plain.Length), plain, RequestAad);
+                stage = "parse_plaintext";
                 request = JsonDocument.Parse(plain);
                 // JsonDocument owns its parsed backing memory until disposal.
             }
             catch { CryptographicOperations.ZeroMemory(plain); throw; }
         }
         catch (OperationCanceledException) { return (499, null); }
-        catch (Exception) { return (401, null); }
+        catch (Exception e) { Trace("request=" + requestId + " rejected stage=" + stage + " error=" + e.GetType().Name); return (401, null); }
 
         using (request)
         {
             try
             {
+                stage = "timestamp";
                 var root = request.RootElement;
                 long at = root.GetProperty("at").GetInt64();
                 long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                if (at < now - 120000 || at > now + 120000) return (401, null);
+                if (at < now - 120000 || at > now + 120000) { Trace("request=" + requestId + " rejected stage=timestamp clock_skew_ms=" + (now-at)); return (401, null); }
                 string nonceKey = Convert.ToHexString(nonce);
                 lock (_gate)
                 {
                     foreach (var expired in _seen.Where(p => p.Value < now).Select(p => p.Key).ToArray())
                         _seen.Remove(expired);
-                    if (_seen.ContainsKey(nonceKey)) return (401, null);
-                    if (_seen.Count >= 8192) return (429, null);
+                    if (_seen.ContainsKey(nonceKey)) { Trace("request=" + requestId + " rejected stage=replay"); return (401, null); }
+                    if (_seen.Count >= 8192) { Trace("request=" + requestId + " rejected stage=capacity"); return (429, null); }
                     _seen.Add(nonceKey, at + 120001);
                 }
 
+                stage = "request_validation";
+                Trace("request=" + requestId + " authentication accepted");
                 string? kind = root.GetProperty("kind").GetString();
                 object response;
                 if (kind == "probe")
@@ -142,10 +168,14 @@ internal sealed class SecureComputeRoute
                 {
                     var input = root.GetProperty("request").Deserialize<TranslationRequest>(Json);
                     if (input == null || input.Text.Length > 1200) return (400, null);
+                    stage = "model_inference";
+                    Trace("request=" + requestId + " model inference started input_chars=" + input.Text.Length);
                     response = await _translator.TranslateAsync(input, cancellationToken);
+                    Trace("request=" + requestId + " model inference completed elapsed_ms=" + timer.ElapsedMilliseconds);
                 }
                 else return (400, null);
 
+                stage = "encrypt_reply";
                 byte[] body = JsonSerializer.SerializeToUtf8Bytes(response, Json);
                 byte[] replyNonce = RandomNumberGenerator.GetBytes(12);
                 byte[] sealedReply = new byte[body.Length + 16];
@@ -154,9 +184,9 @@ internal sealed class SecureComputeRoute
                 CryptographicOperations.ZeroMemory(body);
                 return (200, new Envelope(Convert.ToBase64String(replyNonce), Convert.ToBase64String(sealedReply)));
             }
-            catch (OperationCanceledException) { return (499, null); }
-            catch (ArgumentException) { return (400, null); }
-            catch (Exception) { return (503, null); }
+            catch (OperationCanceledException) { Trace("request=" + requestId + " canceled stage=" + stage); return (499, null); }
+            catch (ArgumentException e) { Trace("request=" + requestId + " invalid stage=" + stage + " error=" + e.GetType().Name); return (400, null); }
+            catch (Exception e) { Trace("request=" + requestId + " failed stage=" + stage + " error=" + e.GetType().Name); return (503, null); }
         }
     }
 

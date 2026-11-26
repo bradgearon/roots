@@ -20,6 +20,7 @@ import okhttp3.WebSocketListener;
  * WebSocket upgrade, establishes readiness. One in-flight envelope per socket. */
 final class SecureComputeSocket {
     private static final long RETRY_MS=8000;
+    private static void trace(String message){android.util.Log.i("RootsCompute",message);}
     static final class Failure extends IOException {
         Failure(String reason){super(reason);}
     }
@@ -97,9 +98,10 @@ final class SecureComputeSocket {
             else if(base.startsWith("http://"))url="ws://"+base.substring(7);
             else throw new IOException("Invalid bridge URL");
             current=s;
+            trace("WebSocket upgrade requested");
             try{
                 s.socket=s.client.newWebSocket(new Request.Builder().url(url+path).build(),new WebSocketListener(){
-                    @Override public void onOpen(WebSocket ws,Response response){if(s.closed){ws.cancel();return;}s.open=true;s.opened.countDown();}
+                    @Override public void onOpen(WebSocket ws,Response response){if(s.closed){ws.cancel();return;}trace("WebSocket upgrade accepted");s.open=true;s.opened.countDown();}
                     @Override public void onMessage(WebSocket ws,String message){
                         Pending p=s.pending.get();
                         if(p==null||message.length()>98304||p.reply!=null){fail(s);return;}
@@ -115,6 +117,7 @@ final class SecureComputeSocket {
                             error instanceof java.net.UnknownHostException?"Desktop address not resolved":
                             error instanceof javax.net.ssl.SSLException?"Desktop TLS connection failed":
                             "Desktop socket failed ("+error.getClass().getSimpleName()+")";
+                        trace(s.failure);
                         fail(s);
                     }
                 });
@@ -149,13 +152,18 @@ final class SecureComputeSocket {
         if(s.closed||s.socket==null)throw new IOException("Compute socket closed");
         SecureLanCompute.Packet packet=SecureLanCompute.seal(s.key,payload);
         Pending pending=new Pending();
+        String id=packet.traceId();
         try{
             if(!s.pending.compareAndSet(null,pending))throw new IOException("Compute socket busy");
             if(s.closed||!s.socket.send(packet.wire))throw new IOException("Compute send failed");
+            trace("request="+id+" encrypted frame queued");
             started.run();
             if(!pending.done.await(timeout,TimeUnit.MILLISECONDS))throw new Failure("Desktop inference response timed out");
             if(s.closed||pending.reply==null)throw new Failure(s.failure);
-            return packet.open(pending.reply);
-        }finally{s.pending.compareAndSet(pending,null);packet.clear();}
+            trace("request="+id+" encrypted response received");
+            JSONObject reply=packet.open(pending.reply);
+            trace("request="+id+" response authenticated");
+            return reply;
+        }catch(Exception e){throw new Failure("Request "+id+": "+reason(e));}finally{s.pending.compareAndSet(pending,null);packet.clear();}
     }
 }
