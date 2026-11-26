@@ -54,19 +54,16 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         super.onCreate(saved);
         prefs = new OverlayPreferences(this);
 
+        LinearLayout shell=RootsUi.shell(this);
+        shell.addView(RootsUi.header(this,"Settings","Roots · translation and knowledge"));
         ScrollView scroll = new ScrollView(this);
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(20), dp(28), dp(20), dp(24));
-        content.setBackgroundColor(0xFF0C1924);
-        scroll.addView(content);
-
-        TextView title = text("X Translation Overlay", 23, 0xFFB8FBE7);
-        title.setGravity(Gravity.CENTER_HORIZONTAL);
-        content.addView(title);
-        content.addView(text("Local PLaMo 3 · portable Roots module", 13, 0xFF90C7CE));
-
-        content.addView(text("Accessibility permission disclosure", 18, 0xFFFFFFFF));
+        scroll.setFillViewport(true);
+        LinearLayout sections = RootsUi.column(this);
+        sections.setPadding(dp(16),dp(8),dp(16),dp(20));
+        scroll.addView(sections);
+        shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout content=RootsUi.section(this,sections,"Accessibility & permissions",
+                "Capture consent and Android service",true);
         TextView disclosure = text(
             "If enabled, Roots can read text and on-screen positions exposed by the X (Twitter) Android app while it is in the foreground. " +
             "This may include sensitive text shown inside X, including private messages. Small translation badges are drawn over the X screen using an Android accessibility overlay. " +
@@ -83,12 +80,15 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         status = text("", 14, 0xFFB9F6CA);
         content.addView(status);
 
-        content.addView(text("X accessibility scan diagnostics", 17, 0xFFFFFFFF));
+        LinearLayout permissions=content;
+        LinearLayout diagnosticSection=RootsUi.section(this,sections,"Diagnostics","Scan and transport status",false);
+        content=diagnosticSection;
         diagnostics = text("", 13, 0xFF9BCAD8);
         content.addView(diagnostics);
         Button refreshDiagnostics = button("Refresh scan diagnostics");
         refreshDiagnostics.setOnClickListener(v -> refreshStatus());
         content.addView(refreshDiagnostics);
+        content=permissions;
 
         Button consent = button("I consent — open Accessibility settings");
         consent.setOnClickListener(v -> showConsentDialog());
@@ -107,14 +107,17 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         });
         content.addView(stop);
 
-        Button tree = button("Open Tree of Life — local search and capture");
+        content=RootsUi.section(this,sections,"Knowledge & storage","Local observations, branches and capture",false);
+        Button tree = button("Open Tree of Life");
         tree.setOnClickListener(v -> startActivity(new Intent(this, TreeActivity.class)));
         content.addView(tree);
 
+        LinearLayout models=RootsUi.section(this,sections,"Models & inference","On-device model, acceleration and tests",false);
+        content=models;
         Button download = button("Download local PLaMo model (~550 MB)");
         download.setOnClickListener(v -> LocalPLaMoTranslationProvider.downloadModel(this, (message, error) -> runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(error == null ? message : error).setPositiveButton("OK", null).show())));
         content.addView(download);
-        content.addView(text("Desktop PLaMo connection", 18, 0xFFFFFFFF));
+        content=RootsUi.section(this,sections,"Desktop bridge","Connect to your trusted desktop",false);
         content.addView(text("Desktop bridge address (http://YOUR-PC:8123)", 13, 0xFFAAC8D4));
         bridgeAddress = new EditText(this);
         bridgeAddress.setSingleLine(true);
@@ -152,17 +155,28 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         });
         content.addView(clearKey);
 
+        LinearLayout translation=RootsUi.section(this,sections,"Translation","Language, mode and scheduling",true);
+        content=translation;
         content.addView(text("Translate into", 13, 0xFFAAC8D4));
         targetLanguage = new Spinner(this);
         String[] languages = { "English", "Japanese", "Spanish", "French", "German" };
         String[] codes = { "en", "ja", "es", "fr", "de" };
         ArrayAdapter<String> languagesAdapter = new ArrayAdapter<>(
-                this, android.R.layout.simple_spinner_dropdown_item, languages);
+                this, android.R.layout.simple_spinner_item, languages);
+        languagesAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         targetLanguage.setAdapter(languagesAdapter);
         String configured = prefs.targetLanguage();
         for (int i = 0; i < codes.length; i++) {
             if (codes[i].equals(configured)) targetLanguage.setSelection(i);
         }
+        targetLanguage.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+            @Override public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
+                if(!codes[position].equals(prefs.targetLanguage())){
+                    prefs.setTargetLanguage(codes[position]); refreshStatus();
+                }
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent){}
+        });
         content.addView(targetLanguage);
 
         desktopTranslation = new CheckBox(this);
@@ -253,7 +267,8 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         activity.setOnCheckedChangeListener((button,checked)->prefs.setShowTranslationActivity(checked));
         content.addView(activity);
         content.addView(text("One at a time waits for the actual provider callback before submitting another request, even when scrolling. Higher values allow a bounded queue, not extra native inference contexts. Manual requests take the next available slot.", 12, 0xFFAAC8D4));
-        content.addView(text("Auto inline appearance (match your X theme)", 13, 0xFFAAC8D4));
+        content=RootsUi.section(this,sections,"Appearance","Match your X theme",false);
+        content.addView(text("Inline overlay theme", 13, 0xFFAAC8D4));
         inlineAppearance = new Spinner(this);
         String[] appearanceLabels = { "Follow Android system", "X Black", "X Dim", "X Light" };
         String[] appearanceValues = {
@@ -279,17 +294,18 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(inlineAppearance);
         content.addView(text(
             "Automatic mode places touch-through translated text over the original " +
-            "post body, without adding a card below it. The small 原 / language button " +
-            "switches the original and translated versions. Likes, media, and post " +
+            "post body, without adding a card below it. Expansion controls open clipped translations. Likes, media, and post " +
             "actions remain accessible. Longer translations are shortened to fit " +
             "the original text area. Manual mode keeps the existing ⇄ controls.",
             12, 0xFFAAC8D4));
 
+        content=permissions;
         Button system = button("Open Accessibility settings");
         system.setOnClickListener(v -> openAndroidSettings());
         content.addView(system);
 
-        content.addView(text("Local inference acceleration", 18, 0xFFFFFFFF));
+        content=models;
+        content.addView(text("Local inference acceleration", 16, 0xFFFFFFFF));
         boolean vulkanBuilt=LocalPLaMoTranslationProvider.vulkanBuilt();
         CheckBox vulkan = new CheckBox(this);
         vulkan.setText(vulkanBuilt ? "Vulkan GPU (experimental; compare latency and output)" : "Vulkan GPU (not included in this APK)");
@@ -333,7 +349,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 }));
         });
 
-        content.addView(text("FunctionGemma — local micro-cognition", 18, 0xFFFFFFFF));
+        content=RootsUi.section(this,sections,"FunctionGemma","Local micro-cognition and operation proposals",false);
         content.addView(text("FunctionGemma 270M selects a bounded operation and proposes arguments. It does not execute tools, modify the Tree, or establish facts. Text entered here is processed on this device; CPU is used independently of the translation GPU setting.",13,0xFFAAC8D4));
         Button functionDownload=button("Download FunctionGemma Q8 (~292 MB)");
         content.addView(functionDownload);
@@ -371,10 +387,14 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(text(
             "In Manual mode, tap the ⇄ button positioned next to each post body. " +
             "In Automatic mode, translated text appears directly over the original post text, " +
-            "with touches passed through to X. Only the language toggle intercepts taps. " +
+            "with touches passed through to X. Only the small expansion controls intercept taps. " +
             "Text disappears when the original post moves off-screen or you leave X.",
             13, 0xFFAAC8D4));
-        setContentView(scroll);
+        // Put everyday controls first, leave maintenance and disclosure accessible.
+        View translationCard=(View)translation.getParent();
+        sections.removeView(translationCard);sections.addView(translationCard,0);
+        shell.addView(RootsUi.navigation(this,true));
+        setContentView(shell);
         refreshStatus();
     }
 
@@ -476,7 +496,9 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         button.setText(label);
         button.setAllCaps(false);
         button.setTextColor(Color.WHITE);
-        button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF206F75));
+        button.setBackground(RootsUi.rounded(this,0xFF164B50,10,0xFF2A7779));
+        button.setPadding(dp(12),dp(10),dp(12),dp(10));
+        button.setMinHeight(dp(48));
         LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         layout.bottomMargin = dp(8);

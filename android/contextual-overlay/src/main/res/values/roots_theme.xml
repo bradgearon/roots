@@ -1,0 +1,16 @@
+<resources>
+    <style name="RootsTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#08171D</item>
+        <item name="android:colorAccent">#28D9C5</item>
+        <item name="android:colorControlNormal">#A7C5CA</item>
+        <item name="android:colorControlActivated">#28D9C5</item>
+        <item name="android:textColorPrimary">#EDF7F8</item>
+        <item name="android:textColorSecondary">#A7C5CA</item>
+        <item name="android:statusBarColor">#08171D</item>
+        <item name="android:navigationBarColor">#08171D</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
