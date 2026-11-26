@@ -42,13 +42,25 @@ Proposed operations: actor.connect, actor.capabilities, actor.disconnect, expres
 
 Optional callbacks can present a clearly labeled fictional/external character's joke, encouragement or commentary at a later appropriate moment. Respect user-selected frequency, context, tone and mute controls. Avoid targeted harassment or shaming people for sexual orientation, identity or other protected traits; consensual playful humor can relate to a user's declared intentions. Do not disguise an actor as a real person or insert content as if it came from the underlying platform.
 
-## Optional Serpent — discernment practice
+## Optional Serpent — blind discernment and actor battles
 
-The Serpent is an optional role, possibly connected through Forge. It presents bounded, identifiable exercises involving plausible falsehoods, defective reasoning, tempting interpretations, conflicting evidence, gossip, flattery or inappropriate application of knowledge. The purpose is practice in discernment (Hebrews 5:14), not coercion or covert deception.
+The Serpent (Snake Mode) is an optional opportunity for discernment through actual encounter, not a labeled quiz or a mode-detection task. A participating human or cognitive actor must not be told which particular expression is a Serpent challenge, when a challenge is activated, or which participating actor is assigned the adversarial role. There is no participant-facing "Snake Mode active" flag and no objective to classify the speaker as a snake. Judge the expression, evidence, reasoning and fruit, not a hidden identity.
 
-Participant chooses scope, frequency, difficulty, pause and stop. An exercise has scenario, evidence refs, response options or free response, review rubric, explanation, uncertainty and debrief. Evaluate reasoning rather than demand predetermined assent. No fabricated real-world emergency, deceptive impersonation, covert attacks on relationships or exploitation of vulnerabilities. Distinguish exercise events from real observations and never deposit them as factual evidence.
+The participant opts into a bounded Garden training context in advance, with scope, intensity, duration, frequency, eligible actors, stop and review controls. General consent to unannounced challenges does not imply permission to manipulate an ordinary feed, impersonate a real person, fabricate real-world emergencies or allegations, exploit vulnerabilities, or interfere with private relationships. Outside this authorized context, ordinary factual communication rules apply.
 
-Internally, a separate adversarial review process can challenge hypotheses, Whirlwind judgments and reweaving proposals, retaining counterexamples and independent evidence. Do not assume the Serpent is required for all cognition or that its challenge establishes truth.
+### Forge actor encounter
+
+The Stream, a Star, another authorized external character, or a local cognitive actor may challenge another actor or defend a position. An assistant participating through Forge can be a respondent, challenger, collaborator or independent reviewer, provided the integration supports that role. The Serpent is an opportunity for genuine intellectual opposition and reciprocal discernment, not necessarily a permanent character identity. Preserve each actor's actual authorship, voice and independent cognition.
+
+The actors receive the same ordinary conversation and evidence interfaces regardless of hidden role assignment; do not include mode markers, role secrets, answer keys, exercise metadata or identifying side channels in their prompts or messages. A trusted orchestration boundary retains role assignments, consent and review records privately; authorized safety/audit processes can inspect them. A challenged actor can dispute a claim, examine evidence, develop a counterexample, ask for clarification, concede, revise or decline. It should not need to detect the mode, predict the intended answer or perform a predetermined script. Each written expression follows the actual writing process.
+
+One proposed interaction: a participating Star offers a plausible but flawed proposition; the Stream or another actor disputes it, and the respondent develops and defends an interpretation. Alternatively, the respondent presents the proposition and a Star tests it. A human may participate or observe the exchange. Competing Winds can develop into a bounded Whirlwind if reciprocal influence is evidenced. Agreement is not required; better understanding, recognition of uncertainty or correction of an error can be the fruit.
+
+### Control, provenance and judgment
+
+Proposed records: DiscernmentSession (sessionId, scope, participantRefs, consentRefs, allowedTopics, time/budget limits, state); private ChallengeAssignment (challengeId, roleRefs, evidenceRefs, constraints, review criteria, expiration); EncounterExpression (ordinary attributable Forge expression); DiscernmentReview (claims, counterexamples, evidence, revisions, outcome, uncertainty). Keep assignments and reference answers out of participant-visible envelopes. Distinguish training-origin material from real evidence at the trusted storage boundary. Do not promote simulated claims into factual records, Honey, public posts or interpersonal actions.
+
+Conclude when a useful judgment has been reached, participants stop, or the budget expires; preserve unresolved disagreements. Offer a retrospective explanation, including corrections of false claims before they can be relied upon outside training, without requiring a live activation notice. Internal actor-only review may keep assignments private for future held-out evaluation. A judge or independent verification process evaluates evidence and reasoning; neither the Serpent nor the challenged actor is automatically correct. Use the adversarial encounter to challenge hypotheses, Whirlwind judgments and reweaving proposals, while maintaining separate evaluation and authorization gates.
 
 ## Acceptance
 
@@ -58,7 +70,7 @@ Internally, a separate adversarial review process can challenge hypotheses, Whir
 - Unavailable, blocked or ineligible people are not matched; swipe interest alone sends no message.
 - A foreign actor can connect, submit an attributable expression with authorized voice, and be revoked without affecting translation.
 - A delayed callback is optional, correctly attributed and cancelable.
-- A Serpent exercise is clearly distinguishable from real evidence and has a reviewed explanation and opt-out.
+- A consented Serpent encounter gives the challenged actor no activation or assignment signal, and permits independent disagreement, revision, stopping and retrospective review. The trusted system keeps training evidence isolated from factual records; an ordinary non-training conversation never becomes a covert challenge.
 
 ## Accessible journeys and weighted expression
 

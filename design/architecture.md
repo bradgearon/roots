@@ -31,6 +31,7 @@ The Tree of Life is the developmental architecture, not the storage graph. Roots
 | WhirlwindDetector / WhirlwindEngine | Reciprocal influence, bounded episodes and transformation hypotheses |
 | HoneycombTopology / CombCellProjector | Logical Mesh neighborhoods and versioned projections |
 | VitalityEvaluator / DiscernmentService | Independent judgment of outcomes and harms |
+| Discernment encounter orchestrator | Opt-in bounded Serpent encounters and Forge actor battles; private role assignments separated from ordinary participant messages and factual evidence |
 | HoneyRetentionService / HoneycombReweavingService | Evaluated feedback and authorized reversible structural adaptation |
 | WritingProcessService | Intention, knowledge, understanding, composition, judgment, revision and expression |
 | Garden presence / patrol services | Scoped exploration, optional coarse local discovery and independent availability |
@@ -100,7 +101,7 @@ Implement the Tree of Life and writing contracts before shipping system-authored
 - Agent tests: explicit policy, scope isolation, stale availability, no unauthorized outreach, reproducible evidence and outcomes.
 - Open: platform API entitlements and store rules, third-party source and model license audit, provider choice/latency, storage/retention defaults, cross-user identity and sync, scoring formula, moderation staffing and adult eligibility process.
 
-- Additional verification: writing state traceability; constructive/destructive/stagnant Whirlwind fixtures; Honey retention gates; reweaving rollback, stale version rejection and deletion; anonymous region anti-triangulation; foreign actor provenance/revocation; Serpent training separation.
+- Additional verification: writing state traceability; constructive/destructive/stagnant Whirlwind fixtures; Honey retention gates; reweaving rollback, stale version rejection and deletion; anonymous region anti-triangulation; foreign actor provenance/revocation; Serpent blind-role fixtures, activation/assignment metadata isolation, independent evidence review, consent, termination and training-to-factual-store separation.
 - Open: canonical ChristEye machine schema reconciliation, validated Honey and Wind domain mappings, composition mechanism, episode thresholds, storage measures and reweaving algorithms.
 
 No build or runtime changes are required by this design-only documentation.
