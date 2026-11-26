@@ -107,7 +107,8 @@ final class AutoOverlayPositionStore {
     long version() { return version; }
 
     void publish(List<Observation> fresh, boolean scrolling, long nowMs) {
-        boolean changed = !coordinatesTrusted;
+        final boolean recovering = !coordinatesTrusted;
+        boolean changed = recovering;
         Set<String> found = new HashSet<>();
         for (Observation observation : fresh) {
             if (observation == null || observation.id == null ||
@@ -124,7 +125,7 @@ final class AutoOverlayPositionStore {
                 AutoDetailsPlacementService.Placement nextName = observation.nameDetails;
                 String nextAuthor = observation.authorName;
 
-                if (nextName == null && existing.nameDetails != null
+                if (!recovering && nextName == null && existing.nameDetails != null
                         && existing.authorName != null) {
                     // X can temporarily omit the header/PFP during scrolling or
                     // virtual-tree recomposition while keeping the SAME post.
@@ -176,7 +177,7 @@ final class AutoOverlayPositionStore {
             if (found.contains(id)) continue;
             Entry missing = entries.get(id);
             if (missing == null) continue;
-            if (scrolling) {
+            if (scrolling || recovering) {
                 entries.remove(id);
                 changed = true;
             } else if (missing.missingSince == 0L) {
@@ -195,7 +196,7 @@ final class AutoOverlayPositionStore {
      * Apply the reported PIXEL displacement directly to all scene positions.
      */
     void applyMeasuredScroll(int deltaX, int deltaY) {
-        if (deltaX == 0 && deltaY == 0) return;
+        if (!coordinatesTrusted || (deltaX == 0 && deltaY == 0)) return;
         for (Entry entry : entries.values()) {
             AutoInlinePlacementService.Placement p = entry.rectangle;
             entry.rectangle = shifted(p, -deltaX, -deltaY);
@@ -204,7 +205,6 @@ final class AutoOverlayPositionStore {
             if (entry.nameDetails != null)
                 entry.nameDetails = entry.nameDetails.shifted(-deltaX, -deltaY);
         }
-        coordinatesTrusted = true;
         version++;
     }
 
