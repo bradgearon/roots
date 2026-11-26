@@ -1,7 +1,5 @@
 package com.wds.sixstars.contextoverlay;
 
-import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -9,52 +7,20 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
 /** Two-request Forge-style movement experiment. No tool execution or storage. */
 public final class PoeticMovement {
     private PoeticMovement(){}
-    private static final int COUNT=5,POOL=12;
-    private static final String[] NOUNS=("sea lantern stone garden memory river flame mountain rain mirror window door " +
-        "clock feather bridge seed root wind cloud shadow thread star bell book ocean shore silence " +
-        "forest sky dust glass flower road tide heart hand leaf moon sun song echo snow bird " +
-        "bread ink wave island horizon well needle vessel candle").split(" ");
-    private static final String[] VERBS=("remember forgive shelter awaken dissolve carry gather scatter conceal reveal " +
-        "listen breathe mend weave release cradle resist bloom wander return tremble mourn " +
-        "question heal guide break bind illuminate refuse endure wait sing taste dream " +
-        "measure tend welcome forget nourish chase protect anchor soften carve embrace").split(" ");
-    public record Input(String seed,List<String> nouns,List<String> verbs,String profile,boolean rate){}
+    private static final int COUNT=5;
+    public record Input(List<String> nouns,List<String> verbs,String profile,boolean rate){}
     public record Pair(String noun,String ordinary,String replacement){}
     public record Resolution(int index,String expression,Integer rating){}
     public record Run(Input input,List<Pair> pairs,List<Resolution> resolutions,long[] firstStats,long[] secondStats,long elapsedMs){}
-    public static String newSeed(){
-        byte[] b=new byte[16];new SecureRandom().nextBytes(b);return hex(b);
-    }
-    private static String hex(byte[] b){
-        StringBuilder s=new StringBuilder(b.length*2);
-        for(byte x:b)s.append(String.format(Locale.ROOT,"%02x",x&255));
-        return s.toString();
-    }
-    private static byte[] seedBytes(String seed){
-        if(seed==null||!seed.matches("[0-9a-fA-F]{32}"))throw new IllegalArgumentException("Seed must be 32 hexadecimal characters.");
-        byte[] b=new byte[16];for(int i=0;i<b.length;i++)b[i]=(byte)Integer.parseInt(seed.substring(i*2,i*2+2),16);return b;
-    }
-    private static List<String> pick(byte[] seed,String domain,String[] words){
-        try{
-            Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(seed,"HmacSHA256"));
-            List<String> list=new ArrayList<>(Arrays.asList(words));
-            java.util.Map<String,String> keys=new java.util.HashMap<>();
-            for(String word:list)keys.put(word,hex(mac.doFinal((domain+":"+word).getBytes(StandardCharsets.UTF_8))));
-            list.sort(java.util.Comparator.comparing(keys::get));
-            return Collections.unmodifiableList(new ArrayList<>(list.subList(0,POOL)));
-        }catch(java.security.GeneralSecurityException e){throw new IllegalStateException("HMAC unavailable",e);}
-    }
-    public static Input input(String seed,String profile,boolean rate){
+    public static Input input(CryptoWordGenerator.Words words,String profile,boolean rate){
         String clean=profile==null?"":profile.trim();
         if(clean.length()>160||clean.matches("(?s).*[<>\\p{Cntrl}].*"))throw new IllegalArgumentException("Profile must be at most 160 plain-text characters.");
-        byte[] key=seedBytes(seed);
-        return new Input(seed.toLowerCase(Locale.ROOT),pick(key,"noun",NOUNS),pick(key,"verb",VERBS),clean,rate);
+        if(words==null||words.nouns().size()!=12||words.verbs().size()!=12)throw new IllegalArgumentException("Generate word lists first.");
+        return new Input(words.nouns(),words.verbs(),clean,rate);
     }
     private static String list(List<String> words){
         StringBuilder b=new StringBuilder();for(int i=0;i<words.size();i++){if(i>0)b.append(", ");b.append(i+1).append('=').append(words.get(i));}return b.toString();
