@@ -49,7 +49,9 @@ public final class TreeRuntime {
         overlay=new OverlayPreferences(context);
         directory=new File(context.getNoBackupFilesDir(),"roots-tree");
         snapshot=new File(directory,"tree.gguf");
-        // No database open, I/O or capture merely by constructing the runtime.
+        // Rebuild the disposable snapshot on a worker after a restart if
+        // capture was explicitly enabled previously. No implicit capture consent.
+        if(enabled())requestSnapshot();
     }
     private NativeTree tree() {
         synchronized(openLock) {
