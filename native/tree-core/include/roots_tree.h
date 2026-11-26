@@ -81,6 +81,9 @@ ROOTS_TREE_API roots_tree_result roots_tree_relations(roots_tree *tree,
  * This lexical baseline is not a language model or learned embedding. */
 ROOTS_TREE_API roots_tree_result roots_tree_compile(roots_tree *tree,
     const char *new_output_path, int64_t *revision);
+/* No file is created when no local-language record is available. */
+ROOTS_TREE_API roots_tree_result roots_tree_compile_localized(roots_tree *tree,
+    const char *new_output_path,const char *language,int64_t *revision);
 ROOTS_TREE_API roots_tree_result roots_tree_revision(roots_tree *tree, int64_t *revision);
 /* Logical deletion; caller must stop intake and remove any exported snapshots.
  * For physical disposal, close and remove the private DB and sidecar files. */

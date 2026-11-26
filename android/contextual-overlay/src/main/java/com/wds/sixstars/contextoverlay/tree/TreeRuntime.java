@@ -55,11 +55,16 @@ public final class TreeRuntime {
         overlay=new OverlayPreferences(context);
         directory=new File(context.getNoBackupFilesDir(),"roots-tree");
         snapshot=new File(directory,"tree.gguf");
+        // First upgrade from the old lossless GGUF; originals stay in SQLite.
+        if(!prefs.getBoolean("localized_snapshot_v1",false)){
+            try{Files.deleteIfExists(snapshot.toPath());prefs.edit().putBoolean("localized_snapshot_v1",true).apply();}
+            catch(Exception ignored){}
+        }
         diagnostics=new File(context.getFilesDir(),"diagnostics");
         restoreStats();
         // Rebuild the disposable snapshot on a worker after a restart if
         // capture was explicitly enabled previously. No implicit capture consent.
-        if(enabled())requestSnapshot();
+        if(directory.exists()||enabled())requestSnapshot();
     }
     private NativeTree tree() {
         synchronized(openLock) {
@@ -255,11 +260,14 @@ public final class TreeRuntime {
                 return;
             }
             temp=new File(directory,"tree-"+UUID.randomUUID()+".tmp");
-            long revision=t.compile(temp.getAbsolutePath());
+            String language=overlay.targetLanguage();
+            long revision=t.compileLocalized(temp.getAbsolutePath(),language);
             synchronized(mutationLock){
-                if(!clearing&&epoch==snapshotEpoch.get()&&t.revision()==revision){
-                    Files.move(temp.toPath(),snapshot.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
-                    snapshotStatus="Revision "+revision+" · "+snapshot.length()+" bytes";
+                if(!clearing&&epoch==snapshotEpoch.get()&&t.revision()==revision&&language.equals(overlay.targetLanguage())){
+                    if(temp.exists()){
+                        Files.move(temp.toPath(),snapshot.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+                        snapshotStatus="Localized "+language+" · revision "+revision+" · "+snapshot.length()+" bytes";
+                    }else {Files.deleteIfExists(snapshot.toPath());snapshotStatus="Waiting for localized knowledge ("+language+")";}
                 }else snapshotStatus="Tree changed during compilation; retrying";
             }
         }catch(Exception e){snapshotStatus="Compilation failed";trace("compile_error",0,0,e.getClass().getSimpleName());}

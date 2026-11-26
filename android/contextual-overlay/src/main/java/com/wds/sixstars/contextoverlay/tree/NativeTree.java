@@ -114,6 +114,7 @@ public final class NativeTree implements AutoCloseable {
     public long count(){return use(NativeTree::nCount);}
     public long revision(){return use(NativeTree::nRevision);}
     public long compile(String path){return use(h->nCompile(h,utf8(path)));}
+    public long compileLocalized(String path,String language){return use(h->nCompileLocalized(h,utf8(path),utf8(language)));}
     public void clear(){use(h->{nClear(h);return null;});}
     @Override public void close(){life.writeLock().lock();try{if(handle!=0){nClose(handle);handle=0;}}finally{life.writeLock().unlock();}}
     public enum WorkState { PENDING, RUNNING, COMPLETED, FAILED, CANCELLED }
@@ -157,5 +158,6 @@ public final class NativeTree implements AutoCloseable {
     private static native long nCount(long h);
     private static native long nRevision(long h);
     private static native long nCompile(long h,byte[] path);
+    private static native long nCompileLocalized(long h,byte[] path,byte[] language);
     private static native void nClear(long h);
 }

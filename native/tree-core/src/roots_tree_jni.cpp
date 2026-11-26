@@ -133,6 +133,9 @@ JNIEXPORT jlong JNICALL JNI_TREE(nRevision)(JNIEnv *e,jclass,jlong h) {
 JNIEXPORT jlong JNICALL JNI_TREE(nCompile)(JNIEnv *e,jclass,jlong h,jbyteArray path) {
     return guard<jlong>(e,0,[&]{auto p=bytes(e,path);int64_t rev=0;checked(roots_tree_compile(ptr(h),p.c_str(),&rev));return static_cast<jlong>(rev);});
 }
+JNIEXPORT jlong JNICALL JNI_TREE(nCompileLocalized)(JNIEnv *e,jclass,jlong h,jbyteArray path,jbyteArray language) {
+    return guard<jlong>(e,0,[&]{auto p=bytes(e,path);auto l=bytes(e,language);int64_t rev=0;checked(roots_tree_compile_localized(ptr(h),p.c_str(),l.c_str(),&rev));return static_cast<jlong>(rev);});
+}
 JNIEXPORT void JNICALL JNI_TREE(nClear)(JNIEnv *e,jclass,jlong h) {
     guard<int>(e,0,[&]{checked(roots_tree_clear(ptr(h)));return 0;});
 }

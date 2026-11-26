@@ -14,6 +14,7 @@
 #include <vector>
 #include <utility>
 #include <tuple>
+#include <unordered_set>
 
 struct roots_tree {
     sqlite3 *db=nullptr;
@@ -126,16 +127,17 @@ struct le_writer {
     }
 };
 void write_gguf(std::ofstream &stream,const std::vector<row> &rows,
-                const std::vector<edge> &edges,const std::vector<agent> &agents,int64_t rev){
+                const std::vector<edge> &edges,const std::vector<agent> &agents,int64_t rev,const char *language=nullptr){
     static_assert(sizeof(float)==4 && std::numeric_limits<float>::is_iec559,"GGUF requires IEEE f32");
     le_writer w{stream};
     w.byte('G');w.byte('G');w.byte('U');w.byte('F');w.u32(3);
-    w.u64(1);w.u64(18);
+    w.u64(1);w.u64(language?19:18);
     w.string_kv("general.architecture","roots-tree");
     w.str("general.alignment");w.u32(4);w.u32(32);
     w.string_kv("roots.vector.profile","roots.lexical.utf8-trigram.f32.v1");
     w.str("roots.tree.revision");w.u32(10);w.u64(static_cast<uint64_t>(rev));
-    w.string_kv("roots.scope","local-private");
+    w.string_kv("roots.scope",language?"localized-private":"local-private");
+    if(language)w.string_kv("roots.local.language",language);
     w.str("roots.format.version");w.u32(4);w.u32(2);
     w.array_header("roots.node.keys",rows.size());
     for(const auto &r:rows)w.str(fragment_key(r.id));
@@ -301,10 +303,10 @@ roots_tree_result roots_tree_relations(roots_tree *t,int64_t id,roots_relation_c
         for(const auto &e:edges)if(cb(user,e.subject.c_str(),e.predicate.c_str(),e.object.c_str()))break;
     });
 }
-roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out){
+static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *out,const char *language){
     if(out)*out=0;
     return guard([&]{
-        require(t&&out);bounded(path,32768,true);
+        require(t&&out);bounded(path,32768,true);if(language)bounded(language,64,true);
         std::vector<row> rows;std::vector<edge> edges;std::vector<agent> agents;int64_t rev;
         {
             std::lock_guard<std::mutex> lock(t->mutex);
@@ -312,7 +314,16 @@ roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out
             exec(t->db,"BEGIN");
             try{
                 rev=revision_of(t->db);
-                statement s(t->db,"SELECT seq,source,external_id,body,language,observed_ms FROM fragments ORDER BY seq");
+                // One preferred local-language content node per grouped master.
+                statement s(t->db,language?
+                    "SELECT seq,source,external_id,body,language,observed_ms FROM fragments f "
+                    "WHERE source GLOB 'record.*' AND external_id GLOB 'local:*' AND language=? "
+                    "AND (source GLOB 'record.*.body' OR source GLOB 'record.*.translation') "
+                    "AND seq=(SELECT g.seq FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language "
+                    "AND (g.source GLOB 'record.*.body' OR g.source GLOB 'record.*.translation') "
+                    "ORDER BY (g.source GLOB 'record.*.translation') DESC,g.seq DESC LIMIT 1) ORDER BY seq":
+                    "SELECT seq,source,external_id,body,language,observed_ms FROM fragments ORDER BY seq");
+                if(language)s.text(1,language);
                 rows.reserve(static_cast<size_t>(scalar(t->db,"SELECT count(*) FROM fragments")));
                 while(s.next())rows.push_back(read_row(s));
                 membership_edges(t->db,edges,0);
@@ -321,7 +332,15 @@ roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out
                 exec(t->db,"COMMIT");
             }catch(...){sqlite3_exec(t->db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
         }
+        if(language&&rows.empty()){*out=rev;return;}
         require(!rows.empty());
+        if(language){
+            std::unordered_set<std::string> keys;for(const auto &r:rows)keys.insert(fragment_key(r.id));
+            edges.erase(std::remove_if(edges.begin(),edges.end(),[&](const edge &e){return !keys.count(e.subject);}),edges.end());
+            // Branch terms/names may be private original-language text. Keep them in SQLite.
+            agents.clear();
+            edges.erase(std::remove_if(edges.begin(),edges.end(),[](const edge &e){return e.object.rfind("branch:",0)==0;}),edges.end());
+        }
         // Build and deduplicate derived edges outside the writer mutex.
         // Multiple members of the same master emit the same network edge.
         edges.reserve(edges.size()+rows.size()*5);
@@ -336,10 +355,16 @@ roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out
         try{
             std::ofstream file(dest,std::ios::binary|std::ios::out);
             if(!file)throw std::runtime_error("open snapshot");
-            write_gguf(file,rows,edges,agents,rev);file.close();if(!file)throw std::runtime_error("close snapshot");
+            write_gguf(file,rows,edges,agents,rev,language);file.close();if(!file)throw std::runtime_error("close snapshot");
             *out=rev;
         }catch(...){std::error_code ec;std::filesystem::remove(dest,ec);throw;}
     });
+}
+
+roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out){return compile_tree(t,path,out,nullptr);}
+roots_tree_result roots_tree_compile_localized(roots_tree *t,const char *path,const char *language,int64_t *out){
+    if(!language||!*language)return ROOTS_TREE_INVALID;
+    return compile_tree(t,path,out,language);
 }
 
 roots_tree_result roots_tree_clear(roots_tree *t){
