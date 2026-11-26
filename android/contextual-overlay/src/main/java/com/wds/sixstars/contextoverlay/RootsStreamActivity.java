@@ -79,8 +79,8 @@ public final class RootsStreamActivity extends Activity {
         setContentView(shell);
         if(NativeTree.available())runtime=TreeRuntime.get(this);
         else {
-            status.setText("Native Tree is not included in this APK");
-            empty.setText("Build Roots with Tree support to retain and browse timeline text.");
+            status.setText("Native Tree unavailable");
+            empty.setText(NativeTree.unavailableReason()+"\n\nBuild Roots with Tree support to retain and browse timeline text. Open Tree of Life for build instructions.");
             capture.setText("Open settings");capture.setOnClickListener(v->startActivity(new Intent(this,OverlayTranslationSettingsActivity.class)));
             more.setVisibility(View.GONE);
         }

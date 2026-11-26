@@ -9,13 +9,29 @@ import java.util.function.LongFunction;
 /** Shared C++ Tree adapter. No platform-specific knowledge database. */
 public final class NativeTree implements AutoCloseable {
     private static final boolean AVAILABLE;
+    private static final String UNAVAILABLE_REASON;
     static {
         boolean available=false;
-        try {System.loadLibrary("roots_tree");available=nAbi()==1;}
-        catch(LinkageError | RuntimeException ignored){}
+        String reason="";
+        try {
+            System.loadLibrary("roots_tree");
+            int abi=nAbi();
+            available=abi==1;
+            if(!available)reason="Native Tree ABI mismatch (expected 1, found "+abi+").";
+        } catch(LinkageError | RuntimeException error){
+            reason="Native Tree could not load: "+error.getClass().getSimpleName()+".";
+            androidSafeLog(error);
+        }
         AVAILABLE=available;
+        UNAVAILABLE_REASON=reason;
+    }
+    // This class also runs in standalone host JVM contract tests.
+    private static void androidSafeLog(Throwable error){
+        java.util.logging.Logger.getLogger(NativeTree.class.getName())
+            .log(java.util.logging.Level.WARNING,"Native Tree load failure",error);
     }
     public static boolean available(){return AVAILABLE;}
+    public static String unavailableReason(){return UNAVAILABLE_REASON;}
     public record Observation(String source,String externalId,String body,String language,long at){}
     public record Fragment(long sequence,String source,String externalId,String body,String language,long at){}
     public record Agent(long id,String name,String term){}

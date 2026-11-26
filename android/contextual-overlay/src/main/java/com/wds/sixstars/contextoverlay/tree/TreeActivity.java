@@ -11,6 +11,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import com.wds.sixstars.contextoverlay.OverlayPreferences;
+import com.wds.sixstars.contextoverlay.RootsUi;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -29,12 +30,28 @@ public final class TreeActivity extends Activity {
     private boolean loading,ended,closed;
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
-        LinearLayout layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(16,16,16,16);
-        TextView title=new TextView(this);title.setText("Tree of Life — local observations");title.setTextSize(22);layout.addView(title);
+        LinearLayout shell=RootsUi.shell(this);
+        shell.addView(RootsUi.header(this,"Tree of Life","Local observations and branches"));
+        LinearLayout layout=RootsUi.column(this);
+        int inset=RootsUi.dp(this,16);
+        layout.setPadding(inset,0,inset,inset);
+        shell.addView(layout,new LinearLayout.LayoutParams(-1,0,1));
+        shell.addView(RootsUi.action(this,"‹  Back",this::finish));
         if(!NativeTree.available()){
-            TextView missing=new TextView(this);missing.setText("Native Tree is not included in this build. Rebuild with rootsEnableTree and an approved SQLite amalgamation.");layout.addView(missing);
-            setContentView(layout);return;
+            LinearLayout card=RootsUi.card(this,layout);
+            card.addView(RootsUi.text(this,"Tree unavailable",19,RootsUi.TEXT,true));
+            TextView missing=RootsUi.text(this,
+                NativeTree.unavailableReason()+"\n\nBuild Roots with the native Tree and a SQLite amalgamation containing sqlite3.c and sqlite3.h.",15,RootsUi.MUTED,false);
+            missing.setPadding(0,inset,0,inset);card.addView(missing);
+            TextView command=RootsUi.text(this,
+                "build-android.cmd :app:installDebug -ProotsEnableTree=true -ProotsSqliteAmalgamationDir=G:/sdk/sqlite",
+                13,RootsUi.TEXT,false);
+            command.setTextIsSelectable(true);card.addView(command);
+            card.addView(RootsUi.text(this,"Replace G:/sdk/sqlite with your actual SQLite source directory. Translation still works without Tree; local capture does not.",13,RootsUi.MUTED,false));
+            android.widget.ScrollView scroll=new android.widget.ScrollView(this);
+            shell.removeView(layout);scroll.addView(layout);
+            shell.addView(scroll,1,new LinearLayout.LayoutParams(-1,0,1));
+            setContentView(shell);return;
         }
         runtime=TreeRuntime.get(this);
         status=new TextView(this);layout.addView(status);
@@ -46,9 +63,9 @@ public final class TreeActivity extends Activity {
         layout.addView(button("Search / refresh feed",this::reset));
         branchLabel=new TextView(this);branchLabel.setText("Branch: all fragments");layout.addView(branchLabel);
         LinearLayout controls=new LinearLayout(this);
-        controls.addView(button("Branches",this::chooseBranch));
-        controls.addView(button("New agent",this::createAgent));
-        controls.addView(button("Remove",this::removeAgent));
+        controls.addView(button("Branches",this::chooseBranch),new LinearLayout.LayoutParams(0,-2,1));
+        controls.addView(button("New agent",this::createAgent),new LinearLayout.LayoutParams(0,-2,1));
+        controls.addView(button("Remove",this::removeAgent),new LinearLayout.LayoutParams(0,-2,1));
         layout.addView(controls);
         ListView list=new ListView(this);
         adapter=new ArrayAdapter<>(this,android.R.layout.simple_list_item_1,rows);
@@ -60,9 +77,9 @@ public final class TreeActivity extends Activity {
             }
         });
         layout.addView(button("Clear local Tree and snapshots",this::clear));
-        setContentView(layout);refreshStatus();reset();
+        setContentView(shell);refreshStatus();reset();
     }
-    private Button button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setOnClickListener(v->action.run());return b;}
+    private Button button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextColor(RootsUi.TEXT);b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF164B50));b.setOnClickListener(v->action.run());return b;}
     private void refreshStatus(){
         if(runtime==null||closed)return;
         status.setText(runtime.status());
