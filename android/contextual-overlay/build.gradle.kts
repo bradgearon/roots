@@ -3,6 +3,11 @@ plugins {
 }
 val rootsTreeEnabled = providers.gradleProperty("rootsEnableTree").orElse("false")
 val rootsSqliteDir = providers.gradleProperty("rootsSqliteAmalgamationDir")
+val rootsKleidiAI = providers.gradleProperty("rootsEnableKleidiAI").orElse("true")
+val rootsVulkan = providers.gradleProperty("rootsEnableVulkan").orElse("false")
+val rootsVulkanSdk = providers.gradleProperty("rootsVulkanSdk")
+val rootsSpirvHeaders = providers.gradleProperty("rootsSpirvHeadersDir")
+val rootsVulkanHostToolchain = providers.gradleProperty("rootsVulkanHostToolchain")
 android {
     namespace = "com.wds.sixstars.contextoverlay"
     compileSdk = 36
@@ -11,6 +16,11 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake {
+                arguments += "-DROOTS_ENABLE_KLEIDIAI=${if (rootsKleidiAI.get().toBoolean()) "ON" else "OFF"}"
+                arguments += "-DROOTS_ENABLE_VULKAN=${if (rootsVulkan.get().toBoolean()) "ON" else "OFF"}"
+                rootsVulkanSdk.orNull?.let { arguments += "-DROOTS_VULKAN_SDK=${file(it).absolutePath}" }
+                rootsSpirvHeaders.orNull?.let { arguments += "-DROOTS_SPIRV_HEADERS_DIR=${file(it).absolutePath}" }
+                rootsVulkanHostToolchain.orNull?.let { arguments += "-DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN=${file(it).absolutePath}" }
                 arguments += "-DROOTS_ENABLE_TREE=${if (rootsTreeEnabled.get().toBoolean()) "ON" else "OFF"}"
                 rootsSqliteDir.orNull?.let { arguments += "-DROOTS_SQLITE_AMALGAMATION_DIR=${file(it).absolutePath}" }
             }
