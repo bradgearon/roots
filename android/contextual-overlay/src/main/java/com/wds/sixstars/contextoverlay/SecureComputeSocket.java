@@ -114,18 +114,6 @@ final class SecureComputeSocket {
         }catch(Exception e){if(s!=null)fail(s);throw e;}
         finally{exchange.unlock();}
     }
-    /** Explicit user pairing, isolated from the persistent inference socket. */
-    static String pair(Network network,String base,String invitation)throws Exception{
-        SecureComputeSocket pairing=new SecureComputeSocket();
-        try{
-            String client=SecureLanCompute.newKey();
-            Session s=pairing.connect(network,base,invitation,"/api/compute/v1/pair");
-            if(s==null)throw new IOException("Pairing host unavailable");
-            JSONObject reply=pairing.request(s,new JSONObject().put("kind","pair").put("clientKey",client),5000);
-            if(!reply.optBoolean("ok")||!SecureLanCompute.keyId(client).equals(reply.optString("keyId")))throw new IOException("Pairing confirmation invalid");
-            return client;
-        }finally{pairing.disconnect();}
-    }
     private JSONObject request(Session s,JSONObject payload,long timeout)throws Exception{
         return request(s,payload,timeout,()->{});
     }

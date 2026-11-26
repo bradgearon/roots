@@ -21,6 +21,7 @@ import java.util.List;
  */
 public final class XTranslationAccessibilityService extends AccessibilityService {
     private static final long SCAN_INTERVAL_MS = 120L;
+    private static final long SCROLL_SCAN_INTERVAL_MS = 65L;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final XVisibleTextReader reader = new XVisibleTextReader();
     private final XMeasuredScrollTracker scrollTracker = new XMeasuredScrollTracker();
@@ -113,6 +114,9 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         }
 
         if (kind == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+            if(!scrollSinceLastScan && scanScheduled){
+                main.removeCallbacks(scan);scanScheduled=false;
+            }
             scrollSinceLastScan = true;
             if (preferences.autoPreview() && renderer != null) {
                 // Direct pixel delta on API 28+, or actual scrollY offset
@@ -124,7 +128,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                         String.valueOf(event.getClassName());
                 XMeasuredScrollTracker.Result movement = scrollTracker.observe(
                         origin, directY, event.getScrollY());
-                if (movement.measured) {
+                if (movement.measured && movement.deltaY != 0) {
                     coordinator.noteMeasuredScroll(movement.deltaY,android.os.SystemClock.uptimeMillis());
                     if (movement.deltaY != 0)
                         renderer.measuredScroll(0, movement.deltaY);
@@ -184,7 +188,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         // Coalesce those events into one periodic frame while the user scrolls.
         if (scanScheduled) return;
         scanScheduled = true;
-        main.postDelayed(scan, SCAN_INTERVAL_MS);
+        main.postDelayed(scan, scrollSinceLastScan ? SCROLL_SCAN_INTERVAL_MS : SCAN_INTERVAL_MS);
     }
 
     private void refreshWindow() {

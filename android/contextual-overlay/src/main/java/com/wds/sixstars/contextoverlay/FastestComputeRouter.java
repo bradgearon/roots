@@ -98,24 +98,6 @@ final class FastestComputeRouter implements TranslationProvider {
     static void forgetNetworks(Context context){
         FastestComputeRouter r=get(context);r.familiar.clear();r.updateNetworkState();
     }
-    interface PairResult{void completed(String error);}
-    static void pair(Context context,String base,String invitation,PairResult result){
-        FastestComputeRouter r=get(context);Network n=r.wifi();
-        if(n==null){result.completed("Connect to the desktop Wi-Fi first.");return;}
-        String fingerprint=r.familiar.fingerprint(n);
-        if(fingerprint.isEmpty()){result.completed("Network details unavailable.");return;}
-        try{r.routes.execute(()->{
-            try{
-                String client=SecureComputeSocket.pair(n,base,invitation);
-                if(!n.equals(r.wifi())||!fingerprint.equals(r.familiar.fingerprint(n)))throw new IllegalStateException("Network changed during pairing.");
-                if(!base.equals(r.prefs.bridgeUrl()))throw new IllegalStateException("Bridge address changed.");
-                OverlayTranslationKeyStore.save(r.app,client);
-                r.familiar.remember(base,fingerprint);
-                invalidate();r.startBackground();
-                result.completed(null);
-            }catch(Exception e){result.completed("Pairing failed. Check address, invitation and desktop host.");}
-        });}catch(java.util.concurrent.RejectedExecutionException e){result.completed("Compute queue busy.");}
-    }
     private boolean authorized(String base,String key){
         return prefs.enabled()&&prefs.desktopTranslationEnabled()&&base.equals(prefs.bridgeUrl())&&key.equals(OverlayTranslationKeyStore.read(app));
     }

@@ -39,7 +39,7 @@ public final class OverlayChangeReactor {
                     c.avatarBounds, c.author));
         }
         if (!hasSnapshot || previousAutoMode != automatic ||
-                !same(previous, next) || automatic && scrolling) {
+                !same(previous, next) || scrolling) {
             renderer.update(candidates, clickHandler, automatic, scrolling);
             previous.clear();
             previous.putAll(next);

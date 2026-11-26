@@ -126,34 +126,6 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         bridgeAddress.setHintTextColor(0xFF8AADB6);
         bridgeAddress.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         content.addView(bridgeAddress);
-        content.addView(text("Start the desktop with launch.cmd --lan --pair. Enter the one-time invitation below; Roots generates its own client key and registers it over the encrypted socket.",13,0xFFAAC8D4));
-        EditText invitation=new EditText(this);
-        invitation.setSingleLine(true);
-        invitation.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        invitation.setHint("One-time pairing invitation");
-        invitation.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(64)});
-        content.addView(invitation);
-        Button pair=button("Pair this phone");
-        content.addView(pair);
-        pair.setOnClickListener(v->{
-            final String code=invitation.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
-            if(!code.matches("[0-9a-f]{64}")){status.setText("Enter the desktop's 64-character one-time pairing invitation.");return;}
-            try{prefs.setBridgeUrl(bridgeAddress.getText().toString());}
-            catch(IllegalArgumentException e){status.setText(e.getMessage());return;}
-            pair.setEnabled(false);
-            status.setText("Pairing with desktop…");
-            FastestComputeRouter.pair(this,prefs.bridgeUrl(),code,error->runOnUiThread(()->{
-                if(isDestroyed())return;
-                pair.setEnabled(true);
-                if(error==null){
-                    invitation.setText("");
-                    translationKey.setText("");
-                    translationKey.setHint("Client key saved securely");
-                    refreshStatus();
-                    status.setText(status.getText()+"\nPaired. Current network remembered. Enable automatic paired compute to use it.");
-                }else status.setText(error);
-            }));
-        });
         Button remember=button("Remember current network for desktop");
         remember.setOnClickListener(v->{
             try{
@@ -165,11 +137,11 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             }catch(IllegalArgumentException e){status.setText(e.getMessage());}
         });
         content.addView(remember);
-        content.addView(text("Legacy desktop access key (optional)", 13, 0xFFAAC8D4));
+        content.addView(text("Run get-key.cmd on the desktop to copy the key. Save the address and key below.", 13, 0xFFAAC8D4));
         translationKey = new EditText(this);
         translationKey.setSingleLine(true);
         translationKey.setHint(OverlayTranslationKeyStore.isConfigured(this)
-                ? "Key saved securely — leave blank to keep" : "Paste 64-character key from your desktop");
+                ? "Key saved securely — leave blank to keep" : "Run get-key.cmd on desktop, paste key");
         translationKey.setHintTextColor(0xFF8AADB6);
         translationKey.setTextColor(Color.WHITE);
         translationKey.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);

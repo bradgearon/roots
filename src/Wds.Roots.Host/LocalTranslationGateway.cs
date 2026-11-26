@@ -29,7 +29,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         _translator = new PLaMoLocalTranslationService(llamaChatEndpoint);
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken = default, bool issuePairing = false)
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         string secret = ReadOrCreateToken();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = Array.Empty<string>() });
@@ -73,17 +73,9 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         // Automatic compute routing never sends the legacy bearer token or
         // plaintext social content. A successful encrypted probe proves possession
         // of the paired key; encrypted requests are replay-checked.
-        var pairing = new ComputePairing(Path.Combine(Path.GetDirectoryName(TokenPath())!, "compute-clients"));
-        var secureRoute = new SecureComputeRoute(secret, _translator, pairing);
+        var secureRoute = new SecureComputeRoute(secret, _translator);
         app.MapPost("/api/compute/v1/exchange", secureRoute.ExchangeAsync);
         app.MapGet("/api/compute/v1/socket", secureRoute.RunSocketAsync);
-        if (issuePairing && _lan)
-        {
-            string invitation = pairing.Issue();
-            var pairingRoute = new SecureComputeRoute(invitation, _translator, pairing, invitation: true);
-            app.MapGet("/api/compute/v1/pair", pairingRoute.RunSocketAsync);
-            Console.WriteLine("ROOTS ONE-TIME PAIRING CODE (10 minutes): " + invitation);
-        }
 
         app.MapPost("/api/translation/v1/detect", async (HttpContext context) =>
         {

@@ -56,6 +56,7 @@ final class AutoWindowAttachedSurface {
     private Rect windowBounds;
 
     private List<AutoOverlaySceneView.TextItem> latest = Collections.emptyList();
+    private long visibilityEpoch;
     private boolean drawing;
     private boolean dirty;
     private boolean closed;
@@ -106,6 +107,14 @@ final class AutoWindowAttachedSurface {
     void present(List<AutoOverlaySceneView.TextItem> source) {
         if (closed || failed) return;
         latest = Collections.unmodifiableList(new ArrayList<>(source));
+        if(latest.isEmpty()){
+            // Hiding does not depend on acquiring a free hardware buffer.
+            ++visibilityEpoch;dirty=false;
+            try(SurfaceControl.Transaction transaction=new SurfaceControl.Transaction()){
+                transaction.setVisibility(surface,false).setBuffer(surface,null).apply();
+            }catch(RuntimeException e){fail();}
+            return;
+        }
         dirty = true;
         pump();
     }
@@ -124,6 +133,7 @@ final class AutoWindowAttachedSurface {
         drawing = true;
         slot.busy = true;
         final Slot frameSlot = slot;
+        final long frameEpoch=visibilityEpoch;
 
         try {
             // Record on our main thread, execute GPU rendering on Android's
@@ -136,7 +146,7 @@ final class AutoWindowAttachedSurface {
             slot.renderer.setContentRoot(slot.node);
             slot.renderer.obtainRenderRequest().draw(
                     command -> main.post(command),
-                    result -> onRendered(frameSlot, result));
+                    result -> onRendered(frameSlot, result,frameEpoch));
         } catch (RuntimeException error) {
             drawing = false;
             slot.busy = false;
@@ -150,7 +160,7 @@ final class AutoWindowAttachedSurface {
         }
     }
 
-    private void onRendered(Slot slot, RenderResult result) {
+    private void onRendered(Slot slot, RenderResult result,long frameEpoch) {
         drawing = false;
         android.hardware.SyncFence ready = result.getFence();
         if (closed) {
@@ -196,6 +206,9 @@ final class AutoWindowAttachedSurface {
                                 }
                             });
                         }));
+                // A render submitted before an uncertain-scroll hide must
+                // never make old text visible again.
+                transaction.setVisibility(surface,frameEpoch==visibilityEpoch&&!latest.isEmpty());
                 transaction.apply();
             }
         } catch (RuntimeException error) {

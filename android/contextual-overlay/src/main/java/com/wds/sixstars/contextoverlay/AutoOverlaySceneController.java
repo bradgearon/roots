@@ -197,6 +197,10 @@ final class AutoOverlaySceneController {
         if (destroyed) return;
         expanded.hide();
         positions.suspendUntilMeasured();
+        // Do not wait for a GPU buffer to become available to erase stale
+        // screen coordinates. The next measured snapshot can repaint.
+        surfaces.present(java.util.Collections.emptyList());
+        for(String id:new java.util.HashSet<>(controls.keySet()))removeControls(id);
         frames.request();
     }
 
@@ -221,8 +225,8 @@ final class AutoOverlaySceneController {
         if (!normalized.equals(state.translation)) {
             state.translation = normalized;
             state.invalidateLayout();
+            frames.request();
         }
-        frames.request();
     }
 
     /** Only the Choreographer callback enters this method. */
