@@ -127,7 +127,7 @@ final class FastestComputeRouter implements TranslationProvider {
                 status="Paired desktop PLaMo · TLS";
                 r.connection="Authenticated TLS desktop response";
                 attempt.finish(true,"Authenticated desktop sample");
-                result.completed("Desktop confirmed: "+translated+" · "+elapsed+" ms"+(remembered?" · network remembered":" · network fingerprint unavailable"),null);
+                result.completed("Desktop confirmed at "+base+": "+translated+" · "+elapsed+" ms"+(remembered?" · network remembered":" · network fingerprint unavailable"),null);
             }catch(Exception e){
                 String why=SecureComputeSocket.reason(e);
                 attempt.finish(false,why);r.connection=why;

@@ -156,7 +156,13 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(testDesktop);
         content.addView(desktopTestStatus);
         testDesktop.setOnClickListener(v->{
-            testDesktop.setEnabled(false);desktopTestStatus.setText("Sending sample to desktop…");
+            // Do not silently test an older saved destination when an edit is pending.
+            String entered=bridgeAddress.getText().toString().trim().replaceAll("/+$","").replaceFirst("^http://","https://");
+            if(!entered.equals(prefs.bridgeUrl())||!translationKey.getText().toString().trim().isEmpty()){
+                desktopTestStatus.setText("Save translation connection first, then test "+entered);
+                return;
+            }
+            testDesktop.setEnabled(false);desktopTestStatus.setText("Sending sample to "+prefs.bridgeUrl()+"…");
             FastestComputeRouter.testDesktop(this,(message,error)->runOnUiThread(()->{
                 if(isDestroyed())return;
                 testDesktop.setEnabled(true);desktopTestStatus.setText(error==null?message:error);

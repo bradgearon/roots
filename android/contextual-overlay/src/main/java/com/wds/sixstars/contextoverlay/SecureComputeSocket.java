@@ -50,6 +50,7 @@ final class SecureComputeSocket {
         volatile WebSocket socket;
         volatile boolean open,ready,closed;
         volatile String failure="Desktop socket disconnected";
+        volatile String destination="";
          
         Session(Network network,String base,String key)throws Exception{
             this.network=network;this.base=base;this.key=key;
@@ -63,6 +64,17 @@ final class SecureComputeSocket {
                 .dns(host->Arrays.asList(network.getAllByName(host)))
                 .followRedirects(false).followSslRedirects(false)
                 .proxy(java.net.Proxy.NO_PROXY)
+                .eventListener(new okhttp3.EventListener(){
+                    @Override public void connectStart(okhttp3.Call call,java.net.InetSocketAddress address,java.net.Proxy proxy){
+                        destination=address.getAddress()==null?address.getHostString()+":"+address.getPort():address.getAddress().getHostAddress()+":"+address.getPort();
+                        trace("TCP connect "+destination);
+                    }
+                    @Override public void connectFailed(okhttp3.Call call,java.net.InetSocketAddress address,java.net.Proxy proxy,okhttp3.Protocol protocol,IOException error){
+                        trace("TCP/TLS connect failed "+destination+" ("+error.getClass().getSimpleName()+")");
+                    }
+                    @Override public void secureConnectStart(okhttp3.Call call){trace("TLS handshake started "+destination);}
+                    @Override public void secureConnectEnd(okhttp3.Call call,okhttp3.Handshake handshake){trace("TLS handshake complete "+destination);}
+                })
                 .connectTimeout(3000,TimeUnit.MILLISECONDS).build();
         }
         boolean matches(Network n,String b,String k){return network.equals(n)&&base.equals(b)&&key.equals(k);}
@@ -98,12 +110,17 @@ final class SecureComputeSocket {
             if(current!=null)return current;
             long now=SystemClock.elapsedRealtime();
             if(now<retryAt&&Objects.equals(retryNetwork,network)&&retryBase.equals(base)&&retryKey.equals(key))throw new Failure("Desktop retry cooldown after failed connection");
+            okhttp3.HttpUrl address=okhttp3.HttpUrl.parse(base);
+            if(address==null||!address.isHttps())throw new Failure("Desktop URL must use HTTPS");
+            String host=address.host();
+            if(host.equalsIgnoreCase("localhost")||host.equals("::1")||host.startsWith("127.")||host.equals("0.0.0.0")||host.equals("::"))
+                throw new Failure("Saved desktop address points to this phone, not your PC: "+base);
             s=new Session(network,base,key);
             String url;
             if(base.startsWith("https://"))url="wss://"+base.substring(8);
             else throw new Failure("Desktop URL must use HTTPS");
             current=s;
-            trace("WebSocket upgrade requested");
+            trace("WebSocket upgrade requested "+url+path);
             try{
                 s.socket=s.client.newWebSocket(new Request.Builder().url(url+path).header("X-SixStars-Token",key.substring(0,64)).build(),new WebSocketListener(){
                     @Override public void onOpen(WebSocket ws,Response response){if(s.closed){ws.cancel();return;}trace("WebSocket upgrade accepted");s.open=true;}
@@ -130,18 +147,19 @@ final class SecureComputeSocket {
                             error instanceof java.net.UnknownHostException?"Desktop address not resolved":
                             error instanceof javax.net.ssl.SSLException?"Desktop TLS connection failed":
                             "Desktop socket failed ("+error.getClass().getSimpleName()+")";
+                        s.failure += " · "+s.base+(s.destination.isEmpty()?"":" · TCP "+s.destination);
                         trace(s.failure);
                         fail(s);
                     }
                 });
             }catch(Exception e){fail(s);throw e;}
         }
-        if(!s.opened.await(3500,TimeUnit.MILLISECONDS)){fail(s);throw new Failure("Desktop WebSocket connect timed out; check IP and firewall");}
+        if(!s.opened.await(3500,TimeUnit.MILLISECONDS)){fail(s);throw new Failure("Desktop WebSocket connect timed out · "+base+(s.destination.isEmpty()?"":" · TCP "+s.destination));}
         if(!s.open||!s.ready||s.closed){fail(s);throw new Failure(s.failure);}
         return s;
     }
     private static String closeReason(int code){
-        if(code==1008)return "Desktop rejected authentication or request; check key and device clocks";
+        if(code==1008)return "Desktop rejected authentication or request; check connection key";
         if(code==1011)return "Desktop model inference unavailable";
         if(code==1013)return "Desktop temporarily busy";
         return "Desktop closed socket ("+code+")";

@@ -143,7 +143,22 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         Console.WriteLine("LOCAL TRANSLATION WebSocket ws://127.0.0.1:" + (_port + 1) + "/api/translation/v1/socket");
         Console.WriteLine("LOCAL TRANSLATION HTTP fallback http://127.0.0.1:" + (_port + 1) + "/api/translation/v1/translate");
         Console.WriteLine("LOCAL TRANSLATION token file: " + TokenPath());
-        if (_lan) Console.WriteLine("PAIRED COMPUTE TLS WebSocket wss://YOUR-PC:" + _port + "/api/translation/v1/socket");
+        if (_lan)
+        {
+            Console.WriteLine("PAIRED COMPUTE: use one of these desktop LAN addresses in Android Settings:");
+            foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up ||
+                    nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                foreach (var ip in nic.GetIPProperties().UnicastAddresses)
+                {
+                    if (ip.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
+                        System.Net.IPAddress.IsLoopback(ip.Address)) continue;
+                    Console.WriteLine("  https://" + ip.Address + ":" + _port + " (" + nic.Name + ")");
+                }
+            }
+            Console.WriteLine("PAIRED COMPUTE TLS WebSocket path: /api/translation/v1/socket");
+        }
         Console.WriteLine("PAIRED COMPUTE log: " + Wds.Roots.Host.Runtime.RootsDailyLog.CurrentPath);
     }
 
