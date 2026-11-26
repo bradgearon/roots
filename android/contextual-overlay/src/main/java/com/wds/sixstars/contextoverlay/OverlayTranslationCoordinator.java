@@ -81,7 +81,7 @@ public final class OverlayTranslationCoordinator {
         publishActivity();
     }
     private String profile() {
-        return preferences.desktopTranslationEnabled()?"desktop":
+        return (preferences.desktopTranslationEnabled()?"auto:":"")+
                 (preferences.localVulkanEnabled()?"vulkan:":"cpu:")+preferences.localThreads();
     }
 

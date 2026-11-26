@@ -70,6 +70,12 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
             backend = "dedicated PLaMo llama.cpp server on 8081", authentication = "required-for-inference"
         }));
 
+        // Automatic compute routing never sends the legacy bearer token or
+        // plaintext social content. A successful encrypted probe proves possession
+        // of the paired key; encrypted requests are replay-checked.
+        var secureRoute = new SecureComputeRoute(secret, _translator);
+        app.MapPost("/api/compute/v1/exchange", secureRoute.ExchangeAsync);
+
         app.MapPost("/api/translation/v1/detect", async (HttpContext context) =>
         {
             if (!IsAuthorized(context.Request.Headers["X-SixStars-Token"].ToString(), secret))

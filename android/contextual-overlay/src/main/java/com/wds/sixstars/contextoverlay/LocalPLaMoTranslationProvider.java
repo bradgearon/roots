@@ -131,7 +131,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
             String stage="verify_model";
             try {
                 OverlayPreferences preferences=new OverlayPreferences(app);
-                if(!preferences.enabled() || preferences.desktopTranslationEnabled()){callback.completed(null,"Translation mode changed.");return;}
+                if(!preferences.enabled()){callback.completed(null,"Translation permission is off.");return;}
                 boolean useVulkan=preferences.localVulkanEnabled();
                 int threads=preferences.localThreads();
                 File file=model(app);
@@ -163,7 +163,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                 long inferenceStart=SystemClock.elapsedRealtime();
                 trace(app,stage,"start",inferenceStart,"runtime="+revision+" requested_backend="+requestedBackend+" requested_threads="+threads,null,queueMs);
                 long[] stats=new long[8];
-                byte[] result=Native.generateStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,threads,bytes->{if(preferences.enabled()&&!preferences.desktopTranslationEnabled())callback.partial(StreamText.translationPreview(bytes));});
+                byte[] result=Native.generateStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,threads,bytes->{if(preferences.enabled())callback.partial(StreamText.translationPreview(bytes));});
                 if(result==null)throw new IllegalStateException("Native runtime returned no result buffer");
                 trace(app,stage,"ok",inferenceStart,"runtime="+revision+" "+loadedAcceleration+" result_bytes="+result.length,stats,queueMs);
                 String translated=new String(result,StandardCharsets.UTF_8).trim();

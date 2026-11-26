@@ -69,7 +69,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             "The feature does not take screenshots, press buttons in X, read other apps' text, or persist translation input. The optional Tree feature separately asks permission to retain local timeline fragments. " +
             "With desktop translation enabled, the text you tap may be sent to your configured Roots desktop over the local network for PLaMo inference. " +
             "If automatic translation is also enabled, eligible visible X text may be sent automatically. The X content could include private messages. " +
-            "Plain HTTP does not encrypt text or the access key; use only a trusted home Wi-Fi network, or an HTTPS/VPN bridge. " +
+            "Automatic routing verifies the paired host and encrypts requests and responses. An outdated desktop bridge is not used. " +
             "By default translation runs on this device. Nothing is sent unless you separately enable desktop translation. " +
             "You can stop processing below, and disable the service at any time in Android Accessibility settings.",
             14, 0xFFE5EFF4);
@@ -176,7 +176,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(targetLanguage);
 
         desktopTranslation = new CheckBox(this);
-        desktopTranslation.setText("Use desktop host instead of on-device PLaMo");
+        desktopTranslation.setText("Automatically use fastest paired compute (phone or desktop)");
         desktopTranslation.setTextColor(0xFFE5EFF4);
         desktopTranslation.setChecked(prefs.desktopTranslationEnabled());
         desktopTranslation.setOnCheckedChangeListener((button, checked) -> {
@@ -197,10 +197,9 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             }
             new AlertDialog.Builder(this)
                     .setTitle("Allow sending X text to your desktop?")
-                    .setMessage("When you tap a Roots translation badge, its visible X text will be sent to the configured desktop bridge for PLaMo translation. " +
-                            "If automatic mode is enabled, selected visible X text may be sent without tapping. " +
-                            "Content may include sensitive X posts or private messages. HTTP on Wi-Fi is not encrypted. " +
-                            "Use only a trusted network or HTTPS/VPN. You can turn this off at any time. Continue?")
+                    .setMessage("Roots may send selected visible X text to your paired desktop when it is available and faster, including in automatic mode. " +
+                            "Content may include sensitive posts or private messages. Requests are encrypted with the paired key. " +
+                            "The phone remains available as a fallback. No location or Wi-Fi name is required. Continue?")
                     .setNegativeButton("Not now", null)
                     .setPositiveButton("I consent to desktop translation", (dialog, which) -> {
                         prefs.setDesktopTranslationEnabled(true);
@@ -314,8 +313,8 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             preview.setText("Translating with PLaMo…");
             sample.setEnabled(false);
             long start=android.os.SystemClock.elapsedRealtime();
-            boolean local=!prefs.desktopTranslationEnabled();
-            String acceleration=local?(prefs.localVulkanEnabled()?"Vulkan requested":"CPU")+" / "+prefs.localThreads()+" threads":"Desktop";
+            String acceleration=prefs.desktopTranslationEnabled()?"Automatic paired compute":
+                    (prefs.localVulkanEnabled()?"Vulkan requested":"CPU")+" / "+prefs.localThreads()+" threads";
             TranslationRuntime.provider(this).translate("Bonjour à tous!", "fr", prefs.targetLanguage(),
                 new TranslationProvider.Result(){
                 @Override public void partial(String text){runOnUiThread(()->{if(!isDestroyed())StreamText.reveal(preview,text);});}
@@ -445,7 +444,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         }
         status.setText("In-app consent: " + (on ? "ON" : "OFF") +
                 " | Android service: " + (granted ? "ON" : "OFF") +
-                guidance + "\nDesktop translation permission: " +
+                guidance + "\nPaired compute permission: " +
                 (prefs.desktopTranslationEnabled() ? "ON" : "OFF") +
                 " · key: " + (OverlayTranslationKeyStore.isConfigured(this) ? "saved" : "missing") +
                 "\nDisplay mode: " + (prefs.autoPreview()
