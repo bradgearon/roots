@@ -148,6 +148,20 @@ public final class AutoOverlayPositionStoreTest {
         assertEquals(214, store.snapshot(130).get(0).rectangle.y);
     }
 
+    @Test public void measuredDeltaCannotRepairUnknownEarlierDisplacement() {
+        AutoOverlayPositionStore store=new AutoOverlayPositionStore(440,920);
+        store.publish(Arrays.asList(post("one",40,220)),false,100);
+        store.suspendUntilMeasured();
+        store.applyMeasuredScroll(0,20);
+        assertFalse(store.isTrusted());
+        assertTrue(store.snapshot(110).isEmpty());
+        store.publish(Collections.emptyList(),false,120);
+        assertTrue(store.isTrusted());
+        assertTrue(store.snapshot(120).isEmpty());
+        store.publish(Arrays.asList(post("one",40,170)),false,130);
+        assertEquals(170,store.snapshot(130).get(0).rectangle.y);
+    }
+
     @Test public void temporaryStationaryTreeGapDoesNotBlink() {
         AutoOverlayPositionStore store = new AutoOverlayPositionStore(440, 920);
         store.publish(Arrays.asList(post("one", 40, 350)), false, 100);
