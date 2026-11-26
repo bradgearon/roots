@@ -167,29 +167,29 @@ public final class TreeRuntime {
         if(foregroundX)accept(observations,epoch);
     }
 
-    void accept(List<NativeTree.Observation> observations,long epoch){
+    boolean accept(List<NativeTree.Observation> observations,long epoch){
+        boolean acceptedAll=true;
         synchronized(intakeLock){
-            if(!enabled()||epoch!=captureEpoch.get())return;
+            if(!enabled()||epoch!=captureEpoch.get())return false;
             accepted.addAndGet(observations.size());
             for(NativeTree.Observation o:observations){
-                if(!valid(o)){invalidText.incrementAndGet();dropped.incrementAndGet();continue;}
+                if(!valid(o)){invalidText.incrementAndGet();dropped.incrementAndGet();acceptedAll=false;continue;}
                 String key=observationKey(o);
                 if(!pending.add(key)){duplicate.incrementAndGet();continue;}
-                if(!queue.offer(new Queued(o,epoch))){pending.remove(key);dropped.incrementAndGet();queueDrops.incrementAndGet();}
+                if(!queue.offer(new Queued(o,epoch))){pending.remove(key);dropped.incrementAndGet();queueDrops.incrementAndGet();acceptedAll=false;}
                 else queued.incrementAndGet();
             }
         }
-        scheduleStats();scheduleDrain();
+        scheduleStats();scheduleDrain();return acceptedAll;
     }
     /** Final translation, never a streamed prefix. Same master as source body. */
     public boolean recordTranslation(String key,String original,String source,String target,String translated,long epoch){
         if(!enabled()||captureEpoch.get()!=epoch||key==null||!key.startsWith("local:x:")||!target.matches("[a-z]{2,3}"))return false;
         long now=System.currentTimeMillis();
         NativeTree.Observation body=new NativeTree.Observation("record.x.body",key,original,source,now);
-        NativeTree.Observation text=new NativeTree.Observation("record.x.translation",key,translated,target,now);
+        NativeTree.Observation text=new NativeTree.Observation("record.x."+target+".translation",key,translated,target,now);
         if(!valid(body)||!valid(text))return false;
-        accept(java.util.Arrays.asList(body,text),epoch);
-        return true;
+        return accept(java.util.Arrays.asList(body,text),epoch);
     }
     /** Explicit local edits/imports do not require screen-capture permission.
      * Call from a worker, never the accessibility/UI thread. */
@@ -257,6 +257,10 @@ public final class TreeRuntime {
             }
         }finally{try{saveStats();}finally{draining.set(false);scheduleDrain();}}
     }
+    public void languageChanged(){
+        snapshotEpoch.incrementAndGet();
+        compiler.execute(()->{try{synchronized(mutationLock){Files.deleteIfExists(snapshot.toPath());snapshotStatus="Rebuilding for "+overlay.targetLanguage();}}catch(Exception ignored){}requestSnapshot();});
+    }
     public void requestSnapshot(){if(NativeTree.available()){dirty.incrementAndGet();scheduleCompile();}}
     private void scheduleCompile(){if(!clearing&&compiling.compareAndSet(false,true))compiler.schedule(this::compile,4,TimeUnit.SECONDS);}
     private void compile(){
@@ -281,7 +285,7 @@ public final class TreeRuntime {
                     }else {Files.deleteIfExists(snapshot.toPath());snapshotStatus="Waiting for localized knowledge ("+language+")";}
                 }else snapshotStatus="Tree changed during compilation; retrying";
             }
-        }catch(Exception e){snapshotStatus="Compilation failed";trace("compile_error",0,0,e.getClass().getSimpleName());}
+        }catch(Exception|LinkageError e){snapshotStatus="Compilation failed";trace("compile_error",0,0,e.getClass().getSimpleName());}
         finally{
             if(temp!=null)try{Files.deleteIfExists(temp.toPath());}catch(Exception ignored){}
             compiling.set(false);if(!clearing&&dirty.get()!=target)scheduleCompile();

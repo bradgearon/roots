@@ -209,12 +209,12 @@ final class MeshPeer {
         }catch(IOException e){if(active==server)stopIfCurrent(server);}
     }
     private Map<String,MeshItem> catalog(){
-        Map<String,MeshItem> items=new LinkedHashMap<>();
+        Map<String,MeshItem> items=new java.util.TreeMap<>();
         // Explicit offer records only. No raw observations, original post bodies,
         // private branch terms, GGUF, or SQLite are ever served.
         for(NativeTree.Master record:tree.allRecords("",10000)){
             MeshItem item=MeshItem.from(record);if(item!=null)items.putIfAbsent(item.id(),item);
-            if(items.size()>=MAX_INVENTORY)break;
+
         }
         return items;
     }
@@ -240,10 +240,15 @@ final class MeshPeer {
             Map<String,MeshItem> catalog=catalog();
             JSONObject response=new JSONObject().put("version",1);
             if(op.equals("inventory")){
-                JSONArray entries=new JSONArray();
-                for(MeshItem item:catalog.values())entries.put(new JSONObject().put("id",item.id()).put("language",item.language())
-                    .put("topic",item.topic()).put("demand",Math.min(1000,requested.getOrDefault(item.id(),0))));
-                response.put("items",entries);
+                String after=request.optString("after");if(!after.isEmpty()&&!after.matches("[0-9a-f]{64}"))return;
+                JSONArray entries=new JSONArray();String next="";
+                for(MeshItem item:catalog.values()){
+                    if(item.id().compareTo(after)<=0)continue;
+                    if(entries.length()>=MAX_INVENTORY){next=entries.getJSONObject(entries.length()-1).getString("id");break;}
+                    entries.put(new JSONObject().put("id",item.id()).put("language",item.language())
+                        .put("topic",item.topic()).put("demand",Math.min(1000,requested.getOrDefault(item.id(),0))));
+                }
+                response.put("items",entries).put("next",next);
             }else{
                 String id=request.optString("id");MeshItem item=catalog.get(id);
                 if(item==null){response.put("error","unavailable");}
@@ -291,15 +296,22 @@ final class MeshPeer {
             if(!visited.add(invite.host()))continue;
             progress.accept("Reading peer inventory "+(peers+failed+1)+"…");
             try{
-                JSONArray inventory=exchange(network,invite,new JSONObject().put("op","inventory")).getJSONArray("items");
-                if(inventory.length()>MAX_INVENTORY)throw new IOException("Oversized inventory.");
-                peers++;
-                Set<String> seen=new HashSet<>();
-                for(int i=0;i<inventory.length();i++){
-                    JSONObject entry=inventory.getJSONObject(i);String id=entry.getString("id"),lang=entry.getString("language"),topic=entry.getString("topic");
-                    if(!id.matches("[0-9a-f]{64}")||!lang.matches("[a-z]{2,3}")||topic.isEmpty()||topic.length()>120||!seen.add(id))continue;
-                    Offer offer=offers.computeIfAbsent(id,k->new Offer(k,lang,topic));
-                    offer.sources.add(invite);offer.demand=Math.max(offer.demand,Math.max(0,Math.min(1000,entry.optInt("demand"))));
+                Set<String> seen=new HashSet<>();String after="";
+                for(int page=0;page<16;page++){
+                    JSONObject response=exchange(network,invite,new JSONObject().put("op","inventory").put("after",after));
+                    JSONArray inventory=response.getJSONArray("items");
+                    if(inventory.length()>MAX_INVENTORY)throw new IOException("Oversized inventory.");
+                    if(page==0)peers++;
+                    for(int i=0;i<inventory.length();i++){
+                        JSONObject entry=inventory.getJSONObject(i);String id=entry.getString("id"),lang=entry.getString("language"),topic=entry.getString("topic");
+                        if(!id.matches("[0-9a-f]{64}")||!lang.matches("[a-z]{2,3}")||topic.isEmpty()||topic.length()>120||!seen.add(id))continue;
+                        Offer offer=offers.computeIfAbsent(id,k->new Offer(k,lang,topic));
+                        offer.sources.add(invite);offer.demand=Math.max(offer.demand,Math.max(0,Math.min(1000,entry.optInt("demand"))));
+                    }
+                    String next=response.optString("next");
+                    if(next.isEmpty())break;
+                    if(!next.matches("[0-9a-f]{64}")||next.compareTo(after)<=0)throw new IOException("Invalid inventory cursor.");
+                    after=next;
                 }
             }catch(Exception e){failed++;}
         }
@@ -308,8 +320,14 @@ final class MeshPeer {
         for(Offer o:offers.values()){replicas.put(o.id,o.sources.size());demand.put(o.id,o.demand);}
         observedReplicas=Map.copyOf(replicas);observedDemand=Map.copyOf(demand);
         Set<String> known=new HashSet<>();
-        for(NativeTree.Master record:tree.allRecords("",10000))if(record.key().startsWith("local:mesh:"))known.add(record.key().substring(11));
         List<String> terms=new ArrayList<>();
+        for(NativeTree.Master record:tree.allRecords("",10000)){
+            if(record.key().startsWith("local:mesh:"))known.add(record.key().substring(11));
+            if(!record.latest("want").isEmpty()){
+                String topic=record.latest("topic");
+                if(!topic.isBlank())terms.add(topic.toLowerCase(Locale.ROOT));
+            }
+        }
         for(NativeTree.Agent agent:tree.agents())if(!agent.term().isBlank())terms.add(agent.term().toLowerCase(Locale.ROOT));
         for(String word:interests.toLowerCase(Locale.ROOT).split("[,;\\n]"))if(!word.isBlank())terms.add(word.trim());
         List<Offer> want=new ArrayList<>();

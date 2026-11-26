@@ -318,10 +318,10 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
                 statement s(t->db,language?
                     "SELECT seq,source,external_id,body,language,observed_ms FROM fragments f "
                     "WHERE source GLOB 'record.*' AND external_id GLOB 'local:*' AND language=? "
-                    "AND (source GLOB 'record.*.body' OR source GLOB 'record.*.translation' OR source GLOB 'record.*.localized') "
-                    "AND seq=(SELECT g.seq FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language "
-                    "AND (g.source GLOB 'record.*.body' OR g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized') "
-                    "ORDER BY (g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized') DESC,g.seq DESC LIMIT 1) ORDER BY seq":
+                    "AND (source GLOB 'record.*.understanding' OR "
+                    "(source GLOB 'record.*.body' AND NOT EXISTS(SELECT 1 FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language AND (g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized'))) OR "
+                    "((source GLOB 'record.*.translation' OR source GLOB 'record.*.localized') AND seq=(SELECT max(g.seq) FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language "
+                    "AND (g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized')))) ORDER BY seq":
                     "SELECT seq,source,external_id,body,language,observed_ms FROM fragments ORDER BY seq");
                 if(language)s.text(1,language);
                 rows.reserve(static_cast<size_t>(scalar(t->db,"SELECT count(*) FROM fragments")));

@@ -29,7 +29,7 @@ final class KnowledgeRecordActions {
     static void options(Activity activity,NativeTree.Master record,Runnable changed){
         String language=new OverlayPreferences(activity).targetLanguage();
         String title=record.latest("topic");if(title.isEmpty())title=record.first("author");if(title.isEmpty())title="Knowledge record";
-        final String[] labels={"View original and localized text","Attach exact X post link","Translate into "+language,"Confirm original is already "+language,"Publish a shareable remembrance"};
+        final String[] labels={"View original and localized text","Attach exact X post link","Translate into "+language,"Confirm original is already "+language,"Add private understanding","Mark wanted","Publish a shareable remembrance"};
         new AlertDialog.Builder(activity).setTitle(title).setItems(labels,(dialog,index)->{
             switch(index){
                 case 0 -> {
@@ -44,9 +44,20 @@ final class KnowledgeRecordActions {
                 case 3 -> new AlertDialog.Builder(activity).setTitle("Confirm language")
                     .setMessage("Use the original as "+language+" knowledge? Only confirm if it is already in that language. This does not generate a translation.")
                     .setNegativeButton("Cancel",null).setPositiveButton("Confirm",(d,w)->store(activity,record,"localized",record.body().body(),language,TreeRuntime.get(activity).captureEpoch(),changed)).show();
-                case 4 -> MeshActivity.publish(activity,record,changed);
+                case 4 -> understand(activity,record,language,changed);
+                case 5 -> store(activity,record,"want","wanted","",TreeRuntime.get(activity).captureEpoch(),changed);
+                case 6 -> MeshActivity.publish(activity,record,changed);
             }
         }).setNegativeButton("Close",null).show();
+    }
+    private static void understand(Activity activity,NativeTree.Master record,String language,Runnable changed){
+        EditText input=new EditText(activity);input.setMinLines(3);input.setHint("What do you understand about this knowledge?");
+        input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(3000)});
+        new AlertDialog.Builder(activity).setTitle("Private understanding")
+            .setMessage("A local-language interpretation or relationship. This remains private and contributes to the home ranking.")
+            .setView(input).setNegativeButton("Cancel",null).setPositiveButton("Save",(d,w)->{
+                String text=input.getText().toString().trim();if(!text.isEmpty())store(activity,record,"understanding",text,language,TreeRuntime.get(activity).captureEpoch(),changed);
+            }).show();
     }
     private static void attach(Activity activity,NativeTree.Master record,Runnable changed){
         EditText input=new EditText(activity);input.setSingleLine(true);input.setHint("https://x.com/…/status/…");input.setText(XPostLink.forRecord(record));
@@ -65,8 +76,11 @@ final class KnowledgeRecordActions {
         if(original.body().length()>1200){toast(activity,"This record is too long for the current translation limit.");return;}
         long epoch=TreeRuntime.get(activity).captureEpoch();
         toast(activity,"Translating locally…");
+        InferenceHistory.Attempt attempt=InferenceHistory.get(activity).begin("Phone","PLaMo","Localize knowledge","Explicit private localization");
         new LocalPLaMoTranslationProvider(activity).translate(original.body(),original.language(),language,new TranslationProvider.Result(){
+            @Override public void started(){attempt.running("Running");}
             @Override public void completed(String text,String error){
+                attempt.finish(error==null&&text!=null&&!text.isBlank(),error==null?"Local generation completed":"Local generation failed");
                 if(error!=null||text==null||text.isBlank()){activity.runOnUiThread(()->toast(activity,error==null?"No translation returned.":error));return;}
                 store(activity,record,"translation",text,language,epoch,changed);
             }
@@ -76,7 +90,8 @@ final class KnowledgeRecordActions {
         TreeRuntime tree=TreeRuntime.get(activity);
         WORK.execute(()->{
             String error=null;
-            try{tree.storeExplicit(List.of(new NativeTree.Observation(prefix(record)+role,record.key(),text,language,System.currentTimeMillis())),epoch);}
+            try{String source=prefix(record)+((role.equals("translation")||role.equals("localized")||role.equals("understanding"))?language+".":"")+role;
+                tree.storeExplicit(List.of(new NativeTree.Observation(source,record.key(),text,language,System.currentTimeMillis())),epoch);}
             catch(Exception|LinkageError e){error="Could not save record: "+e.getMessage();}
             String message=error;
             activity.runOnUiThread(()->{if(activity.isDestroyed())return;if(message==null){changed.run();toast(activity,"Knowledge updated.");}else toast(activity,message);});

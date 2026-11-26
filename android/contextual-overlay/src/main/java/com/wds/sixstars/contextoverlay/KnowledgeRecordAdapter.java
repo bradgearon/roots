@@ -69,6 +69,9 @@ public final class KnowledgeRecordAdapter extends BaseAdapter {
                 String value=record.latest(role);if(!value.isEmpty())metrics+=(metrics.isEmpty()?"":"  ·  ")+role.replace("-count","")+" "+value;
             }
             if(!metrics.isEmpty())card.addView(RootsUi.text(activity,metrics,12,RootsUi.MUTED,false));
+            String understanding=record.latest("understanding");
+            if(!understanding.isEmpty()){TextView note=RootsUi.text(activity,"Understanding · "+understanding,14,RootsUi.MUTED,false);note.setMaxLines(3);card.addView(note);}
+            if(!record.latest("want").isEmpty())card.addView(RootsUi.text(activity,"Wanted",12,RootsUi.ACCENT,true));
         }
         String footer=home?(XPostLink.forRecord(record).isEmpty()?"Tap for details · link not captured":"Open original on X  ↗  ·  hold for options"):
             grouped?record.members().size()+" associated fragments · local record #"+record.sequence():

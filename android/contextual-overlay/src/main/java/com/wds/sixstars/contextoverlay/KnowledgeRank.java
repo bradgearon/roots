@@ -28,6 +28,9 @@ final class KnowledgeRank {
         }catch(Exception e){return 0;}
     }
     static List<Ranked> rank(List<NativeTree.Master> records,List<NativeTree.Agent> agents,String language,long now,MeshPeer mesh){
+        return rank(records,agents,language,now,mesh::replicas,mesh::demand);
+    }
+    static List<Ranked> rank(List<NativeTree.Master> records,List<NativeTree.Agent> agents,String language,long now,java.util.function.ToIntFunction<String> replicasOf,java.util.function.ToIntFunction<String> demandOf){
         List<Ranked> results=new ArrayList<>();
         HashMap<String,Integer> frequency=new HashMap<>();
         HashMap<String,Set<String>> vocabulary=new HashMap<>();
@@ -52,9 +55,9 @@ final class KnowledgeRank {
             boolean localized=language.equals(body.language());
             double age=Math.max(0,now-body.at())/86400000.0;
             String id=record.key().startsWith("local:mesh:")?record.key().substring(11):"";
-            int replicas=id.isEmpty()?0:mesh.replicas(id),demand=id.isEmpty()?0:mesh.demand(id);
+            int replicas=id.isEmpty()?0:replicasOf.applyAsInt(id),demand=id.isEmpty()?0:demandOf.applyAsInt(id);
             double score=12*Math.min(4,branches.size())+3*Math.min(6,roles.size())+7*Math.min(3,connection)
-                +(linked?8:0)+(localized?10:0)+12/(1+age/3)
+                +(linked?8:0)+(localized?10:0)+12/(1+age/3)+(roles.contains("understanding")?14:0)+(roles.contains("want")?18:0)
                 +metric(record.latest("like-count"))+metric(record.latest("repost-count"))
                 +metric(record.latest("reply-count"))+.5*metric(record.latest("view-count"))
                 +Math.min(8,Math.log1p(demand)*2)+(replicas>0?8.0/replicas:0);

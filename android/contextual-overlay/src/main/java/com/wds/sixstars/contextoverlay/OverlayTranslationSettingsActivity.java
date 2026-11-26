@@ -198,7 +198,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         targetLanguage.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             @Override public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
                 if(!codes[position].equals(prefs.targetLanguage())){
-                    prefs.setTargetLanguage(codes[position]); if(com.wds.sixstars.contextoverlay.tree.NativeTree.available())TreeRuntime.get(OverlayTranslationSettingsActivity.this).requestSnapshot(); refreshStatus();
+                    prefs.setTargetLanguage(codes[position]); if(com.wds.sixstars.contextoverlay.tree.NativeTree.available())TreeRuntime.get(OverlayTranslationSettingsActivity.this).languageChanged(); refreshStatus();
                 }
             }
             @Override public void onNothingSelected(AdapterView<?> parent){}
