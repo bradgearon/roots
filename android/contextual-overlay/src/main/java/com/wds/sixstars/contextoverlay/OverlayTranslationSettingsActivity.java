@@ -303,6 +303,41 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 }));
         });
 
+        content.addView(text("FunctionGemma — local micro-cognition", 18, 0xFFFFFFFF));
+        content.addView(text("FunctionGemma 270M selects a bounded operation and proposes arguments. It does not execute tools, modify the Tree, or establish facts. Text entered here is processed on this device; CPU is used independently of the translation GPU setting.",13,0xFFAAC8D4));
+        Button functionDownload=button("Download FunctionGemma Q8 (~292 MB)");
+        content.addView(functionDownload);
+        TextView functionStatus=text("Download the model, then test a request.",14,0xFFE5EFF4);
+        functionDownload.setOnClickListener(v -> new AlertDialog.Builder(this)
+            .setTitle("FunctionGemma model terms")
+            .setMessage("Google Gemma terms apply. Review https://ai.google.dev/gemma/terms before downloading. Model weights are downloaded from Hugging Face over Wi-Fi; your requests remain on-device.")
+            .setNeutralButton("Review terms",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(LocalFunctionGemmaProvider.TERMS))))
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Agree and download",(d,w)->LocalFunctionGemmaProvider.download(this,(message,error)->runOnUiThread(()->functionStatus.setText(error==null?message:error))))
+            .show());
+        EditText functionInput=new EditText(this);
+        functionInput.setTextColor(0xFFE5EFF4);
+        functionInput.setHintTextColor(0xFFAAC8D4);
+        functionInput.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        functionInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(FunctionGemmaProtocol.MAX_INPUT)});
+        functionInput.setMinLines(2);
+        functionInput.setText("Examine the semantic displacement: your eyes disturb the sea when it feels too rough.");
+        content.addView(functionInput);
+        Button functionSample=button("Test FunctionGemma operation proposal");
+        content.addView(functionSample);
+        functionSample.setOnClickListener(v->{
+            functionSample.setEnabled(false);
+            functionStatus.setText("Inspecting the request locally…");
+            LocalFunctionGemmaProvider.propose(this,functionInput.getText().toString(),(message,error)->runOnUiThread(()->{
+                functionSample.setEnabled(true);
+                functionStatus.setText(error==null?message:error);
+            }));
+        });
+        Button functionRelease=button("Release FunctionGemma memory");
+        content.addView(functionRelease);
+        functionRelease.setOnClickListener(v->LocalFunctionGemmaProvider.release(this,(message,error)->runOnUiThread(()->functionStatus.setText(error==null?message:error))));
+        content.addView(functionStatus);
+
         content.addView(text(
             "In Manual mode, tap the ⇄ button positioned next to each post body. " +
             "In Automatic mode, translated text appears directly over the original post text, " +
