@@ -145,7 +145,7 @@ public final class LocalFunctionGemmaProvider {
                 String firstPrompt=PoeticMovement.selectionPrompt(input);
                 long[] firstStats=new long[8];
                 long firstStart=SystemClock.elapsedRealtime();
-                String first=movementGenerate(firstPrompt,firstStats,threads,prefix->result.progress("selection_stream",prefix));
+                String first=movementGenerate(app,"Poetic selection",firstPrompt,firstStats,threads,prefix->result.progress("selection_stream",prefix));
                 trace(app,stage,"ok",firstStart,firstStats,start-submitted);
                 java.util.List<PoeticMovement.Pair> pairs;
                 try{pairs=PoeticMovement.parseSelection(input,first);}
@@ -157,7 +157,7 @@ public final class LocalFunctionGemmaProvider {
                 stage="movement_resolve";
                 result.progress(stage,"Request 2 / 2: replacing ordinary actions and resolving differences…");
                 long[] secondStats=new long[8];long secondStart=SystemClock.elapsedRealtime();
-                String second=movementGenerate(PoeticMovement.resolutionPrompt(input,pairs),secondStats,threads,prefix->result.progress("resolution_stream",prefix));
+                String second=movementGenerate(app,"Poetic resolution",PoeticMovement.resolutionPrompt(input,pairs),secondStats,threads,prefix->result.progress("resolution_stream",prefix));
                 trace(app,stage,"ok",secondStart,secondStats,0);
                 java.util.List<PoeticMovement.Resolution> resolutions;
                 try{resolutions=PoeticMovement.parseResolution(input,second);}
@@ -172,10 +172,15 @@ public final class LocalFunctionGemmaProvider {
             }
         });}catch(java.util.concurrent.RejectedExecutionException e){result.completed(null,"Local inference queue is busy.");}
     }
-    private static String movementGenerate(String prompt,long[] stats,int threads,java.util.function.Consumer<String> progress){
-        byte[] out=LocalPLaMoTranslationProvider.Native.generateFunctionStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,threads,bytes->progress.accept(StreamText.functionPreview(bytes)));
-        if(out==null)throw new IllegalStateException("Native runtime returned no result.");
-        return new String(out,StandardCharsets.UTF_8);
+    private static String movementGenerate(Context app,String operation,String prompt,long[] stats,int threads,java.util.function.Consumer<String> progress){
+        InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin("Phone · CPU","FunctionGemma",operation,"Local generation");
+        attempt.running("Running");
+        try{
+            byte[] out=LocalPLaMoTranslationProvider.Native.generateFunctionStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,threads,bytes->progress.accept(StreamText.functionPreview(bytes)));
+            if(out==null)throw new IllegalStateException("Native runtime returned no result.");
+            attempt.finish(true,"Generation completed · separate validation");
+            return new String(out,StandardCharsets.UTF_8);
+        }catch(RuntimeException|LinkageError e){attempt.finish(false,"Local generation failed");throw e;}
     }
     public static void propose(Context context,String request,Result result){
         final String prompt;
@@ -199,11 +204,10 @@ public final class LocalFunctionGemmaProvider {
                     trace(c,"model_load","ok",loadStart,null,queueMs);
                 }
                 stage="inference";long inferenceStart=SystemClock.elapsedRealtime();stats=new long[8];
-                byte[] output=LocalPLaMoTranslationProvider.Native.generateFunctionStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,new OverlayPreferences(c).localThreads(),bytes->result.partial(StreamText.functionPreview(bytes)));
-                if(output==null)throw new IllegalStateException("Native runtime returned no result.");
+                String output=movementGenerate(c,"Operation proposal",prompt,stats,new OverlayPreferences(c).localThreads(),result::partial);
                 trace(c,"inference","ok",inferenceStart,stats,queueMs);
                 stage="validate_proposal";
-                FunctionGemmaProtocol.Proposal proposal=FunctionGemmaProtocol.parse(new String(output,StandardCharsets.UTF_8));
+                FunctionGemmaProtocol.Proposal proposal=FunctionGemmaProtocol.parse(output);
                 trace(c,stage,"ok",start,null,queueMs);
                 result.completed("Proposal only — not executed\n"+proposal+"\nInference: "+(stats[1]+stats[2]+stats[3]+stats[4])+" ms\nEnd-to-end: "+(SystemClock.elapsedRealtime()-submitted)+" ms",null);
             }catch(Exception|LinkageError e){

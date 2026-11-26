@@ -132,19 +132,27 @@ final class FastestComputeRouter implements TranslationProvider {
             String base=prefs.bridgeUrl(),key=network==null?"":OverlayTranslationKeyStore.read(app);
             String fingerprint=network==null?"":familiar.fingerprint(network);
             boolean remote=network!=null&&!key.isEmpty()&&familiar.contains(base,fingerprint);
+            String reason=!prefs.desktopTranslationEnabled()?"Desktop permission off":
+                network==null?"No active Wi-Fi":key.isEmpty()?"Desktop key missing":
+                !remote?"Network not remembered":"Measured local preference";
             String desktop="desktop:"+base+":"+fingerprint;
             if(remote&&preferRemote(desktop,phone,text.length())){
                 if(remoteTranslate(network,base,key,desktop,text,source,target,callback,finished))return;
-                remote=false;
+                remote=false;reason="Fallback after desktop attempt";
             }
             final boolean tryDesktop=remote;
             status=remote?"On-device PLaMo · measured fastest":"On-device PLaMo · paired host unavailable or disabled";
             long start=SystemClock.elapsedRealtime();
+            final String localReason=reason;
+            InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin(
+                phone.contains(":vulkan:")?"Phone · Vulkan":"Phone · CPU","PLaMo","Translation",localReason);
             local.translate(text,source,target,new Result(){
-                @Override public void started(){if(!finished.get())callback.started();}
+                @Override public void started(){attempt.running("Running");if(!finished.get())callback.started();}
                 @Override public void partial(String prefix){if(!finished.get()&&prefs.enabled())callback.partial(prefix);}
                 @Override public void completed(String translated,String error){
-                    if(error==null&&translated!=null&&!translated.trim().isEmpty()){
+                    boolean ok=error==null&&translated!=null&&!translated.trim().isEmpty();
+                    attempt.finish(ok,ok?localReason:"Local model unavailable or inference failed · "+localReason);
+                    if(ok){
                         observe(phone,text.length(),SystemClock.elapsedRealtime()-start);
                         finish(callback,finished,translated,null);return;
                     }
@@ -162,19 +170,24 @@ final class FastestComputeRouter implements TranslationProvider {
     private boolean remoteTranslate(Network network,String base,String key,String route,String text,String source,String target,Result callback,AtomicBoolean finished){
         if(!authorized(base,key)||!network.equals(wifi())||!familiar.contains(base,familiar.fingerprint(network)))return false;
         long start=SystemClock.elapsedRealtime();
+        InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin("Desktop","PLaMo","Translation","Paired desktop route");
         try{
             JSONObject input=new JSONObject().put("text",text).put("targetLang",target).put("maxTokens",768);
             if(source!=null&&source.matches("[a-z]{2,3}"))input.put("sourceLang",source);
             status="Paired desktop PLaMo · encrypted";
-            JSONObject reply=socket.translate(network,base,key,new JSONObject().put("kind","translate").put("request",input),callback::started);
+            JSONObject reply=socket.translate(network,base,key,new JSONObject().put("kind","translate").put("request",input),()->{
+                attempt.running("Sent");callback.started();
+            });
             String translated=reply.optString("translation","").trim();
             if(translated.isEmpty())throw new IllegalStateException("Empty translation");
+            attempt.finish(true,"Authenticated desktop response");
             if(!authorized(base,key)){finish(callback,finished,null,"Desktop compute permission changed.");return true;}
             familiar.remember(base,familiar.fingerprint(network));
             connection="Familiar network · desktop responding";
             observe(route,text.length(),SystemClock.elapsedRealtime()-start);
             finish(callback,finished,translated,null);return true;
         }catch(Exception e){
+            attempt.finish(false,"Desktop connection, authentication or inference failed; local fallback");
             connection="Desktop request failed";
             status="Desktop route unavailable · falling back to phone";return false;
         }

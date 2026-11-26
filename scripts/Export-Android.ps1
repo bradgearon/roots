@@ -158,7 +158,7 @@ try {
         New-Item -ItemType Directory -Path $tree -Force | Out-Null
         Copy-StableTree
     }
-    foreach ($name in @('plamo-lifecycle.jsonl','plamo-lifecycle.previous.jsonl','functiongemma-lifecycle.jsonl','functiongemma-lifecycle.previous.jsonl','tree-lifecycle.jsonl','tree-lifecycle.previous.jsonl')) {
+    foreach ($name in @('inference-history.jsonl','plamo-lifecycle.jsonl','plamo-lifecycle.previous.jsonl','functiongemma-lifecycle.jsonl','functiongemma-lifecycle.previous.jsonl','tree-lifecycle.jsonl','tree-lifecycle.previous.jsonl')) {
         [void](Copy-PrivateFile "files/diagnostics/$name" (Join-Path $logs $name) $true)
     }
     $entries = @(Get-ChildItem -LiteralPath $dest -File -Recurse | ForEach-Object {

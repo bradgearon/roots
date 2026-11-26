@@ -55,6 +55,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
 
         LinearLayout shell=RootsUi.shell(this);
         shell.addView(RootsUi.header(this,"Settings","Roots · translation and knowledge"));
+        shell.addView(RootsUi.action(this,"Live inference history",()->startActivity(new Intent(this,InferenceHistoryActivity.class))));
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         LinearLayout sections = RootsUi.column(this);

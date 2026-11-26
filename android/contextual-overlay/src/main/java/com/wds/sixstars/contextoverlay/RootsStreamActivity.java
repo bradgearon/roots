@@ -47,6 +47,7 @@ public final class RootsStreamActivity extends Activity {
         shell.addView(tools);
         status=RootsUi.text(this,"Local knowledge",14,RootsUi.ACCENT,true);
         tools.addView(status);
+        tools.addView(RootsUi.action(this,"Inference history",()->startActivity(new Intent(this,InferenceHistoryActivity.class))));
         search=new EditText(this);search.setSingleLine(true);search.setTextSize(15);
         search.setTextColor(RootsUi.TEXT);search.setHintTextColor(RootsUi.MUTED);
         search.setHint("Search retained text");search.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
