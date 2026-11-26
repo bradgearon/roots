@@ -2,7 +2,7 @@
 
 **Copyright (c) 2026 We Develop Software LLC. All rights reserved.** Roots-owned software and documentation are proprietary; see [LICENSE](LICENSE). Third-party components retain their own applicable licenses.
 
-See the [Roots design area](design/README.md) for proposed social intelligence, recognition, agents, ratings, availability and network features.
+See the [Roots design area](design/README.md) for the proposed ChristEye [Tree of Life](design/tree-of-life.md), [Honeycomb and Whirlwind](design/honeycomb-whirlwind.md), [Garden participation](design/garden.md), recognition, micro-cognition, deliberate writing, agents, ratings, availability and native web presence. These are design proposals, not implemented runtime features.
 
 Independent local-first translation and social integration platform. The initial code is extracted directly from Six Stars and Resone, not a replacement implementation of the X integration. No game, companion, Gemma, ASR or TTS dependencies are needed to use translation.
 
