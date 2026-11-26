@@ -1,0 +1,11 @@
+build/
+stage/
+__pycache__/
+*.axon
+*.gguf
+*.wav
+*.tsv
+*.json
+*.bin
+pieces/
+runs/

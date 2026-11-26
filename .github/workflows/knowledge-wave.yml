@@ -1,0 +1,24 @@
+name: Knowledge Wave checks
+on:
+  pull_request:
+    paths:
+      - 'src/Wds.Roots.Api.Native/KnowledgeWave/**'
+      - 'tools/knowledge-wave/**'
+      - '.github/workflows/knowledge-wave.yml'
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: cmake -S src/Wds.Roots.Api.Native/KnowledgeWave -B wave-build
+      - run: cmake --build wave-build --config Release
+      - run: ctest --test-dir wave-build -C Release --output-on-failure
+      - run: python -m unittest discover -s tools/knowledge-wave -p "test_*.py"
