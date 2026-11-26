@@ -4,7 +4,7 @@ Copyright (c) 2026 We Develop Software LLC. All rights reserved. See the reposit
 
 This is the first bounded, local C++17 implementation, intended to be shared by Android, desktop, and independent hosts. The C ABI in include/roots_tree.h is the boundary, not a C++ STL ABI. It exposes observation batches, durable SQLite records, exact query and cursor feed, persistent literal-interest agents, composable predicate keys, observed relations and GGUF v3 compilation.
 
-The Android scroll-capture adapter, native JNI binding, desktop managed binding, and native Garden UI are subsequent integration work. The earlier Android-only Java prototype on feature/android-scroll-tree is NOT the canonical Tree implementation and must not be merged as a second core. No new capture is enabled by this library alone.
+The experimental Android JNI adapter and local Tree viewer, desktop managed binding and local CLI now call this shared implementation. The earlier Android-only Java prototype on feature/android-scroll-tree is NOT the canonical Tree implementation and must not be merged as a second core. Capture is off by default and Android's native Tree build is optional. Platform builds/device behavior are not yet verified.
 
 ## Build
 
@@ -38,10 +38,41 @@ This produces libroots_tree.so. Use a pinned, security-reviewed SQLite release f
 - GGUF v3 is a derived snapshot of 128 F32 normalized UTF-8 byte-trigram hash features, using the roots.lexical.utf8-trigram.f32.v1 profile, plus row keys and observed edge metadata. It is a lexical feature tensor, not a learned embedding, a language model, or a complete portable Tree. SQLite is authoritative. The container must be parsed by a compatible reader; llama.cpp model loading is not applicable. A caller creates a unique private temporary path, compiles off the UI thread, checks returned revision against current state and atomically publishes only an eligible snapshot. Retire stale exports when data is removed. Do not expose raw local data or snapshots to others by default.
 - The core receives only already authorized observations; the host is responsible for capture consent, foreground/source restrictions, private surface exclusions, scope, revocation, and safe deletion of DB and sidecar files/exports. The initial database has no cross-user authorization or encryption layer. Keep in app-private storage, with backup disabled. Logical clear is not a forensic erasure guarantee.
 
+## Platform integrations (experimental)
+
+### Android
+
+From the android directory, supply an explicitly approved SQLite amalgamation (sqlite3.c and sqlite3.h):
+
+```sh
+./gradlew :app:assembleDebug -ProotsEnableTree=true -ProotsSqliteAmalgamationDir=/absolute/path/to/sqlite-amalgamation
+```
+
+On Windows use gradlew.bat. If the checkout lacks the wrapper, generate it with the documented Gradle version first. Default builds omit the optional Tree native target and preserve translation. With the Tree-enabled build installed, grant the existing X accessibility permission, open Tree of Life from the translation settings, and separately consent to local timeline capture. Search / refresh feed and branch agents use the native database. New local observations feed literal-interest branches. No automatic external research, remote upload, or semantic Lily engine is implied. The app retains text fragments, not verified tweet identities or author metadata. The Home route gate, private-surface exclusions and bounded capture diagnostics need testing against current X builds. Home may include protected posts; storage is local, not a claim of public redistribution rights.
+
+The intake handler snapshots eligible accessibility nodes on a dedicated thread, a bounded queue feeds one batch writer, and a separate compiler creates revision-checked GGUF snapshots approximately four seconds after work is scheduled. It retries when the revision changes. This is not a hard timing guarantee; capacity, coalescing and missing accessibility content can lose observations. Pause drops queued intake; an in-flight transaction may finish. Clear serializes after writes and removes managed snapshots. No automatic capture while X is not foreground. The Tree UI uses cursor pagination and a worker for search. The lexical feed is not yet weighted semantic feed assembly.
+
+### Desktop
+
+Build the core with the commands above, then use the explicit absolute trusted library path. Windows PowerShell example:
+
+```powershell
+$env:ROOTS_TREE_LIBRARY = (Resolve-Path build/tree-core/Release/roots_tree.dll).Path
+$db = Join-Path $env:LOCALAPPDATA 'Roots\Tree\tree.db'
+dotnet run --project src/Wds.Roots.TreeCli -c Release -- --db $db observe manual sample en 'Music and mathematics'
+dotnet run --project src/Wds.Roots.TreeCli -c Release -- --db $db agent-add Music music
+dotnet run --project src/Wds.Roots.TreeCli -c Release -- --db $db feed music
+dotnet run --project src/Wds.Roots.TreeCli -c Release -- --db $db compile (Join-Path $env:LOCALAPPDATA 'Roots\Tree\first.gguf')
+```
+
+Linux: export ROOTS_TREE_LIBRARY to the absolute libroots_tree.so path. CLI is intentionally separate from the translation HTTP/LAN gateway and does not start PLaMo; no automatic desktop observation or web synchronization. Choose a private database path and a new snapshot path each time; retire caller-managed exports on deletion. The C# binding uses SafeHandle, UTF-8 and synchronous native callbacks; hosts should dispatch work off the UI thread.
+
+The CI workflow includes native checks, managed binding checks on Linux/MSVC, and a host JVM JNI check. The latter does not validate actual Android device capture or build. For standalone JNI contract tests configure with ROOTS_TREE_HOST_JNI=ON and a JDK. No claim of passing until runs are observed.
+
 ## Next platform work
 
-Reuse the existing Android X accessibility reader as an observation source, independently of translation and without a dwell requirement. Capture only available, permitted timeline fragments on events and lookahead; exclude uncertain or private contexts. Use immutable copies and a bounded queue; drain batches to the native C ABI. Do not make the compiler wait on scroll or translation. Measure actual fast-fling recall on a controlled feed; inaccessible or coalesced rows cannot be recovered by adding threads.
+Validate the existing experimental Android capture adapter with a controlled feed, including fast-fling recall, false-positive surfaces, process restart, consent changes and UI latency; inaccessible or coalesced rows cannot be recovered by adding threads. Test ARM64 integration with the approved SQLite dependency.
 
-Use JNI on Android and P/Invoke on desktop. Both call the same native core, not a Java/C# reimplementation. Next: native library integration and test builds on ARM64 Android and MSVC Windows; feed UI and search; independent GGUF reader and portable manifest; task-specific semantic/poetic cognition; simple agent external-source adapters. Existing translation and Forge contracts remain unchanged.
+JNI and P/Invoke both call the same native core. Next: confirm Android and MSVC builds, then an independent GGUF reader and portable manifest, desktop capture/browser and Forge integration, weighted feed assembly, [Lily Tendril semantic sensors](../../design/tendrils.md) and external-source agents. Existing translation and Forge contracts remain unchanged.
 
 No biological equivalence, measured social usefulness or production scalability is asserted.
