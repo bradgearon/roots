@@ -32,7 +32,7 @@ try {
         if (DateTime.UtcNow > deadline) throw new TimeoutException("PLaMo readiness timed out.");
         await Task.Delay(500, quit.Token);
     }
-    await using var gateway = new LocalTranslationGateway(8223, "http://127.0.0.1:8081/v1/completions", args.Contains("--lan"));
+    await using var gateway = new LocalTranslationGateway(8223, "http://127.0.0.1:8081/v1/completions", args.Contains("--lan") && !args.Contains("--local-only"));
     await gateway.StartAsync(quit.Token);
     await Task.Delay(Timeout.Infinite, quit.Token);
 } catch (OperationCanceledException) when (quit.IsCancellationRequested) { }
