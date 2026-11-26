@@ -327,6 +327,14 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
                 rows.reserve(static_cast<size_t>(scalar(t->db,"SELECT count(*) FROM fragments")));
                 while(s.next())rows.push_back(read_row(s));
                 membership_edges(t->db,edges,0);
+                if(language){
+                    // Preserve record-level branch membership and wanted state,
+                    // even when the matching original was excluded. No private text.
+                    statement branch(t->db,"SELECT DISTINCT f.external_id,b.agent_id FROM branch_members b JOIN fragments f ON f.seq=b.fragment_seq WHERE f.source GLOB 'record.*' AND f.external_id GLOB 'local:*'");
+                    while(branch.next())edges.push_back({"master:"+branch.str(0),"is.in","branch:"+std::to_string(branch.integer(1))});
+                    statement wants(t->db,"SELECT DISTINCT external_id FROM fragments WHERE source GLOB 'record.*.want' AND external_id GLOB 'local:*'");
+                    while(wants.next())edges.push_back({"master:"+wants.str(0),"has.state","state:wanted"});
+                }
                 statement a(t->db,"SELECT id,name,term FROM agents ORDER BY id");
                 while(a.next())agents.push_back({a.integer(0),a.str(1),a.str(2)});
                 exec(t->db,"COMMIT");
@@ -335,7 +343,7 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
         if(language&&rows.empty()){*out=rev;return;}
         require(!rows.empty());
         if(language){
-            std::unordered_set<std::string> keys;for(const auto &r:rows)keys.insert(fragment_key(r.id));
+            std::unordered_set<std::string> keys;for(const auto &r:rows){keys.insert(fragment_key(r.id));keys.insert("master:"+r.external);}
             edges.erase(std::remove_if(edges.begin(),edges.end(),[&](const edge &e){return !keys.count(e.subject);}),edges.end());
             // Preserve branch identities and relation edges without copying
             // private terms/names into the localized projection.

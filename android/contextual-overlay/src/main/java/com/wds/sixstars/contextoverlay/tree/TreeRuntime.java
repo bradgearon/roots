@@ -46,6 +46,31 @@ public final class TreeRuntime {
     private volatile NativeTree nativeTree;
     private volatile boolean clearing;
     private volatile String snapshotStatus="Not compiled", error="";
+    private final KnowledgeWave wave=new KnowledgeWave();
+    private volatile KnowledgeWave.Field coordination=KnowledgeWave.Field.empty();
+    private final java.util.concurrent.CopyOnWriteArrayList<Runnable> waveListeners=new java.util.concurrent.CopyOnWriteArrayList<>();
+    public KnowledgeWave.Field coordination(){return clearing?KnowledgeWave.Field.empty():coordination;}
+    public void addWaveListener(Runnable listener){waveListeners.addIfAbsent(listener);}
+    public void removeWaveListener(Runnable listener){waveListeners.remove(listener);}
+    private void notifyWave(){for(Runnable listener:waveListeners)try{listener.run();}catch(RuntimeException ignored){}}
+    // Only the existing snapshot compiler drives this observer. No file polling.
+    private void observeWave(long epoch,long revision,String language){
+        try{
+            KnowledgeGguf.Snapshot graph=KnowledgeGguf.read(snapshot);
+            if(graph.revision()!=revision||!graph.language().equals(language)||!graph.scope().equals("localized-private"))throw new IllegalStateException("Unexpected knowledge projection");
+            KnowledgeWave.Field next=wave.update(graph,android.os.SystemClock.elapsedRealtime());
+            synchronized(mutationLock){
+                if(clearing||epoch!=snapshotEpoch.get()||!language.equals(overlay.targetLanguage()))return;
+                coordination=next;
+            }
+            trace("wave_updated",next.weights().size(),next.edges(),"revision="+revision+" stimulated="+next.stimulated());
+            notifyWave();
+        }catch(Exception|LinkageError ex){
+            synchronized(mutationLock){if(epoch!=snapshotEpoch.get()||clearing)return;coordination=KnowledgeWave.Field.empty();}
+            wave.clear();trace("wave_failed",0,0,ex.getClass().getSimpleName());notifyWave();
+        }
+    }
+    private void emptyWave(){wave.clear();coordination=KnowledgeWave.Field.empty();notifyWave();}
     private static final class Queued {
         final NativeTree.Observation observation; final long epoch;
         Queued(NativeTree.Observation o,long e){observation=o;epoch=e;}
@@ -258,8 +283,8 @@ public final class TreeRuntime {
         }finally{try{saveStats();}finally{draining.set(false);scheduleDrain();}}
     }
     public void languageChanged(){
-        snapshotEpoch.incrementAndGet();
-        compiler.execute(()->{try{synchronized(mutationLock){Files.deleteIfExists(snapshot.toPath());snapshotStatus="Rebuilding for "+overlay.targetLanguage();}}catch(Exception ignored){}requestSnapshot();});
+        snapshotEpoch.incrementAndGet();coordination=KnowledgeWave.Field.empty();notifyWave();
+        compiler.execute(()->{emptyWave();try{synchronized(mutationLock){Files.deleteIfExists(snapshot.toPath());snapshotStatus="Rebuilding for "+overlay.targetLanguage();}}catch(Exception ignored){}requestSnapshot();});
     }
     public void requestSnapshot(){if(NativeTree.available()){dirty.incrementAndGet();scheduleCompile();}}
     private void scheduleCompile(){if(!clearing&&compiling.compareAndSet(false,true))compiler.schedule(this::compile,4,TimeUnit.SECONDS);}
@@ -269,22 +294,27 @@ public final class TreeRuntime {
             if(clearing)return;
             NativeTree t=tree();snapshotStatus="Compiling";
             if(t.count()==0){
+                boolean emptied=false;
                 synchronized(mutationLock){
-                    if(!clearing&&epoch==snapshotEpoch.get()&&t.count()==0){Files.deleteIfExists(snapshot.toPath());snapshotStatus="Empty Tree";}
+                    if(!clearing&&epoch==snapshotEpoch.get()&&t.count()==0){Files.deleteIfExists(snapshot.toPath());snapshotStatus="Empty Tree";emptied=true;}
                 }
+                if(emptied)emptyWave();
                 return;
             }
             temp=new File(directory,"tree-"+UUID.randomUUID()+".tmp");
             String language=overlay.targetLanguage();
             long revision=t.compileLocalized(temp.getAbsolutePath(),language);
+            boolean published=false,emptyProjection=false;
             synchronized(mutationLock){
                 if(!clearing&&epoch==snapshotEpoch.get()&&t.revision()==revision&&language.equals(overlay.targetLanguage())){
                     if(temp.exists()){
                         Files.move(temp.toPath(),snapshot.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
-                        snapshotStatus="Localized "+language+" · revision "+revision+" · "+snapshot.length()+" bytes";
-                    }else {Files.deleteIfExists(snapshot.toPath());snapshotStatus="Waiting for localized knowledge ("+language+")";}
+                        snapshotStatus="Localized "+language+" · revision "+revision+" · "+snapshot.length()+" bytes";published=true;
+                    }else {Files.deleteIfExists(snapshot.toPath());snapshotStatus="Waiting for localized knowledge ("+language+")";emptyProjection=true;}
                 }else snapshotStatus="Tree changed during compilation; retrying";
             }
+            if(published)observeWave(epoch,revision,language);
+            else if(emptyProjection)emptyWave();
         }catch(Exception|LinkageError e){snapshotStatus="Compilation failed";trace("compile_error",0,0,e.getClass().getSimpleName());}
         finally{
             if(temp!=null)try{Files.deleteIfExists(temp.toPath());}catch(Exception ignored){}
@@ -299,7 +329,7 @@ public final class TreeRuntime {
             "\nLifetime inserted "+inserted.get()+" · Duplicate "+duplicate.get()+" · Dropped/refused "+dropped.get()+
             "\nQueue full "+queueDrops.get()+" · Cancelled "+cancelled.get()+" · Invalid "+invalidText.get()+
             "\nScope: visible X text · legacy Home rejections "+noHome.get()+
-            "\nGGUF "+snapshotStatus+(error.isEmpty()?"":"\n"+error);
+            "\nGGUF "+snapshotStatus+"\nCoordination: "+coordination.weights().size()+" records · "+coordination.edges()+" weighted links · revision "+coordination.revision()+(error.isEmpty()?"":"\n"+error);
     }
     // Call these from a presentation worker, never from the UI thread.
     public List<NativeTree.Fragment> query(String term,long agent,long before,int limit){
@@ -316,7 +346,7 @@ public final class TreeRuntime {
     }
     public void removeAgent(long id,Consumer<String> done){
         writer.execute(()->{
-            try{synchronized(mutationLock){if(clearing)throw new IllegalStateException("Tree is clearing");tree().removeAgent(id);Files.deleteIfExists(snapshot.toPath());snapshotStatus="Rebuilding";requestSnapshot();}done.accept(null);}
+            try{synchronized(mutationLock){if(clearing)throw new IllegalStateException("Tree is clearing");tree().removeAgent(id);snapshotEpoch.incrementAndGet();coordination=KnowledgeWave.Field.empty();Files.deleteIfExists(snapshot.toPath());snapshotStatus="Rebuilding";requestSnapshot();}notifyWave();done.accept(null);}
             catch(Exception e){done.accept("Agent removal incomplete: "+e.getMessage());}
         });
     }
@@ -324,17 +354,18 @@ public final class TreeRuntime {
         synchronized(intakeLock){
             if(clearing){done.accept("Clear already in progress.");return;}
             clearing=true;prefs.edit().putBoolean("capture_enabled",false).apply();
-            captureEpoch.incrementAndGet();snapshotEpoch.incrementAndGet();queue.clear();pending.clear();
+            captureEpoch.incrementAndGet();snapshotEpoch.incrementAndGet();coordination=KnowledgeWave.Field.empty();queue.clear();pending.clear();
         }
         writer.execute(()->{
             try{
+                notifyWave();
                 synchronized(mutationLock){tree().clear();}
                 // Run after any in-flight compiler. Clearing prevents publication.
                 compiler.execute(()->{
                     try{
                         File[] files=directory.listFiles((dir,name)->name.equals("tree.gguf")||(name.startsWith("tree-")&&name.endsWith(".tmp")));
                         if(files!=null)for(File f:files)Files.deleteIfExists(f.toPath());
-                        snapshotStatus="Empty Tree";error="";clearing=false;done.accept(null);
+                        emptyWave();snapshotStatus="Empty Tree";error="";clearing=false;done.accept(null);
                     }catch(Exception e){clearing=false;done.accept("Snapshot removal incomplete. Capture remains off; retry clear.");}
                 });
             }catch(Exception e){clearing=false;done.accept("Clear incomplete. Capture remains off; retry.");}

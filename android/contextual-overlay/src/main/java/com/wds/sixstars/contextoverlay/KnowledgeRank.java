@@ -1,5 +1,6 @@
 package com.wds.sixstars.contextoverlay;
 import com.wds.sixstars.contextoverlay.tree.NativeTree;
+import com.wds.sixstars.contextoverlay.tree.KnowledgeWave;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.Set;
 /** Transparent ranking using only observed relations/metrics and local preferences.
  * No claim of an inferred truth, understanding or credibility score. */
 final class KnowledgeRank {
-    record Ranked(NativeTree.Master record,double score,List<String> branches,int relations,int replicas,int demand){}
+    record Ranked(NativeTree.Master record,double score,List<String> branches,int relations,int replicas,int demand,KnowledgeWave.Weight wave){}
     private static String fold(String value){return value.toLowerCase(Locale.ROOT);}
     private static Set<String> terms(String value){
         Set<String> result=new HashSet<>();
@@ -31,6 +32,10 @@ final class KnowledgeRank {
         return rank(records,agents,language,now,mesh::replicas,mesh::demand);
     }
     static List<Ranked> rank(List<NativeTree.Master> records,List<NativeTree.Agent> agents,String language,long now,java.util.function.ToIntFunction<String> replicasOf,java.util.function.ToIntFunction<String> demandOf){
+        return rank(records,agents,language,now,replicasOf,demandOf,KnowledgeWave.Field.empty(),0);
+    }
+    static List<Ranked> rank(List<NativeTree.Master> records,List<NativeTree.Agent> agents,String language,long now,
+        java.util.function.ToIntFunction<String> replicasOf,java.util.function.ToIntFunction<String> demandOf,KnowledgeWave.Field field,long elapsed){
         List<Ranked> results=new ArrayList<>();
         HashMap<String,Integer> frequency=new HashMap<>();
         HashMap<String,Set<String>> vocabulary=new HashMap<>();
@@ -61,7 +66,9 @@ final class KnowledgeRank {
                 +metric(record.latest("like-count"))+metric(record.latest("repost-count"))
                 +metric(record.latest("reply-count"))+.5*metric(record.latest("view-count"))
                 +Math.min(8,Math.log1p(demand)*2)+(replicas>0?8.0/replicas:0);
-            results.add(new Ranked(record,score,java.util.Collections.unmodifiableList(new ArrayList<>(branches)),roles.size(),replicas,demand));
+            KnowledgeWave.Weight wave=language.equals(field.language())?field.weight(record.key(),elapsed):null;
+            if(wave!=null)score+=wave.priority();
+            results.add(new Ranked(record,score,java.util.Collections.unmodifiableList(new ArrayList<>(branches)),roles.size(),replicas,demand,wave));
         }
         results.sort(Comparator.comparingDouble(Ranked::score).reversed().thenComparing(
             Comparator.comparingLong((Ranked r)->r.record().sequence()).reversed()));

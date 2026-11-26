@@ -64,6 +64,11 @@ public final class KnowledgeRecordAdapter extends BaseAdapter {
                 if(!rank.branches().isEmpty())card.addView(RootsUi.text(activity,"Branches · "+String.join("  /  ",rank.branches()),13,RootsUi.ACCENT,false));
                 String metrics=rank.relations()+" relation types"+(rank.replicas()>0?" · "+rank.replicas()+" observed peers":"")+(rank.demand()>0?" · "+rank.demand()+" observed wants":"");
                 card.addView(RootsUi.text(activity,metrics,12,RootsUi.MUTED,false));
+                if(rank.wave()!=null){
+                    var wave=rank.wave();
+                    card.addView(RootsUi.text(activity,String.format(Locale.ROOT,"Wave %.0f%% · convergence %.0f%% · novelty %.0f%% · %d links",
+                        wave.activation()*100,wave.convergence()*100,wave.novelty()*100,wave.neighbors()),12,RootsUi.ACCENT,false));
+                }
             }
             String metrics="";for(String role:new String[]{"reply-count","repost-count","like-count","view-count"}){
                 String value=record.latest(role);if(!value.isEmpty())metrics+=(metrics.isEmpty()?"":"  ·  ")+role.replace("-count","")+" "+value;

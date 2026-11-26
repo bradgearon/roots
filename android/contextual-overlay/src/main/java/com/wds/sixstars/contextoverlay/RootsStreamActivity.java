@@ -37,7 +37,16 @@ public final class RootsStreamActivity extends Activity {
     private KnowledgeRecordAdapter adapter;
     private long generation;
     private String term="";
-    private boolean loading,ended,closed;
+    private boolean loading,ended,closed,resumed;
+    private long shownWave=-1;
+    private final Runnable waveListener=()->runOnUiThread(()->{
+        if(closed||!resumed||runtime==null)return;
+        long revision=runtime.coordination().revision();
+        if(revision==shownWave)return;
+        // Avoid jumping the list while the user is reading or a search is in progress.
+        if(!loading&&rows.isEmpty())reset();
+        else status.setText("Coordination changed · tap Rank / refresh");
+    });
     private static final int PAGE=30;
 
     @Override protected void onCreate(Bundle saved){
@@ -96,7 +105,8 @@ public final class RootsStreamActivity extends Activity {
         }
     }
 
-    @Override protected void onResume(){super.onResume();if(runtime!=null)reset();}
+    @Override protected void onResume(){super.onResume();resumed=true;if(runtime!=null){runtime.addWaveListener(waveListener);reset();}}
+    @Override protected void onPause(){resumed=false;if(runtime!=null)runtime.removeWaveListener(waveListener);super.onPause();}
     @Override protected void onDestroy(){closed=true;generation++;reader.shutdownNow();super.onDestroy();}
     private int dp(int n){return RootsUi.dp(this,n);}
     private void toggleCapture(){
@@ -143,13 +153,18 @@ public final class RootsStreamActivity extends Activity {
             try{
                 long count=runtime.count();
                 List<NativeTree.Master> records=runtime.allRecords(q,10000);
-                List<KnowledgeRank.Ranked> result=KnowledgeRank.rank(records,runtime.agents(),language,System.currentTimeMillis(),MeshPeer.get(this));
+                var field=runtime.coordination();
+                MeshPeer mesh=MeshPeer.get(this);
+                List<KnowledgeRank.Ranked> result=KnowledgeRank.rank(records,runtime.agents(),language,System.currentTimeMillis(),mesh::replicas,mesh::demand,field,android.os.SystemClock.elapsedRealtime());
                 runOnUiThread(()->{
                     if(closed||generation!=g)return;
                     ranked.addAll(result);
                     for(KnowledgeRank.Ranked rank:result)rankByKey.put(rank.record().key(),rank);
                     loading=false;showNext();
-                    status.setText(result.size()+" knowledge records · "+count+" fragments · "+(runtime.enabled()?"capture on":"capture off"));
+                    shownWave=field.revision();
+                    status.setText(result.size()+" knowledge records · "+count+" fragments · "+(runtime.enabled()?"capture on":"capture off")+
+                        "\n"+(field.revision()<0?"Coordination awaiting localized GGUF":"Wave · "+field.weights().size()+" records · "+field.edges()+" links · rev "+field.revision())+
+                        (runtime.coordination().revision()!=shownWave?" · refresh for new wave":""));
                     empty.setText(count==0?"Your Tree is empty. Receive knowledge from Roots Mesh or enable local capture.":"No grouped records match. Search another term or browse X.");
                 });
             }catch(Exception|LinkageError error){runOnUiThread(()->{
