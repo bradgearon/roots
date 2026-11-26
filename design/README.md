@@ -9,6 +9,7 @@ Roots is both an intended open specification for portable, searchable, developab
 | [Product and experience](product.md) | Cross-network content, Highlights, recognition, Gardens and intelligent overlay substitution |
 | [Resonance and environmental intelligence](resonance.md) | Notification streams, network analytics, vitality, current events, poetic fields and repeatable success |
 | [Agents and personal state](agents.md) | Natural-language agents, conversation intelligence and opportunity discovery |
+| [Lily Tendrils](tendrils.md) | Weighted predicate sensors, semantic recognition and evidence-gated Tree development |
 | [Social ratings and availability](social.md) | Optional peer ratings, social levels, dating, availability and visibility |
 | [Tree of Life](tree-of-life.md) | ChristEye relationships, micro-cognition, deliberate writing and native web presence |
 | [Honeycomb and Whirlwind](honeycomb-whirlwind.md) | Mesh neighborhoods, reciprocal Winds, emergence, judgment, retention and reversible reweaving |
