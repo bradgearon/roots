@@ -15,7 +15,8 @@ public final class PoeticMovementActivity extends Activity {
     private CryptoWordGenerator.Words words;
     private CheckBox rate;
     private TextView candidates,selected,resolved,status;
-    private Button run,random;
+    private Button run,random,download;
+    private android.widget.Spinner modelSelector;
     private boolean busy,closed;
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
@@ -27,7 +28,19 @@ public final class PoeticMovementActivity extends Activity {
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout prep=RootsUi.card(this,content);
         prep.addView(RootsUi.text(this,"Preparation",18,RootsUi.TEXT,true));
-        prep.addView(RootsUi.text(this,"Cryptographically random nouns and verbs. FunctionGemma selects five pairs and resolves them locally; nothing is saved or shared.",13,RootsUi.MUTED,false));
+        prep.addView(RootsUi.text(this,"Cryptographically random nouns and verbs. The selected general intelligence model chooses five pairs and resolves them locally in two requests. Nothing is saved or shared.",13,RootsUi.MUTED,false));
+        modelSelector=new android.widget.Spinner(this);
+        RootsUi.styleSpinner(this,modelSelector,IntelligenceModel.labels());
+        modelSelector.setSelection(IntelligenceModel.selected(this).ordinal());
+        prep.addView(modelSelector);
+        download=button("Download selected model",this::downloadModel);prep.addView(download);
+        modelSelector.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+            public void onItemSelected(android.widget.AdapterView<?> parent,android.view.View view,int position,long id){
+                IntelligenceModel.values()[position].select(PoeticMovementActivity.this);
+                if(!busy&&status!=null)status.setText(LocalIntelligenceProvider.status(PoeticMovementActivity.this,IntelligenceModel.values()[position]));
+            }
+            public void onNothingSelected(android.widget.AdapterView<?> parent){}
+        });
         random=button("Generate new nouns and verbs",this::generateWords);prep.addView(random);
         prep.addView(RootsUi.text(this,"Profile",14,RootsUi.TEXT,true));
         profile=new EditText(this);profile.setSingleLine(true);profile.setFilters(new InputFilter[]{new InputFilter.LengthFilter(160)});
@@ -50,12 +63,25 @@ public final class PoeticMovementActivity extends Activity {
         b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF164B50));
         b.setOnClickListener(v->action.run());return b;
     }
+    private IntelligenceModel model(){return IntelligenceModel.values()[modelSelector.getSelectedItemPosition()];}
+    private void downloadModel(){
+        IntelligenceModel chosen=model();
+        new android.app.AlertDialog.Builder(this).setTitle(chosen.label)
+            .setMessage("Download verified model weights over unmetered network. Model terms: "+chosen.terms()+". Inference remains on-device.")
+            .setNeutralButton("Review terms",(d,w)->startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(chosen.terms()))))
+            .setNegativeButton("Cancel",null).setPositiveButton("Agree and download",(d,w)->{
+                download.setEnabled(false);
+                LocalIntelligenceProvider.download(this,chosen,(message,error)->runOnUiThread(()->{
+                    if(closed)return;download.setEnabled(true);status.setText(error==null?message:error);
+                }));
+            }).show();
+    }
     private PoeticMovement.Input input(){return PoeticMovement.input(words,profile.getText().toString(),rate.isChecked());}
     private void generateWords(){
         if(busy)return;
         words=CryptoWordGenerator.generate();
         candidates.setText("Nouns: "+String.join(", ",words.nouns())+"\n\nVerbs: "+String.join(", ",words.verbs()));
-        selected.setText("Not run");resolved.setText("Not run");status.setText("Ready");
+        selected.setText("Not run");resolved.setText("Not run");status.setText(LocalIntelligenceProvider.status(this,model()));
     }
     private void showCandidates(PoeticMovement.Input in){
         candidates.setText("Nouns: "+String.join(", ",in.nouns())+"\n\nVerbs: "+String.join(", ",in.verbs()));
@@ -64,9 +90,10 @@ public final class PoeticMovementActivity extends Activity {
         if(busy)return;
         final PoeticMovement.Input in;
         try{in=input();}catch(IllegalArgumentException e){status.setText(e.getMessage());return;}
-        showCandidates(in);busy=true;run.setEnabled(false);random.setEnabled(false);profile.setEnabled(false);rate.setEnabled(false);
+        final IntelligenceModel chosen=model();
+        showCandidates(in);busy=true;run.setEnabled(false);random.setEnabled(false);profile.setEnabled(false);rate.setEnabled(false);modelSelector.setEnabled(false);download.setEnabled(false);
         selected.setText("Waiting…");resolved.setText("Waiting…");status.setText("Queued on local inference engine…");
-        LocalFunctionGemmaProvider.testMovement(this,in,new LocalFunctionGemmaProvider.MovementResult(){
+        LocalIntelligenceProvider.testMovement(this,chosen,in,new LocalFunctionGemmaProvider.MovementResult(){
             @Override public void progress(String stage,String message){runOnUiThread(()->{
                 if(closed)return;
                 switch(stage){
@@ -80,7 +107,7 @@ public final class PoeticMovementActivity extends Activity {
             });}
             @Override public void completed(PoeticMovement.Run result,String error){runOnUiThread(()->{
                 if(closed)return;
-                busy=false;run.setEnabled(true);random.setEnabled(true);profile.setEnabled(true);rate.setEnabled(true);
+                busy=false;run.setEnabled(true);random.setEnabled(true);profile.setEnabled(true);rate.setEnabled(true);modelSelector.setEnabled(true);download.setEnabled(true);
                 if(error!=null){status.setText(error);return;}
                 StringBuilder b=new StringBuilder();
                 for(PoeticMovement.Resolution r:result.resolutions()){
@@ -91,7 +118,7 @@ public final class PoeticMovementActivity extends Activity {
                     b.append('\n');
                 }
                 resolved.setText(b.toString().trim());
-                status.setText("2 requests · "+result.elapsedMs()+" ms total\nSelection: "+result.firstStats()[6]+" tokens · resolution: "+result.secondStats()[6]+" tokens");
+                status.setText(chosen.label+"\n2 requests · "+result.elapsedMs()+" ms total\nSelection: "+result.firstStats()[6]+" tokens · resolution: "+result.secondStats()[6]+" tokens");
             });}
         });
     }

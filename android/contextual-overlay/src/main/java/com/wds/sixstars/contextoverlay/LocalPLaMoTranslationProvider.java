@@ -187,6 +187,10 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         static native void load(String path,boolean useVulkan);
         static native void unload();
         static native byte[] generate(byte[] prompt,long[] stats,int threads);
+        static native void loadIntelligence(String path);
+        static native void releaseIntelligenceContext();
+        static native void unloadIntelligence();
+        static native byte[] generateIntelligence(byte[] prompt,long[] stats,int threads,PrefixListener listener);
         static native void loadFunction(String path);
         static native void unloadFunction();
         static native byte[] generateFunction(byte[] prompt,long[] stats,int threads);

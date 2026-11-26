@@ -359,7 +359,60 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 });
         });
 
-        content=RootsUi.section(this,sections,"FunctionGemma","Local micro-cognition and operation proposals",false);
+        content=RootsUi.section(this,sections,"Intelligence","General reasoning · selectable local tiers",true);
+        content.addView(text("Qwen3.5 0.8B is the default. Models load on request, release idle context after 30 seconds and unload weights after two minutes. Translation remains independent.",13,0xFFAAC8D4));
+        Spinner intelligence=new Spinner(this);
+        RootsUi.styleSpinner(this,intelligence,IntelligenceModel.labels());
+        intelligence.setSelection(IntelligenceModel.selected(this).ordinal());
+        content.addView(intelligence);
+        TextView intelligenceStatus=text(LocalIntelligenceProvider.status(this,IntelligenceModel.selected(this)),14,0xFFE5EFF4);
+        intelligence.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
+            public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
+                IntelligenceModel model=IntelligenceModel.values()[position];model.select(OverlayTranslationSettingsActivity.this);
+                intelligenceStatus.setText(LocalIntelligenceProvider.status(OverlayTranslationSettingsActivity.this,model));
+            }
+            public void onNothingSelected(AdapterView<?> parent){}
+        });
+        Button intelligenceDownload=button("Download selected intelligence model");
+        content.addView(intelligenceDownload);
+        intelligenceDownload.setOnClickListener(v->{
+            IntelligenceModel model=IntelligenceModel.values()[intelligence.getSelectedItemPosition()];
+            new AlertDialog.Builder(this).setTitle(model.label)
+                .setMessage("Download verified GGUF weights over unmetered network. Model terms: "+model.terms()+". Inference stays on-device.")
+                .setNeutralButton("Review terms",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(model.terms()))))
+                .setNegativeButton("Cancel",null).setPositiveButton("Agree and download",(d,w)->
+                    LocalIntelligenceProvider.download(this,model,(message,error)->runOnUiThread(()->{
+                        if(!isDestroyed())intelligenceStatus.setText(error==null?message:error);
+                    }))).show();
+        });
+        EditText intelligenceInput=new EditText(this);
+        intelligenceInput.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        intelligenceInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(3000)});
+        intelligenceInput.setText("Explain the relationship in this image: the root listens for rain before the sky speaks.");
+        content.addView(intelligenceInput);
+        Button intelligenceTest=button("Test general intelligence");
+        content.addView(intelligenceTest);
+        intelligenceTest.setOnClickListener(v->{
+            IntelligenceModel model=IntelligenceModel.values()[intelligence.getSelectedItemPosition()];
+            intelligenceTest.setEnabled(false);intelligenceStatus.setText("Queued…");
+            LocalIntelligenceProvider.generate(this,model,intelligenceInput.getText().toString(),new LocalIntelligenceProvider.Result(){
+                @Override public void partial(String prefix){runOnUiThread(()->{if(!isDestroyed())StreamText.reveal(intelligenceStatus,prefix);});}
+                @Override public void completed(String message,String error){runOnUiThread(()->{
+                    if(isDestroyed())return;intelligenceTest.setEnabled(true);intelligenceStatus.setText(error==null?message:error);
+                });}
+            });
+        });
+        Button intelligenceRelease=button("Release intelligence memory");
+        intelligenceRelease.setOnClickListener(v->LocalIntelligenceProvider.release((message,error)->runOnUiThread(()->{
+            if(!isDestroyed())intelligenceStatus.setText(error==null?message:error);
+        })));
+        content.addView(intelligenceRelease);
+        content.addView(intelligenceStatus);
+        Button movement=button("Open Poetic Movement lab");
+        movement.setOnClickListener(view->startActivity(new Intent(this,PoeticMovementActivity.class)));
+        content.addView(movement);
+
+        content=RootsUi.section(this,sections,"FunctionGemma","Specialized operation proposals",false);
         content.addView(text("FunctionGemma 270M selects a bounded operation and proposes arguments. It does not execute tools, modify the Tree, or establish facts. Text entered here is processed on this device; CPU is used independently of the translation GPU setting.",13,0xFFAAC8D4));
         Button functionDownload=button("Download FunctionGemma Q8 (~292 MB)");
         content.addView(functionDownload);
@@ -397,9 +450,6 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(functionRelease);
         functionRelease.setOnClickListener(v->LocalFunctionGemmaProvider.release(this,(message,error)->runOnUiThread(()->functionStatus.setText(error==null?message:error))));
         content.addView(functionStatus);
-        Button movement=button("Open Poetic Movement lab");
-        movement.setOnClickListener(view->startActivity(new Intent(this,PoeticMovementActivity.class)));
-        content.addView(movement);
 
         content.addView(text(
             "In Manual mode, tap the ⇄ button positioned next to each post body. " +

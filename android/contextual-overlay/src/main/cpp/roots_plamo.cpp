@@ -23,7 +23,7 @@ struct model_slot {
     ggml_backend_dev_t devices[2]={nullptr,nullptr};
     std::string backend="unloaded";
 };
-model_slot translation_slot, function_slot;
+model_slot translation_slot, function_slot, intelligence_slot;
 using clock_type=std::chrono::steady_clock;
 int64_t elapsed_ms(clock_type::time_point start){return std::chrono::duration_cast<std::chrono::milliseconds>(clock_type::now()-start).count();}
 void release_context(model_slot &slot){if(slot.resident_ctx){llama_free(slot.resident_ctx);slot.resident_ctx=nullptr;}}
@@ -143,7 +143,7 @@ static void unload_model(model_slot &slot) {
     if(slot.model){llama_model_free(slot.model);slot.model=nullptr;}
     slot.backend="unloaded";
 }
-static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings,jint requested_threads,model_slot &slot,bool functions,jobject listener=nullptr) {
+static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings,jint requested_threads,model_slot &slot,bool functions,jobject listener=nullptr,bool intelligence=false) {
     std::lock_guard<std::mutex> lock(gate);
     // Contexts are independent but computation is serialized across model slots.
     // Reuse allocations, never retain a previous request's attention state.
@@ -161,7 +161,7 @@ static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings
         if(env->ExceptionCheck())return nullptr;
         auto *vocab=llama_model_get_vocab(slot.model);
         int count=-llama_tokenize(vocab,prompt.data(),static_cast<int>(prompt.size()),nullptr,0,true,true);
-        if(count<=0||count>(functions?1600:3000))throw std::runtime_error("Invalid prompt token count: "+std::to_string(count));
+        if(count<=0||count>((functions||intelligence)?1600:3000))throw std::runtime_error("Invalid prompt token count: "+std::to_string(count));
         std::vector<llama_token> tokens(count);
         count=llama_tokenize(vocab,prompt.data(),static_cast<int>(prompt.size()),tokens.data(),static_cast<int>(tokens.size()),true,true);
         if(count<=0||count>static_cast<int>(tokens.size()))throw std::runtime_error("Tokenization failed");
@@ -175,7 +175,7 @@ static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings
         }
         if(!slot.resident_ctx){
             auto cp=llama_context_default_params();
-            cp.n_ctx=functions?2048:4096;cp.n_batch=256;cp.n_ubatch=128;cp.n_seq_max=1;
+            cp.n_ctx=(functions||intelligence)?2048:4096;cp.n_batch=256;cp.n_ubatch=128;cp.n_seq_max=1;
             cp.n_threads=threads;cp.n_threads_batch=threads;
             slot.resident_ctx=llama_init_from_model(slot.model,cp);
             if(!slot.resident_ctx)throw std::runtime_error("Could not allocate context");
@@ -208,7 +208,7 @@ static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings
         // Five compact movement resolutions must fit in a single call.
         // Ordinary function proposals retain their previous 160-token budget.
         const bool movement=functions&&prompt.find("declaration:resolve_movements{")!=std::string::npos;
-        const int max_output=functions?(movement?384:160):512;
+        const int max_output=intelligence?384:(functions?(movement?384:160):512);
         for(int i=0;i<max_output;i++) {
             auto token=llama_sampler_sample(sampler.get(),ctx,-1);
             ++stats[6];
@@ -233,6 +233,12 @@ static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings
                 if(stop!=std::string::npos){out.resize(stop+end.size());break;}
                 stop=out.find("<start_function_response>");
                 if(stop!=std::string::npos){out.resize(stop);break;}
+            }else if(intelligence){
+                bool ended=false;
+                for(const char *marker:{"<|im_end|>","<end_of_turn>","<|im_start|>","<start_of_turn>"}){
+                    auto stop=out.find(marker);if(stop!=std::string::npos){out.resize(stop);ended=true;break;}
+                }
+                if(ended)break;
             }else{
                 auto stop=out.find("<|plamo:");
                 if(stop!=std::string::npos){out.resize(stop);break;}
@@ -276,3 +282,8 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_Loc
 
 extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_generateStreaming(JNIEnv *env,jclass,jbyteArray input,jlongArray timings,jint threads,jobject listener) {return generate_model(env,input,timings,threads,translation_slot,false,listener);}
 extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_generateFunctionStreaming(JNIEnv *env,jclass,jbyteArray input,jlongArray timings,jint threads,jobject listener) {return generate_model(env,input,timings,threads,function_slot,true,listener);}
+
+extern "C" JNIEXPORT void JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_loadIntelligence(JNIEnv *env,jclass,jstring path){load_model(env,path,JNI_FALSE,intelligence_slot);}
+extern "C" JNIEXPORT void JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_releaseIntelligenceContext(JNIEnv *,jclass){std::lock_guard<std::mutex> lock(gate);release_context(intelligence_slot);}
+extern "C" JNIEXPORT void JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_unloadIntelligence(JNIEnv *,jclass){unload_model(intelligence_slot);}
+extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_generateIntelligence(JNIEnv *env,jclass,jbyteArray input,jlongArray timings,jint threads,jobject listener){return generate_model(env,input,timings,threads,intelligence_slot,false,listener,true);}

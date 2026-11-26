@@ -37,7 +37,9 @@ public final class PoeticMovement {
             "\nChoose five distinct pairs. For each, identify the noun's usual action (one base-form verb, not the chosen verb). Return noun index|verb index|usual verb; repeat five times.");
     }
     public static List<Pair> parseSelection(Input in,String raw){
-        String value=FunctionGemmaProtocol.parseOne(raw,"select_movements","pairs").arguments.get("pairs");
+        return parseSelectionRows(in,FunctionGemmaProtocol.parseOne(raw,"select_movements","pairs").arguments.get("pairs"));
+    }
+    static List<Pair> parseSelectionRows(Input in,String value){
         String[] rows=value.split(";",-1);if(rows.length!=COUNT)throw new IllegalArgumentException("Expected exactly five pairs.");
         List<Pair> result=new ArrayList<>();Set<String> used=new HashSet<>();
         for(String row:rows){
@@ -49,6 +51,12 @@ public final class PoeticMovement {
             result.add(new Pair(in.nouns().get(n),usual,in.verbs().get(v)));
         }
         return Collections.unmodifiableList(result);
+    }
+    static String intelligenceSelection(Input in){
+        return "Choose exactly five distinct unusual noun/verb combinations from the indexed lists. For each identify the ordinary action of the noun (one English base verb different from its chosen replacement). Use this exact format: noun index|verb index|ordinary verb. Separate five rows by semicolons. No headings or commentary. Example format only: 1|2|grow;3|4|shine;5|6|flow;7|8|fall;9|10|rise.\nNouns: "+list(in.nouns())+"\nVerbs: "+list(in.verbs())+"\nProfile: "+in.profile();
+    }
+    static String intelligenceResolution(Input in,List<Pair> pairs){
+        return "For each numbered noun, replace its ordinary action (left of arrow) with the new verb (right of arrow). Discover a meaningful relationship explaining the displacement in a poetic sentence of at most 15 words. Return exactly five semicolon-separated rows, each "+(in.rate()?"index|sentence|rating 1-10":"index|sentence")+". No headings, extra commentary, or semicolons within sentences.\nProfile: "+in.profile()+"\n"+describe(pairs);
     }
     private static int index(String s,int max){
         String v=s.trim();if(!v.matches("[0-9]{1,2}"))throw new IllegalArgumentException("Invalid index.");
@@ -69,7 +77,9 @@ public final class PoeticMovement {
             "Return all five rows as "+schema+".");
     }
     public static List<Resolution> parseResolution(Input in,String raw){
-        String value=FunctionGemmaProtocol.parseOne(raw,"resolve_movements","resolutions").arguments.get("resolutions");
+        return parseResolutionRows(in,FunctionGemmaProtocol.parseOne(raw,"resolve_movements","resolutions").arguments.get("resolutions"));
+    }
+    static List<Resolution> parseResolutionRows(Input in,String value){
         String[] rows=value.split(";",-1);if(rows.length!=COUNT)throw new IllegalArgumentException("Expected five resolutions.");
         Resolution[] result=new Resolution[COUNT];
         for(String row:rows){
