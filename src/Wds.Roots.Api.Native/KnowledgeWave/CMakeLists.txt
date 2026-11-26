@@ -5,5 +5,7 @@ target_include_directories(roots-knowledge-wave INTERFACE ${CMAKE_CURRENT_SOURCE
 target_compile_features(roots-knowledge-wave INTERFACE cxx_std_17)
 add_executable(roots-wave-check check.cpp)
 target_link_libraries(roots-wave-check PRIVATE roots-knowledge-wave)
+add_executable(roots-wave-replay replay.cpp)
+target_link_libraries(roots-wave-replay PRIVATE roots-knowledge-wave)
 enable_testing()
 add_test(NAME roots-wave-check COMMAND roots-wave-check)
