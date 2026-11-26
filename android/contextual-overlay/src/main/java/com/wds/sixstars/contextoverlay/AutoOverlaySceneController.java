@@ -109,7 +109,9 @@ final class AutoOverlaySceneController {
         HashSet<String> seen = new HashSet<>();
         // Names use their own observation IDs and anchor, independent of
         // body placement or whether the body has finished translating.
+        int nameCount=0;
         for(TextCandidate candidate:candidates){
+            if(nameCount>=MAX_VISIBLE)break;
             if(!candidate.authorName || candidate.author==null || !seen.add(candidate.fingerprint))continue;
             boolean foreign=AutoTranslationEligibilityService.accepts(candidate,preferences.targetLanguage());
             if(!foreign&&!candidate.author.truncated)continue;
@@ -123,6 +125,7 @@ final class AutoOverlaySceneController {
                         badge.x,badge.y,badge.width,badge.height);
                 observations.add(new AutoOverlayPositionStore.Observation(candidate.fingerprint,
                         anchor,null,badge,candidate.text));
+                nameCount++;
             }
         }
         int bodyCount=0;

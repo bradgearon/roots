@@ -82,6 +82,10 @@ public final class OverlayTranslationCoordinator {
     }
 
     public void refresh(List<TextCandidate> current,List<TextCandidate> discovered,boolean scrolling) {
+        refresh(current,discovered,scrolling,true);
+    }
+
+    private void refresh(List<TextCandidate> current,List<TextCandidate> discovered,boolean scrolling,boolean freshScan) {
         if(destroyed)return;
         latestCandidates = Collections.unmodifiableList(new ArrayList<>(current));
         active = preferences.enabled();
@@ -96,10 +100,15 @@ public final class OverlayTranslationCoordinator {
         if(!target.equals(poolTarget)){
             pool.clear();retryAfter.clear();poolTarget=target;
         }
-        visible.clear();
-        for(TextCandidate candidate:current)visible.add(candidate.fingerprint);
-        if(automatic) remember(discovered,target);
-        else pool.clear();
+        if(freshScan){
+            visible.clear();
+            for(TextCandidate candidate:current)visible.add(candidate.fingerprint);
+            // Reader currently exposes only authorized visible nodes.
+            // Layout rejection must not lower their translation priority.
+            for(TextCandidate candidate:discovered)visible.add(candidate.fingerprint);
+            if(automatic)remember(discovered,target);
+        }
+        if(!automatic)pool.clear();
         for (TextCandidate candidate : current) {
             String existing = cache.read(candidate.text, target);
             if (existing == null) continue;
@@ -232,7 +241,7 @@ public final class OverlayTranslationCoordinator {
                 if(current!=null&&target.equals(preferences.targetLanguage()))
                     renderer.showDetail(current,ok?translated:"Translation unavailable: "+(error==null?"No translation returned.":error));
             }
-            refresh(latestCandidates,Collections.emptyList(),false);
+            refresh(latestCandidates,Collections.emptyList(),false,false);
         });};
         try {
             provider.translate(candidate.text,candidate.languageHint,target,callback);

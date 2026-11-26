@@ -194,6 +194,9 @@ public final class XVisibleTextReader {
         lastPostDetail = detailScreen;
         List<TextCandidate> authorNames = independentAuthors(authorSamples, avatars,
                 selected, raw, width, scaledDensity);
+        // Keep recognized author roles out of the body compositor even
+        // when the generic body scorer selected their text.
+        selected.removeIf(body -> !body.knownPostTextId && overlapsAuthor(body,authorNames));
         Map<String, TextCandidate> work = new LinkedHashMap<>();
         for (TextCandidate name : authorNames) work.put(name.fingerprint, name);
         for (TextCandidate body : selected) work.put(body.fingerprint, body);
@@ -226,7 +229,8 @@ public final class XVisibleTextReader {
 
     private static boolean overlapsAuthor(TextCandidate body, List<TextCandidate> names) {
         for (TextCandidate name : names)
-            if (Rect.intersects(body.bounds, name.bounds)) return true;
+            if (body.text.equals(name.text) && Rect.intersects(body.bounds,name.bounds)
+                    || body.bounds.equals(name.bounds)) return true;
         return false;
     }
 
