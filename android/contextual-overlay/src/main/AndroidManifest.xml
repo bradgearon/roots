@@ -3,6 +3,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <application>
+        <activity android:name="com.wds.sixstars.contextoverlay.MeshActivity" android:exported="true" android:label="Roots Mesh" android:theme="@style/RootsTheme" android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="roots" android:host="mesh" android:path="/v1"/>
+            </intent-filter>
+        </activity>
         <activity android:name="com.wds.sixstars.contextoverlay.InferenceHistoryActivity" android:exported="false" android:label="Inference history" android:theme="@style/RootsTheme" />
         <activity android:name="com.wds.sixstars.contextoverlay.PoeticMovementActivity" android:exported="false" android:label="Poetic Movement" android:theme="@style/RootsTheme" />
         <activity android:name="com.wds.sixstars.contextoverlay.RootsStreamActivity" android:exported="false" android:label="Roots" android:theme="@style/RootsTheme" />

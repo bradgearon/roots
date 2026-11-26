@@ -40,15 +40,17 @@ record MeshItem(String id,String language,String topic,String text,String link) 
         return result;
     }
     String key(){return "local:mesh:"+id;}
-    long store(TreeRuntime tree)throws Exception{
+    long store(TreeRuntime tree,long epoch)throws Exception{
         long at=System.currentTimeMillis();
         List<NativeTree.Observation> rows=new ArrayList<>();
         rows.add(new NativeTree.Observation("record.mesh.body",key(),text,language,at));
         rows.add(new NativeTree.Observation("record.mesh.topic",key(),topic,language,at));
         if(!link.isEmpty())rows.add(new NativeTree.Observation("record.mesh.link",key(),link,"",at));
         // The offer is the only lane a peer can access. Nothing else is sent.
-        rows.add(new NativeTree.Observation("record.mesh.offer",key(),json().toString(),"",at));
-        return tree.storeExplicit(rows);
+        String offer=json().toString();
+        if(offer.getBytes(StandardCharsets.UTF_8).length>16384)throw new IllegalArgumentException("Remembrance is too large after encoding.");
+        rows.add(new NativeTree.Observation("record.mesh.offer",key(),offer,"",at));
+        return tree.storeExplicit(rows,epoch);
     }
     static MeshItem from(NativeTree.Master record){
         if(!record.key().startsWith("local:mesh:"))return null;

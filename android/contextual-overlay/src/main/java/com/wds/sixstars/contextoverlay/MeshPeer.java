@@ -283,6 +283,7 @@ final class MeshPeer {
     SyncResult sync(List<Invite> invites,String interests,String language,java.util.function.Consumer<String> progress)throws Exception{
         if(invites.isEmpty()||invites.size()>8)throw new IllegalArgumentException("Enter one to eight peer invitations.");
         Network network=wifi();if(network==null)throw new IOException("Connect to Wi-Fi first.");
+        final long epoch=tree.captureEpoch();
         Map<String,Offer> offers=new HashMap<>();int peers=0,failed=0;
         Set<String> visited=new HashSet<>();
         // The inventory carries approved topic labels, never the receiver's private interests.
@@ -324,7 +325,7 @@ final class MeshPeer {
         int received=0,attempted=0;
         for(Offer o:want){
             if(attempted++>=MAX_FETCH)break;
-            if(!network.equals(wifi()))break;
+            if(!network.equals(wifi())||tree.captureEpoch()!=epoch)break;
             progress.accept("Receiving "+(received+1)+" · "+o.sources.size()+" available peer"+(o.sources.size()==1?"":"s"));
             boolean ok=false;
             for(Invite source:o.sources){
@@ -332,7 +333,7 @@ final class MeshPeer {
                     JSONObject answer=exchange(network,source,new JSONObject().put("op","want").put("id",o.id));
                     MeshItem item=MeshItem.parse(answer.getJSONObject("item"));
                     if(!item.id().equals(o.id))throw new IOException("Unexpected content ID.");
-                    item.store(tree);received++;ok=true;break;
+                    long added=item.store(tree,epoch);if(added>0)received++;ok=true;break;
                 }catch(Exception e){/* Try another advertised replica. */}
             }
             if(!ok)failed++;

@@ -193,11 +193,12 @@ public final class TreeRuntime {
     }
     /** Explicit local edits/imports do not require screen-capture permission.
      * Call from a worker, never the accessibility/UI thread. */
-    public long storeExplicit(List<NativeTree.Observation> observations){
+    public long storeExplicit(List<NativeTree.Observation> observations){return storeExplicit(observations,captureEpoch.get());}
+    public long storeExplicit(List<NativeTree.Observation> observations,long expectedEpoch){
         if(observations.isEmpty()||observations.size()>256)throw new IllegalArgumentException("Invalid batch");
         for(NativeTree.Observation observation:observations)if(!valid(observation))throw new IllegalArgumentException("Invalid record");
         synchronized(mutationLock){
-            if(clearing)throw new IllegalStateException("Tree clearing");
+            if(clearing||captureEpoch.get()!=expectedEpoch)throw new IllegalStateException("Tree changed during operation");
             long added=tree().observe(observations);
             if(added>0)requestSnapshot();
             return added;
