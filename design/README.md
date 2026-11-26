@@ -12,7 +12,7 @@ Roots is both an intended open specification for portable, searchable, developab
 | [Social ratings and availability](social.md) | Optional peer ratings, social levels, dating, availability and visibility |
 | [Tree of Life](tree-of-life.md) | ChristEye relationships, micro-cognition, deliberate writing and native web presence |
 | [Honeycomb and Whirlwind](honeycomb-whirlwind.md) | Mesh neighborhoods, reciprocal Winds, emergence, judgment, retention and reversible reweaving |
-| [Garden participation](garden.md) | Patrols, anonymous nearby presence, swipe discovery, foreign Forge characters and optional blind Serpent encounters/actor battles |
+| [Garden participation](garden.md) | Patrols, anonymous nearby presence, swipe discovery, foreign Forge characters and optional playful Serpent encounters and blind actor battles |
 | [Architecture and roadmap](architecture.md) | Forge operations, service boundaries, Tree of Life storage, background work and delivery phases |
 
 ## Principles
