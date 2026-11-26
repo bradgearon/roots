@@ -138,3 +138,7 @@ Roadmap additions: phase 1 local root URI resolution and file manifests; phase 2
 ## First native implementation slice
 
 The Tree Core is shared C++17 (`native/tree-core`), not duplicated in Java or C#. Use JNI for Android and a versioned C ABI/P/Invoke for desktop; keep platform-specific capture, scheduling, consent and UI in host services. SQLite remains authoritative and GGUF is a derived, revision-bound snapshot. Predicate keys are ordered reusable components (e.g. is.a, is.from, is.in, is.part.of), not a closed relationship enum. Initial native contracts implement observed fragments, exact search/cursor pagination, literal-interest branch agents and evidence-backed type/source/membership relations. Full typed claims, semantic cognition, portable manifests, feed activation and external agent discovery remain follow-up work. See [native core](../native/tree-core/README.md). The earlier Android-only prototype is not the canonical core. Preserve the existing translation path and validate native Windows/Android builds before enabling capture.
+
+### Lily semantic growth
+
+[Lily Tendrils](tendrils.md) are the semantic recognition and relationship-development structures. Neuronal knowledge semantics/activation and Lily predicate/sensor weights are distinct but cooperative spaces. Higher-level agents coordinate Lily sensors; a bounded worker pool proposes development and independent judgment gates commits. The native v1 literal-interest branches remain a baseline, not an implemented Lily engine.
