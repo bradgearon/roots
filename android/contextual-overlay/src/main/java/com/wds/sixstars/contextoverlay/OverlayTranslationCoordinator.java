@@ -208,6 +208,11 @@ public final class OverlayTranslationCoordinator {
         }
     }
 
+    private boolean currentlyVisible(TextCandidate c) {
+        return c!=null && demand.trusted() && visible.contains(c.fingerprint)
+                && c.bounds.bottom-demand.offset()>0 && c.bounds.top-demand.offset()<demand.height();
+    }
+
     private long priority(Pending p,long now,String backend,double velocity){
         TextCandidate c=p.candidate;
         return TranslationWorkPriority.score(visible.contains(c.fingerprint),c.authorName,
@@ -237,7 +242,7 @@ public final class OverlayTranslationCoordinator {
                 if (manualCandidate != null) return;
             }
         }
-        if (!preferences.autoPreview() || !preferences.translationEnabled() || !demand.trusted() || !target.equals(poolTarget)) return;
+        if (!preferences.autoPreview() || !preferences.translationEnabled() || !demand.trusted() || !target.equals(poolTarget) || visible.isEmpty()) return;
         main.removeCallbacks(retryWake);
         if(!admission.hasRoom(limit))return;
         long now=SystemClock.uptimeMillis();
@@ -280,9 +285,9 @@ public final class OverlayTranslationCoordinator {
         final String submittedProfile=profile();
         final long submittedAt=SystemClock.elapsedRealtime();
         final long predicted=latency.predict(submittedProfile,candidate.text.length());
-        final boolean wasVisible=visible.contains(candidate.fingerprint);
+        final boolean wasVisible=currentlyVisible(candidate);
         android.util.Log.d("RootsTranslationSchedule","submit profile="+submittedProfile+
-                " kind="+(candidate.authorName?"name":"body")+" visible="+wasVisible+
+                " kind="+(candidate.authorName?"name":"body")+" lane="+(wasVisible?"foreground":"rollup")+" visible="+wasVisible+
                 " direction="+(int)Math.signum(demand.velocity(SystemClock.uptimeMillis()))+
                 " predicted_ms="+predicted+" pending="+pool.size());
         java.util.concurrent.atomic.AtomicBoolean delivered=new java.util.concurrent.atomic.AtomicBoolean();
@@ -311,9 +316,10 @@ public final class OverlayTranslationCoordinator {
             boolean ok=error==null&&translated!=null&&!translated.trim().isEmpty();
             if(ok){
                 if(submittedProfile.equals(profile()))latency.observe(submittedProfile,candidate.text.length(),elapsed);
+                Pending latest=pool.get(candidate.fingerprint+":"+target);
                 android.util.Log.d("RootsTranslationSchedule","complete profile="+submittedProfile+
                         " elapsed_ms="+elapsed+" predicted_ms="+predicted+
-                        " still_visible="+visible.contains(candidate.fingerprint));
+                        " still_visible="+currentlyVisible(latest==null?match(latestCandidates,candidate.fingerprint):latest.candidate));
                 cache.write(candidate.text,target,translated);
                 retryAfter.remove(k);
             }else{
