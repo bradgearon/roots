@@ -31,8 +31,8 @@ public final class OverlayTranslationKeyStore {
 
     public static synchronized void save(Context context, String token) throws Exception {
         String value = token == null ? "" : token.trim().toLowerCase(Locale.ROOT);
-        if (!value.matches("[0-9a-f]{64}")) {
-            throw new IllegalArgumentException("Desktop translation key must be 64 hexadecimal characters.");
+        if (!value.matches("[0-9a-f]{64}(:[0-9a-f]{64})?")) {
+            throw new IllegalArgumentException("Paste the connection key from get-key.cmd.");
         }
 
         KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
@@ -80,7 +80,7 @@ public final class OverlayTranslationKeyStore {
                     new GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)));
             String value = new String(cipher.doFinal(
                     Base64.decode(encrypted, Base64.NO_WRAP)), StandardCharsets.US_ASCII);
-            return value.matches("[0-9a-f]{64}") ? value : "";
+            return value.matches("[0-9a-f]{64}(:[0-9a-f]{64})?") ? value : "";
         } catch (Exception e) {
             // No unsafe plaintext fallback if Android Keystore is unavailable.
             return "";

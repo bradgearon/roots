@@ -35,23 +35,24 @@ public final class OverlayPreferences {
         if (saved == null || saved.trim().isEmpty()) {
             // Integration-only preference adapter; the module remains independent
             // of Roots Java classes and can migrate into a separate app.
-            saved = "http://127.0.0.1:8223";
+            saved = "https://127.0.0.1:8223";
         } else if(!prefs.getBoolean("bridge_port_8223_migrated",false)){
             // Migrate only the former standard Roots bridge port.
             saved=saved.replaceFirst(":8123(?=/|$)",":8223");
             prefs.edit().putString(BRIDGE_URL,saved).putBoolean("bridge_port_8223_migrated",true).apply();
         }
-        return saved == null ? "" : saved.trim().replaceAll("/+$", "");
+        return saved == null ? "" : saved.trim().replaceAll("/+$", "").replaceFirst("^http://","https://");
     }
     public void setBridgeUrl(String url) {
         String value = url == null ? "" : url.trim().replaceAll("/+$", "");
-        if (!value.startsWith("http://") && !value.startsWith("https://"))
-            throw new IllegalArgumentException("Bridge URL must begin with http:// or https://");
+        value=value.replaceFirst("^http://","https://");
+        if (!value.startsWith("https://"))
+            throw new IllegalArgumentException("Bridge URL must begin with https://");
         try {
             java.net.URL parsed = new java.net.URL(value);
             if (parsed.getHost().isEmpty() || !parsed.getPath().isEmpty() && !"/".equals(parsed.getPath())
                     || parsed.getUserInfo() != null || parsed.getQuery() != null || parsed.getRef() != null)
-                throw new IllegalArgumentException("Enter a bridge base URL, for example http://192.168.1.100:8223");
+                throw new IllegalArgumentException("Enter a bridge base URL, for example https://192.168.1.100:8223");
         } catch (java.net.MalformedURLException e) {
             throw new IllegalArgumentException("Invalid bridge URL");
         }

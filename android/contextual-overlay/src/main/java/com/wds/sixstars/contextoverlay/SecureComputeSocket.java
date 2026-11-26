@@ -16,8 +16,7 @@ import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
-/** One paired compute connection. A successful encrypted reply, not the
- * WebSocket upgrade, establishes readiness. One in-flight envelope per socket. */
+/** One paired compute connection. A standard TLS WebSocket with authenticated upgrade. One in-flight envelope per socket. */
 final class SecureComputeSocket {
     private static final long RETRY_MS=8000;
     private static void trace(String message){android.util.Log.i("RootsCompute",message);}
@@ -26,7 +25,7 @@ final class SecureComputeSocket {
     }
     static String reason(Exception error){
         if(error instanceof Failure)return error.getMessage();
-        if(error instanceof javax.crypto.AEADBadTagException)return "Desktop reply authentication failed; check key";
+        if(error instanceof javax.net.ssl.SSLException)return "Desktop TLS certificate or connection failed; refresh connection key";
         if(error instanceof java.net.UnknownHostException)return "Desktop address not resolved";
         if(error instanceof java.net.ConnectException)return "Desktop connection refused";
         if(error instanceof java.net.SocketTimeoutException)return "Desktop connection timed out";
@@ -41,6 +40,7 @@ final class SecureComputeSocket {
     private static final class Pending {
         final CountDownLatch done=new CountDownLatch(1);
         volatile String reply;
+        final String id=java.util.UUID.randomUUID().toString();
     }
     private static final class Session {
         final Network network;final String base,key;
@@ -51,9 +51,15 @@ final class SecureComputeSocket {
         volatile boolean open,ready,closed;
         volatile String failure="Desktop socket disconnected";
          
-        Session(Network network,String base,String key){
+        Session(Network network,String base,String key)throws Exception{
             this.network=network;this.base=base;this.key=key;
+            if(!key.matches("[0-9a-f]{64}:[0-9a-f]{64}"))throw new Failure("Refresh connection key using get-key.cmd");
+            DesktopTlsPin pin=new DesktopTlsPin(key.substring(65));
+            javax.net.ssl.SSLContext tls=javax.net.ssl.SSLContext.getInstance("TLS");
+            tls.init(null,new javax.net.ssl.TrustManager[]{pin},null);
             client=new OkHttpClient.Builder().socketFactory(network.getSocketFactory())
+                .sslSocketFactory(tls.getSocketFactory(),pin)
+                .hostnameVerifier((hostname,session)->pin.matchesPeer(session))
                 .dns(host->Arrays.asList(network.getAllByName(host)))
                 .followRedirects(false).followSslRedirects(false)
                 .proxy(java.net.Proxy.NO_PROXY)
@@ -95,17 +101,24 @@ final class SecureComputeSocket {
             s=new Session(network,base,key);
             String url;
             if(base.startsWith("https://"))url="wss://"+base.substring(8);
-            else if(base.startsWith("http://"))url="ws://"+base.substring(7);
-            else throw new IOException("Invalid bridge URL");
+            else throw new Failure("Desktop URL must use HTTPS");
             current=s;
             trace("WebSocket upgrade requested");
             try{
-                s.socket=s.client.newWebSocket(new Request.Builder().url(url+path).build(),new WebSocketListener(){
-                    @Override public void onOpen(WebSocket ws,Response response){if(s.closed){ws.cancel();return;}trace("WebSocket upgrade accepted");s.open=true;s.opened.countDown();}
+                s.socket=s.client.newWebSocket(new Request.Builder().url(url+path).header("X-SixStars-Token",key.substring(0,64)).build(),new WebSocketListener(){
+                    @Override public void onOpen(WebSocket ws,Response response){if(s.closed){ws.cancel();return;}trace("WebSocket upgrade accepted");s.open=true;}
                     @Override public void onMessage(WebSocket ws,String message){
-                        Pending p=s.pending.get();
-                        if(p==null||message.length()>98304||p.reply!=null){fail(s);return;}
-                        p.reply=message;p.done.countDown();
+                        try{
+                            if(message.length()>98304)throw new IOException("Frame too large");
+                            JSONObject frame=new JSONObject(message);
+                            if("auth".equals(frame.optString("type"))){
+                                if(!frame.optBoolean("ok"))throw new IOException("Authentication rejected");
+                                s.ready=true;s.opened.countDown();return;
+                            }
+                            Pending p=s.pending.get();
+                            if(p==null||p.reply!=null||!"result".equals(frame.optString("type"))||!p.id.equals(frame.optString("id")))throw new IOException("Unexpected frame");
+                            p.reply=message;p.done.countDown();
+                        }catch(Exception e){s.failure="Invalid desktop JSON response";fail(s);}
                     }
                     @Override public void onMessage(WebSocket ws,okio.ByteString bytes){fail(s);}
                     @Override public void onClosing(WebSocket ws,int code,String reason){s.failure=closeReason(code);fail(s);}
@@ -124,7 +137,7 @@ final class SecureComputeSocket {
             }catch(Exception e){fail(s);throw e;}
         }
         if(!s.opened.await(3500,TimeUnit.MILLISECONDS)){fail(s);throw new Failure("Desktop WebSocket connect timed out; check IP and firewall");}
-        if(!s.open||s.closed){fail(s);throw new Failure(s.failure);}
+        if(!s.open||!s.ready||s.closed){fail(s);throw new Failure(s.failure);}
         return s;
     }
     private static String closeReason(int code){
@@ -138,7 +151,7 @@ final class SecureComputeSocket {
         if(!exchange.tryLock())throw new IOException("Compute socket busy");
         Session s=null;
         try{
-            s=connect(network,base,key,"/api/compute/v1/socket");
+            s=connect(network,base,key,"/api/translation/v1/socket");
             if(s==null)throw new IOException("Compute socket unavailable");
             JSONObject reply=request(s,payload,30000,started);
             s.ready=true;return reply;
@@ -150,20 +163,25 @@ final class SecureComputeSocket {
     }
     private JSONObject request(Session s,JSONObject payload,long timeout,Runnable started)throws Exception{
         if(s.closed||s.socket==null)throw new IOException("Compute socket closed");
-        SecureLanCompute.Packet packet=SecureLanCompute.seal(s.key,payload);
         Pending pending=new Pending();
-        String id=packet.traceId();
+        String id=pending.id;
         try{
+            JSONObject input=payload.getJSONObject("request");
+            input.put("type","translate").put("id",id);
             if(!s.pending.compareAndSet(null,pending))throw new IOException("Compute socket busy");
-            if(s.closed||!s.socket.send(packet.wire))throw new IOException("Compute send failed");
-            trace("request="+id+" encrypted frame queued");
+            if(s.closed||!s.socket.send(input.toString()))throw new IOException("Compute send failed");
+            trace("request="+id+" JSON frame queued over TLS");
             started.run();
             if(!pending.done.await(timeout,TimeUnit.MILLISECONDS))throw new Failure("Desktop inference response timed out");
             if(s.closed||pending.reply==null)throw new Failure(s.failure);
-            trace("request="+id+" encrypted response received");
-            JSONObject reply=packet.open(pending.reply);
-            trace("request="+id+" response authenticated");
+            JSONObject reply=new JSONObject(pending.reply);
+            if(!reply.optBoolean("ok"))throw new Failure("Desktop inference rejected: "+safeError(reply.optString("error")));
+            trace("request="+id+" TLS response received");
             return reply;
-        }catch(Exception e){throw new Failure("Request "+id+": "+reason(e));}finally{s.pending.compareAndSet(pending,null);packet.clear();}
+        }catch(Exception e){throw new Failure("Request "+id+": "+reason(e));}
+        finally{s.pending.compareAndSet(pending,null);}
+    }
+    private static String safeError(String error){
+        return java.util.Set.of("invalid_request","translation_unavailable","too_many_requests","duplicate_id").contains(error)?error:"unknown_error";
     }
 }

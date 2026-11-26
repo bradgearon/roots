@@ -21,6 +21,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
     private readonly bool _lan;
     private readonly PLaMoLocalTranslationService _translator;
     private WebApplication? _app;
+    private System.Security.Cryptography.X509Certificates.X509Certificate2? _identity;
 
     public LocalTranslationGateway(int port, string llamaChatEndpoint, bool lan = false)
     {
@@ -32,14 +33,26 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         string secret = ReadOrCreateToken();
+        if (_lan) _identity = DesktopTlsIdentity.Load(Path.GetDirectoryName(TokenPath())!);
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = Array.Empty<string>() });
         builder.WebHost.ConfigureKestrel(options =>
         {
-            if (_lan) options.ListenAnyIP(_port); else options.ListenLocalhost(_port);
+            if (_lan) options.ListenAnyIP(_port, listener => listener.UseHttps(_identity!));
+            // Browser extension and local development retain HTTP on loopback only.
+            options.ListenLocalhost(_port + 1);
             options.Limits.MaxRequestBodySize = 32 * 1024;
             options.AddServerHeader = false;
         });
         var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            // LAN port accepts only the existing authenticated mobile socket and health.
+            if (context.Connection.LocalPort == _port &&
+                context.Request.Path != "/api/translation/v1/socket" &&
+                context.Request.Path != "/api/translation/v1/health")
+            { context.Response.StatusCode = 404; return; }
+            await next(context);
+        });
         // A single authenticated extension WebSocket remains open across many
         // translations. HTTP stays available for old extension versions/tests.
         app.UseWebSockets(new WebSocketOptions
@@ -48,7 +61,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         });
 
         app.MapGet("/api/translation/v1/socket", (HttpContext context) =>
-            LocalTranslationSocket.RunAsync(context, _translator, secret, FastTextLanguageDetectionService.Shared, _lan));
+            LocalTranslationSocket.RunAsync(context, _translator, secret, FastTextLanguageDetectionService.Shared, _lan && context.Request.IsHttps));
 
 
         app.MapPost("/api/forge/v1/invoke", async (HttpContext context) =>
@@ -69,13 +82,6 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
             ok = true, capability = "translate", languageDetection = FastTextLanguageDetectionService.ModelName, model = PLaMoLocalTranslationService.ModelName,
             backend = "dedicated PLaMo llama.cpp server on 8081", authentication = "required-for-inference"
         }));
-
-        // Automatic compute routing never sends the legacy bearer token or
-        // plaintext social content. A successful encrypted probe proves possession
-        // of the paired key; encrypted requests are replay-checked.
-        var secureRoute = new SecureComputeRoute(secret, _translator);
-        app.MapPost("/api/compute/v1/exchange", secureRoute.ExchangeAsync);
-        app.MapGet("/api/compute/v1/socket", secureRoute.RunSocketAsync);
 
         app.MapPost("/api/translation/v1/detect", async (HttpContext context) =>
         {
@@ -134,10 +140,10 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
 
         await app.StartAsync(cancellationToken);
         _app = app;
-        Console.WriteLine("LOCAL TRANSLATION WebSocket ws://127.0.0.1:" + _port + "/api/translation/v1/socket");
-        Console.WriteLine("LOCAL TRANSLATION HTTP fallback http://127.0.0.1:" + _port + "/api/translation/v1/translate");
+        Console.WriteLine("LOCAL TRANSLATION WebSocket ws://127.0.0.1:" + (_port + 1) + "/api/translation/v1/socket");
+        Console.WriteLine("LOCAL TRANSLATION HTTP fallback http://127.0.0.1:" + (_port + 1) + "/api/translation/v1/translate");
         Console.WriteLine("LOCAL TRANSLATION token file: " + TokenPath());
-        Console.WriteLine("PAIRED COMPUTE WebSocket /api/compute/v1/socket port=" + _port + " lan=" + _lan);
+        if (_lan) Console.WriteLine("PAIRED COMPUTE TLS WebSocket wss://YOUR-PC:" + _port + "/api/translation/v1/socket");
         Console.WriteLine("PAIRED COMPUTE log: " + Wds.Roots.Host.Runtime.RootsDailyLog.CurrentPath);
     }
 
@@ -180,6 +186,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
             await _app.DisposeAsync();
             _app = null;
         }
+        _identity?.Dispose();
         _translator.Dispose();
     }
 }

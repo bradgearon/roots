@@ -50,8 +50,8 @@ final class FamiliarComputeNetworks {
         if(fp.isEmpty())return false;
         Set<String> seen=prefs.getStringSet("seen",Collections.emptySet());
         if(seen.contains(key(base,fp)))return true;
-        String legacy=base.replaceFirst(":8223$",":8123");
-        if(!legacy.equals(base)&&seen.contains(key(legacy,fp))){
+        String legacy=base.replaceFirst("^https://","http://");
+        if(seen.contains(key(legacy,fp))||seen.contains(key(legacy.replaceFirst(":8223$",":8123"),fp))){
             remember(base,fp);return true;
         }
         return false;

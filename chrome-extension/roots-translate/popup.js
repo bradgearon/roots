@@ -19,5 +19,5 @@ el("ping").addEventListener("click", () => {
       ? (answer.transport === "websocket"
           ? "Connected: persistent local WebSocket ready."
           : "Service online; using HTTP fallback (update/restart launcher for WebSocket).")
-      : "Service unavailable. Start Roots and check port 8223."));
+      : "Service unavailable. Start Roots and check port 8224."));
 });

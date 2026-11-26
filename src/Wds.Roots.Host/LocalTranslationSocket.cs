@@ -32,7 +32,8 @@ internal static class LocalTranslationSocket
 
         // WebSocket connections are not protected by CORS. Allow Chrome extension
         // workers only; an arbitrary website must never initiate this protocol.
-        bool mobile = lan && string.IsNullOrEmpty(context.Request.Headers["Origin"].ToString()) && LocalTranslationGateway.IsAuthorized(context.Request.Headers["X-SixStars-Token"].ToString(), secret);
+        bool mobile = lan && context.Request.IsHttps && string.IsNullOrEmpty(context.Request.Headers["Origin"].ToString()) && LocalTranslationGateway.IsAuthorized(context.Request.Headers["X-SixStars-Token"].ToString(), secret);
+        if (lan && !mobile) { context.Response.StatusCode = 401; Trace("mobile upgrade rejected"); return; }
         var remote = context.Connection.RemoteIpAddress;
         if (remote?.IsIPv4MappedToIPv6 == true) remote = remote.MapToIPv4();
         if (!mobile && (!System.Net.IPAddress.IsLoopback(remote ?? System.Net.IPAddress.None) || !IsChromeExtensionOrigin(context.Request.Headers["Origin"].ToString())))
@@ -41,7 +42,8 @@ internal static class LocalTranslationSocket
             return;
         }
 
-        using WebSocket socket = await context.WebSockets.AcceptWebSocketAsync();
+        using WebSocket socket = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext { KeepAliveInterval = mobile ? TimeSpan.Zero : TimeSpan.FromSeconds(20) });
+        if (mobile) Trace("mobile TLS socket authenticated");
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         using var sendGate = new SemaphoreSlim(1, 1);
         var active = new ConcurrentDictionary<string, CancellationTokenSource>(StringComparer.Ordinal);
@@ -157,12 +159,17 @@ internal static class LocalTranslationSocket
         }
     }
 
+    private static void Trace(string message){ Console.WriteLine("[Roots compute] " + message); Wds.Roots.Host.Runtime.RootsDailyLog.Write("compute", message); }
+
     private static async Task TranslateAndRespondAsync(
         string id, TranslationRequest request, ITranslationService translator,
         ILanguageDetectionService detector, bool detectOnly, WebSocket socket, SemaphoreSlim sendGate,
         ConcurrentDictionary<string, CancellationTokenSource> active,
         CancellationTokenSource requestCancellation, CancellationToken lifetime)
     {
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        // IDs are supplied by clients; never log arbitrary client-controlled strings.
+        Trace("request started operation=" + (detectOnly ? "detect" : "translate") + " chars=" + request.Text.Length);
         try
         {
             if (detectOnly)
@@ -180,6 +187,7 @@ internal static class LocalTranslationSocket
             // The model remains loaded in the independent llama.cpp process.
             TranslationResponse answer = await translator.TranslateAsync(
                 request, requestCancellation.Token);
+            Trace("translation completed elapsed_ms=" + timer.ElapsedMilliseconds);
             if (!requestCancellation.IsCancellationRequested)
             {
                 await TrySendAsync(socket, sendGate, new
@@ -197,8 +205,9 @@ internal static class LocalTranslationSocket
             await TrySendAsync(socket, sendGate,
                 new { type = "result", id, ok = false, error = "invalid_request" }, lifetime);
         }
-        catch (Exception)
+        catch (Exception e)
         {
+            Trace("request failed error=" + e.GetType().Name);
             // Never log, echo or include source text or secret credentials.
             await TrySendAsync(socket, sendGate,
                 new { type = "result", id, ok = false, error = detectOnly ? "detection_unavailable" : "translation_unavailable" },

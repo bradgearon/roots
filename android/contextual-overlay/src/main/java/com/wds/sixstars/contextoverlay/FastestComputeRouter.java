@@ -106,7 +106,7 @@ final class FastestComputeRouter implements TranslationProvider {
         }
         final String base=r.prefs.bridgeUrl(),key=OverlayTranslationKeyStore.read(r.app);
         final Network network=r.wifi();
-        if(key.isEmpty()){result.completed(null,"Save the desktop key first.");return;}
+        if(!key.contains(":")){result.completed(null,"Run get-key.cmd and save the updated connection key first.");return;}
         if(network==null){result.completed(null,"No active Wi-Fi. Check Wi-Fi or VPN routing.");return;}
         try{r.routes.execute(()->{
             if(!r.authorized(base,key)||!network.equals(r.wifi())){result.completed(null,"Network or desktop configuration changed.");return;}
@@ -124,8 +124,8 @@ final class FastestComputeRouter implements TranslationProvider {
                 boolean remembered=r.familiar.remember(base,fp);
                 r.updateNetworkState();
                 r.observe("desktop:"+base+":"+fp,15,elapsed);
-                status="Paired desktop PLaMo · encrypted";
-                r.connection="Authenticated desktop response";
+                status="Paired desktop PLaMo · TLS";
+                r.connection="Authenticated TLS desktop response";
                 attempt.finish(true,"Authenticated desktop sample");
                 result.completed("Desktop confirmed: "+translated+" · "+elapsed+" ms"+(remembered?" · network remembered":" · network fingerprint unavailable"),null);
             }catch(Exception e){
@@ -168,9 +168,9 @@ final class FastestComputeRouter implements TranslationProvider {
             Network network=prefs.desktopTranslationEnabled()?wifi():null;
             String base=prefs.bridgeUrl(),key=network==null?"":OverlayTranslationKeyStore.read(app);
             String fingerprint=network==null?"":familiar.fingerprint(network);
-            boolean remote=network!=null&&!key.isEmpty()&&familiar.contains(base,fingerprint);
+            boolean remote=network!=null&&key.contains(":")&&familiar.contains(base,fingerprint);
             String reason=!prefs.desktopTranslationEnabled()?"Desktop permission off":
-                network==null?"No active Wi-Fi":key.isEmpty()?"Desktop key missing":
+                network==null?"No active Wi-Fi":!key.contains(":")?"Desktop TLS connection key required":
                 !remote?"Network not remembered":"Measured local preference";
             String desktop="desktop:"+base+":"+fingerprint;
             if(remote&&preferRemote(desktop,phone,text.length())){
@@ -211,13 +211,13 @@ final class FastestComputeRouter implements TranslationProvider {
         try{
             JSONObject input=new JSONObject().put("text",text).put("targetLang",target).put("maxTokens",768);
             if(source!=null&&source.matches("[a-z]{2,3}"))input.put("sourceLang",source);
-            status="Paired desktop PLaMo · encrypted";
+            status="Paired desktop PLaMo · TLS";
             JSONObject reply=socket.translate(network,base,key,new JSONObject().put("kind","translate").put("request",input),()->{
                 attempt.running("Sent");callback.started();
             });
             String translated=reply.optString("translation","").trim();
             if(translated.isEmpty())throw new IllegalStateException("Empty translation");
-            attempt.finish(true,"Authenticated desktop response");
+            attempt.finish(true,"Authenticated TLS desktop response");
             if(!authorized(base,key)){finish(callback,finished,null,"Desktop compute permission changed.");return true;}
             familiar.remember(base,familiar.fingerprint(network));
             connection="Familiar network · desktop responding";

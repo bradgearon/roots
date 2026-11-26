@@ -70,7 +70,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             "The feature does not take screenshots, press buttons in X, read other apps' text, or persist translation input. The optional Tree feature separately asks permission to retain local timeline fragments. " +
             "With desktop translation enabled, the text you tap may be sent to your configured Roots desktop over the local network for PLaMo inference. " +
             "If automatic translation is also enabled, eligible visible X text may be sent automatically. The X content could include private messages. " +
-            "Automatic routing verifies the paired host and encrypts requests and responses. An outdated desktop bridge is not used. " +
+            "Automatic routing uses a TLS WebSocket with the paired desktop certificate. An outdated desktop bridge is not used. " +
             "By default translation runs on this device. Nothing is sent unless you separately enable desktop translation. " +
             "You can stop processing below, and disable the service at any time in Android Accessibility settings.",
             14, 0xFFE5EFF4);
@@ -118,12 +118,12 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         download.setOnClickListener(v -> LocalPLaMoTranslationProvider.downloadModel(this, (message, error) -> runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(error == null ? message : error).setPositiveButton("OK", null).show())));
         content.addView(download);
         content=RootsUi.section(this,sections,"Desktop bridge","Pair a desktop and remember familiar networks",false);
-        content.addView(text("Desktop bridge address (http://YOUR-PC:8223)", 13, 0xFFAAC8D4));
+        content.addView(text("Desktop bridge address (https://YOUR-PC:8223)", 13, 0xFFAAC8D4));
         bridgeAddress = new EditText(this);
         bridgeAddress.setSingleLine(true);
         bridgeAddress.setText(prefs.bridgeUrl());
         bridgeAddress.setTextColor(Color.WHITE);
-        bridgeAddress.setHint("http://192.168.1.100:8223");
+        bridgeAddress.setHint("https://192.168.1.100:8223");
         bridgeAddress.setHintTextColor(0xFF8AADB6);
         bridgeAddress.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         content.addView(bridgeAddress);
@@ -138,7 +138,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             }catch(IllegalArgumentException e){status.setText(e.getMessage());}
         });
         content.addView(remember);
-        content.addView(text("Run get-key.cmd on the desktop to copy the key. Save the address and key below.", 13, 0xFFAAC8D4));
+        content.addView(text("Run get-key.cmd on the desktop to copy the key and TLS certificate fingerprint together. Paste once below.", 13, 0xFFAAC8D4));
         translationKey = new EditText(this);
         translationKey.setSingleLine(true);
         translationKey.setHint(OverlayTranslationKeyStore.isConfigured(this)
