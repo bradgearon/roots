@@ -22,7 +22,14 @@ internal static class DesktopTlsIdentity
             using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
             stream.Write(certificate.Export(X509ContentType.Pfx));
         }
-        var identity = X509CertificateLoader.LoadPkcs12FromFile(path, null, X509KeyStorageFlags.EphemeralKeySet);
+        // Windows Schannel cannot reliably acquire credentials for ephemeral
+        // private keys. Import into the current user's key storage and retain
+        // the certificate for the lifetime of Kestrel. Do not use PersistKeySet:
+        // the imported key can be cleaned up on disposal; the PFX is our identity.
+        var storage = OperatingSystem.IsWindows()
+            ? X509KeyStorageFlags.UserKeySet
+            : X509KeyStorageFlags.EphemeralKeySet;
+        var identity = X509CertificateLoader.LoadPkcs12FromFile(path, null, storage);
         if (!identity.HasPrivateKey || identity.NotAfter.ToUniversalTime() <= DateTime.UtcNow)
         { identity.Dispose(); throw new InvalidOperationException("Roots TLS identity is invalid or expired."); }
         File.WriteAllText(Path.Combine(directory, "compute-tls-sha256.txt"), Convert.ToHexString(identity.GetCertHash(HashAlgorithmName.SHA256)).ToLowerInvariant());
