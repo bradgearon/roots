@@ -19,6 +19,68 @@ public final class RootsUi {
         GradientDrawable d=new GradientDrawable();
         d.setColor(fill);d.setCornerRadius(dp(a,radius));if(stroke!=0)d.setStroke(dp(a,1),stroke);return d;
     }
+    private static final int INPUT_BG=0xFF0A1D23;
+    private static android.content.res.ColorStateList controlColors(){
+        return new android.content.res.ColorStateList(
+            new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{android.R.attr.state_checked},new int[]{android.R.attr.state_focused},new int[]{}},
+            new int[]{0xFF719097,ACCENT,ACCENT,MUTED});
+    }
+
+    /** Both the collapsed value and popup rows must have explicit colors:
+     * framework spinner templates may inherit a light/OEM theme. */
+    public static void styleSpinner(Activity a, android.widget.Spinner spinner,String[] labels){
+        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<String>(a,android.R.layout.simple_spinner_item,labels){
+            @Override public View getView(int position,View convert,android.view.ViewGroup parent){
+                TextView v=(TextView)super.getView(position,convert,parent);
+                v.setTextColor(TEXT);
+                v.setTextSize(15);
+                v.setPadding(dp(a,12),dp(a,10),dp(a,8),dp(a,10));
+                v.setMinHeight(dp(a,48));
+                v.setGravity(Gravity.CENTER_VERTICAL);
+                return v;
+            }
+            @Override public View getDropDownView(int position,View convert,android.view.ViewGroup parent){
+                TextView v=(TextView)super.getDropDownView(position,convert,parent);
+                v.setTextColor(TEXT);
+                v.setTextSize(15);
+                v.setPadding(dp(a,14),dp(a,10),dp(a,14),dp(a,10));
+                v.setMinHeight(dp(a,48));
+                v.setGravity(Gravity.CENTER_VERTICAL);
+                // Keep the framework list selector and checked indicator visible.
+                if(v instanceof android.widget.CheckedTextView)
+                    ((android.widget.CheckedTextView)v).setCheckMarkTintList(controlColors());
+                return v;
+            }
+        };
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setBackgroundTintList(controlColors());
+        spinner.setPopupBackgroundDrawable(rounded(a,INPUT_BG,10,STROKE));
+        spinner.setMinimumHeight(dp(a,48));
+    }
+
+    /** Explicit input and control colors, independent of OEM widget defaults. */
+    public static void styleInputs(Activity a,View root){
+        if(root instanceof android.widget.EditText){
+            android.widget.EditText input=(android.widget.EditText)root;
+            input.setTextColor(TEXT);input.setHintTextColor(MUTED);
+            input.setHighlightColor(0x6631CDBB);
+            input.setBackground(rounded(a,INPUT_BG,10,STROKE));
+            input.setPadding(dp(a,12),dp(a,10),dp(a,12),dp(a,10));
+            input.setMinHeight(dp(a,48));
+        }else if(root instanceof android.widget.CompoundButton){
+            android.widget.CompoundButton control=(android.widget.CompoundButton)root;
+            control.setButtonTintList(controlColors());
+            control.setTextColor(new android.content.res.ColorStateList(
+                new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},
+                new int[]{MUTED,TEXT}));
+        }
+        if(root instanceof android.view.ViewGroup){
+            android.view.ViewGroup group=(android.view.ViewGroup)root;
+            for(int i=0;i<group.getChildCount();i++)styleInputs(a,group.getChildAt(i));
+        }
+    }
+
     public static LinearLayout column(Activity a){LinearLayout l=new LinearLayout(a);l.setOrientation(LinearLayout.VERTICAL);return l;}
     public static LinearLayout shell(Activity a){
         LinearLayout root=column(a);root.setBackgroundColor(BG);

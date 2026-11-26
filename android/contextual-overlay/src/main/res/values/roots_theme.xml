@@ -7,6 +7,11 @@
         <item name="android:colorControlActivated">#28D9C5</item>
         <item name="android:textColorPrimary">#EDF7F8</item>
         <item name="android:textColorSecondary">#A7C5CA</item>
+        <item name="android:textColorHint">#A7C5CA</item>
+        <item name="android:textColorPrimaryInverse">#EDF7F8</item>
+        <item name="android:textColorSecondaryInverse">#A7C5CA</item>
+        <item name="android:colorBackground">#08171D</item>
+        <item name="android:colorForeground">#EDF7F8</item>
         <item name="android:statusBarColor">#08171D</item>
         <item name="android:navigationBarColor">#08171D</item>
         <item name="android:windowLightStatusBar">false</item>

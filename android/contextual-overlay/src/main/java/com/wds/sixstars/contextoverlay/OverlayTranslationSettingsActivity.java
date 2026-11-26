@@ -11,7 +11,6 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.widget.EditText;
 import android.widget.Spinner;
-import android.widget.ArrayAdapter;
 import android.widget.AdapterView;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -161,10 +160,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         targetLanguage = new Spinner(this);
         String[] languages = { "English", "Japanese", "Spanish", "French", "German" };
         String[] codes = { "en", "ja", "es", "fr", "de" };
-        ArrayAdapter<String> languagesAdapter = new ArrayAdapter<>(
-                this, android.R.layout.simple_spinner_item, languages);
-        languagesAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        targetLanguage.setAdapter(languagesAdapter);
+        RootsUi.styleSpinner(this, targetLanguage, languages);
         String configured = prefs.targetLanguage();
         for (int i = 0; i < codes.length; i++) {
             if (codes[i].equals(configured)) targetLanguage.setSelection(i);
@@ -260,11 +256,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 AutoInlineThemeService.SYSTEM, AutoInlineThemeService.BLACK,
                 AutoInlineThemeService.DIM, AutoInlineThemeService.LIGHT
         };
-        ArrayAdapter<String> appearanceAdapter = new ArrayAdapter<>(
-                this, android.R.layout.simple_spinner_item, appearanceLabels);
-        appearanceAdapter.setDropDownViewResource(
-                android.R.layout.simple_spinner_dropdown_item);
-        inlineAppearance.setAdapter(appearanceAdapter);
+        RootsUi.styleSpinner(this, inlineAppearance, appearanceLabels);
         for (int i = 0; i < appearanceValues.length; i++) {
             if (appearanceValues[i].equals(prefs.inlineTheme()))
                 inlineAppearance.setSelection(i);
@@ -304,9 +296,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         Spinner threads = new Spinner(this);
         int[] threadValues={0,2,4,6,8};
         String[] threadLabels={"Auto (up to 6)", "2 threads", "4 threads", "6 threads", "8 threads"};
-        ArrayAdapter<String> threadAdapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,threadLabels);
-        threadAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        threads.setAdapter(threadAdapter);
+        RootsUi.styleSpinner(this, threads, threadLabels);
         for(int i=0;i<threadValues.length;i++)if(threadValues[i]==prefs.localThreadSetting())threads.setSelection(i);
         threads.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             @Override public void onItemSelected(AdapterView<?> parent,View view,int position,long id){prefs.setLocalThreadSetting(threadValues[position]);}
@@ -379,6 +369,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         View translationCard=(View)translation.getParent();
         sections.removeView(translationCard);sections.addView(translationCard,0);
         shell.addView(RootsUi.navigation(this,true));
+        RootsUi.styleInputs(this, shell);
         setContentView(shell);
         refreshStatus();
     }
