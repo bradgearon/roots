@@ -26,6 +26,9 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
     private static final String TAG = "RootsPLaMo";
     // Targeted model lifecycle trace only. No prompts, translations, credentials or tweet text.
     private static void trace(Context c,String stage,String status,long started,String detail) {
+        trace(c,stage,status,started,detail,null,-1);
+    }
+    private static void trace(Context c,String stage,String status,long started,String detail,long[] stats,long queueMs) {
         try {
             File dir=new File(c.getFilesDir(),"diagnostics");
             if(!dir.isDirectory()&&!dir.mkdirs())return;
@@ -40,6 +43,17 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
             entry.put("stage",stage);entry.put("status",status);
             entry.put("elapsed_ms",Math.max(0,SystemClock.elapsedRealtime()-started));
             entry.put("detail",detail);
+            if(queueMs>=0)entry.put("queue_ms",queueMs);
+            if(stats!=null&&stats.length==8){
+                entry.put("context_reused",stats[0]!=0);
+                entry.put("context_setup_ms",stats[1]);
+                entry.put("tokenize_ms",stats[2]);
+                entry.put("prefill_ms",stats[3]);
+                entry.put("generation_ms",stats[4]);
+                entry.put("prompt_tokens",stats[5]);
+                entry.put("sampled_tokens",stats[6]);
+                entry.put("threads",stats[7]);
+            }
             try(FileOutputStream stream=new FileOutputStream(log,true)){
                 stream.write((entry.toString()+"\n").getBytes(StandardCharsets.UTF_8));
             }
@@ -104,8 +118,10 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         if(callback==null)return;
         if(!new OverlayPreferences(app).enabled()){callback.completed(null,"Grant X text processing consent first.");return;}
         if(text==null || text.trim().isEmpty() || text.length()>1200 || target==null || !target.matches("[a-z]{2,3}") || text.contains("<|plamo:")){callback.completed(null,"Invalid translation request.");return;}
+        long submitted=SystemClock.elapsedRealtime();
         try{WORK.execute(()->{
             long started=SystemClock.elapsedRealtime();
+            long queueMs=started-submitted;
             String stage="verify_model";
             try {
                 if(!new OverlayPreferences(app).enabled() || new OverlayPreferences(app).desktopTranslationEnabled()){callback.completed(null,"Translation mode changed.");return;}
@@ -132,10 +148,11 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                     "<|plamo:msg|>"+text+"<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>"+target+"<|plamo:msg|>";
                 stage="inference";
                 long inferenceStart=SystemClock.elapsedRealtime();
-                trace(app,stage,"start",inferenceStart,"runtime="+revision);
-                byte[] result=Native.generate(prompt.getBytes(StandardCharsets.UTF_8));
+                trace(app,stage,"start",inferenceStart,"runtime="+revision,null,queueMs);
+                long[] stats=new long[8];
+                byte[] result=Native.generate(prompt.getBytes(StandardCharsets.UTF_8),stats);
                 if(result==null)throw new IllegalStateException("Native runtime returned no result buffer");
-                trace(app,stage,"ok",inferenceStart,"runtime="+revision+" result_bytes="+result.length);
+                trace(app,stage,"ok",inferenceStart,"runtime="+revision+" result_bytes="+result.length,stats,queueMs);
                 String translated=new String(result,StandardCharsets.UTF_8).trim();
                 if(translated.isEmpty())callback.completed(null,"No translation returned.");else callback.completed(translated,null);
             } catch(Exception|LinkageError ex){
@@ -152,6 +169,6 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         static native String revision();
         static native void load(String path);
         static native void unload();
-        static native byte[] generate(byte[] prompt);
+        static native byte[] generate(byte[] prompt,long[] stats);
     }
 }
