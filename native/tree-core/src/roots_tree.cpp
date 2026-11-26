@@ -1,0 +1,260 @@
+#include "roots_tree.h"
+#include <sqlite3.h>
+#include <array>
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <string>
+#include <vector>
+#include <utility>
+
+struct roots_tree {
+    sqlite3 *db=nullptr;
+    std::mutex mutex;
+    ~roots_tree() { if(db) sqlite3_close(db); }
+};
+namespace {
+constexpr size_t capacity=10000, batch_max=256, dim=128;
+constexpr size_t max_agents=32;
+using result=roots_tree_result;
+struct invalid : std::runtime_error { using std::runtime_error::runtime_error; };
+struct quota : std::runtime_error { using std::runtime_error::runtime_error; };
+void require(bool valid) { if(!valid) throw invalid("invalid argument"); }
+void check(int code) { if(code!=SQLITE_OK && code!=SQLITE_ROW && code!=SQLITE_DONE) throw std::runtime_error("sqlite"); }
+void exec(sqlite3 *db,const char *sql) { check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)); }
+struct statement {
+    sqlite3_stmt *s=nullptr;
+    statement(sqlite3 *db,const char *sql) { check(sqlite3_prepare_v2(db,sql,-1,&s,nullptr)); }
+    ~statement(){ sqlite3_finalize(s); }
+    void text(int i,const char *v){check(sqlite3_bind_text(s,i,v,-1,SQLITE_TRANSIENT));}
+    void number(int i,int64_t v){check(sqlite3_bind_int64(s,i,v));}
+    bool next(){int c=sqlite3_step(s);check(c);return c==SQLITE_ROW;}
+    void reset(){check(sqlite3_reset(s));check(sqlite3_clear_bindings(s));}
+    int64_t integer(int i){return sqlite3_column_int64(s,i);}
+    std::string str(int i){auto p=sqlite3_column_text(s,i);return p?reinterpret_cast<const char*>(p):"";}
+};
+struct transaction {
+    sqlite3 *db; bool committed=false;
+    explicit transaction(sqlite3 *d):db(d){exec(db,"BEGIN IMMEDIATE");}
+    void commit(){exec(db,"COMMIT");committed=true;}
+    ~transaction(){if(!committed)sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);}
+};
+template<class F> result guard(F f) noexcept {
+    try { f(); return ROOTS_TREE_OK; }
+    catch(const invalid&) { return ROOTS_TREE_INVALID; }
+    catch(const quota&) { return ROOTS_TREE_LIMIT; }
+    catch(...) { return ROOTS_TREE_STORAGE; }
+}
+void bounded(const char *s,size_t max,bool nonempty=false){
+    require(s!=nullptr);size_t n=std::strlen(s);require(n<=max&&(!nonempty||n>0));
+}
+int64_t scalar(sqlite3 *db,const char *sql){statement s(db,sql);if(!s.next())throw std::runtime_error("scalar");return s.integer(0);}
+void advance(sqlite3 *db){exec(db,"UPDATE tree_state SET revision=revision+1 WHERE id=1");}
+int64_t revision_of(sqlite3 *db){return scalar(db,"SELECT revision FROM tree_state WHERE id=1");}
+struct row { int64_t id,at; std::string source,external,body,lang; };
+struct edge { std::string subject,predicate,object; };
+struct agent { int64_t id; std::string name,term; };
+row read_row(statement &s){return {s.integer(0),s.integer(5),s.str(1),s.str(2),s.str(3),s.str(4)};}
+std::string fragment_key(int64_t id){return "fragment:"+std::to_string(id);}
+void add_edges(std::vector<edge> &edges,const row &r){
+    auto key=fragment_key(r.id);
+    edges.push_back({key,"is.a","type:observed-text-fragment"});
+    edges.push_back({key,"is.from","source:"+r.source});
+}
+void membership_edges(sqlite3 *db,std::vector<edge> &edges,int64_t id){
+    statement s(db,"SELECT agent_id,fragment_seq FROM branch_members WHERE (?=0 OR fragment_seq=?) ORDER BY fragment_seq,agent_id");
+    s.number(1,id);s.number(2,id);
+    while(s.next())edges.push_back({fragment_key(s.integer(1)),"is.in","branch:"+std::to_string(s.integer(0))});
+}
+std::array<float,dim> lexical_vector(const std::string &input){
+    // Stable byte-trigram FNV-1a hashing (ASCII fold). A transparent lexical
+    // baseline; multilingual semantic providers will have different profiles.
+    std::string s=" "+input+" ";
+    for(char &c:s)if(c>='A'&&c<='Z')c=static_cast<char>(c-'A'+'a');
+    std::array<float,dim> v{};
+    for(size_t i=0;i+2<s.size();++i){
+        uint32_t h=2166136261u;
+        for(size_t j=i;j<i+3;++j)h=(h^static_cast<unsigned char>(s[j]))*16777619u;
+        v[h&(dim-1)]+=1.f;
+    }
+    double norm=0;for(float x:v)norm+=static_cast<double>(x)*x;
+    if(norm>0){float scale=static_cast<float>(1/std::sqrt(norm));for(float &x:v)x*=scale;}
+    return v;
+}
+struct le_writer {
+    std::ofstream &out; uint64_t count=0;
+    void byte(uint8_t v){out.put(static_cast<char>(v));++count;}
+    void u32(uint32_t v){for(unsigned i=0;i<4;++i)byte(static_cast<uint8_t>(v>>(8*i)));}
+    void u64(uint64_t v){for(unsigned i=0;i<8;++i)byte(static_cast<uint8_t>(v>>(8*i)));}
+    void str(const std::string &v){u64(v.size());out.write(v.data(),static_cast<std::streamsize>(v.size()));count+=v.size();}
+    void string_kv(const char *k,const std::string &v){str(k);u32(8);str(v);}
+    void array_header(const char *k,size_t size){str(k);u32(9);u32(8);u64(size);}
+};
+void write_gguf(std::ofstream &stream,const std::vector<row> &rows,
+                const std::vector<edge> &edges,int64_t rev){
+    static_assert(sizeof(float)==4 && std::numeric_limits<float>::is_iec559,"GGUF requires IEEE f32");
+    le_writer w{stream};
+    w.byte('G');w.byte('G');w.byte('U');w.byte('F');w.u32(3);
+    w.u64(1);w.u64(9);
+    w.string_kv("general.architecture","roots-tree");
+    w.str("general.alignment");w.u32(4);w.u32(32);
+    w.string_kv("roots.vector.profile","roots.lexical.utf8-trigram.f32.v1");
+    w.str("roots.tree.revision");w.u32(10);w.u64(static_cast<uint64_t>(rev));
+    w.string_kv("roots.scope","local-private");
+    w.array_header("roots.node.keys",rows.size());
+    for(const auto &r:rows)w.str(fragment_key(r.id));
+    w.array_header("roots.edge.subject",edges.size());for(const auto &e:edges)w.str(e.subject);
+    w.array_header("roots.edge.predicate",edges.size());for(const auto &e:edges)w.str(e.predicate);
+    w.array_header("roots.edge.object",edges.size());for(const auto &e:edges)w.str(e.object);
+    w.str("node.embedding");w.u32(2);w.u64(dim);w.u64(rows.size());w.u32(0);w.u64(0);
+    while(w.count%32)w.byte(0);
+    for(const auto &r:rows)for(float f:lexical_vector(r.body)){
+        uint32_t bits;std::memcpy(&bits,&f,sizeof(bits));w.u32(bits);
+    }
+    stream.flush();if(!stream)throw std::runtime_error("GGUF write");
+}
+}
+extern "C" {
+uint32_t roots_tree_abi_version(void){return 1;}
+roots_tree_result roots_tree_open(const char *path,roots_tree **out){
+    if(out)*out=nullptr;
+    return guard([&]{
+        bounded(path,32768,true);require(out);
+        auto t=std::make_unique<roots_tree>();
+        check(sqlite3_open_v2(path,&t->db,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX,nullptr));
+        check(sqlite3_busy_timeout(t->db,5000));
+        exec(t->db,"PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON;");
+        auto version=scalar(t->db,"PRAGMA user_version");
+        require(version==0||version==1);
+        transaction tx(t->db);
+        exec(t->db,"CREATE TABLE IF NOT EXISTS tree_state(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL);"
+                   "INSERT OR IGNORE INTO tree_state VALUES(1,0);"
+                   "CREATE TABLE IF NOT EXISTS fragments(seq INTEGER PRIMARY KEY AUTOINCREMENT,source TEXT NOT NULL,external_id TEXT NOT NULL,body TEXT NOT NULL,language TEXT NOT NULL,observed_ms INTEGER NOT NULL,UNIQUE(source,external_id,body));"
+                   "CREATE TABLE IF NOT EXISTS agents(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,term TEXT NOT NULL);"
+                   "CREATE TABLE IF NOT EXISTS branch_members(agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,fragment_seq INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,PRIMARY KEY(agent_id,fragment_seq));"
+                   "CREATE INDEX IF NOT EXISTS branch_fragment ON branch_members(fragment_seq);"
+                   "PRAGMA user_version=1;");
+        tx.commit();*out=t.release();
+    });
+}
+void roots_tree_close(roots_tree *t){delete t;}
+roots_tree_result roots_tree_observe(roots_tree *t,const roots_observation *items,size_t n,size_t *inserted){
+    if(inserted)*inserted=0;
+    return guard([&]{
+        require(t&&items&&inserted&&n>0&&n<=batch_max);
+        for(size_t i=0;i<n;++i){const auto &o=items[i];bounded(o.source,256,true);bounded(o.external_id,512);bounded(o.body,16384,true);bounded(o.language,64);require(o.observed_ms>=0);}
+        std::lock_guard<std::mutex> lock(t->mutex);transaction tx(t->db);
+        auto total=scalar(t->db,"SELECT count(*) FROM fragments");size_t added=0;
+        statement insert(t->db,"INSERT INTO fragments(source,external_id,body,language,observed_ms) VALUES(?,?,?,?,?) ON CONFLICT(source,external_id,body) DO NOTHING");
+        statement match(t->db,"INSERT OR IGNORE INTO branch_members(agent_id,fragment_seq) SELECT id,? FROM agents WHERE instr(lower(?),lower(term))>0");
+        for(size_t i=0;i<n;++i){
+            const auto &o=items[i];insert.text(1,o.source);insert.text(2,o.external_id);insert.text(3,o.body);insert.text(4,o.language);insert.number(5,o.observed_ms);insert.next();
+            if(sqlite3_changes(t->db)>0){
+                if(++total>static_cast<int64_t>(capacity))throw quota("tree capacity");
+                ++added;match.number(1,sqlite3_last_insert_rowid(t->db));match.text(2,o.body);match.next();match.reset();
+            }
+            insert.reset();
+        }
+        if(added)advance(t->db);
+        tx.commit();*inserted=added;
+    });
+}
+roots_tree_result roots_tree_query(roots_tree *t,const char *term,int64_t agent_id,int64_t before,uint32_t limit,roots_fragment_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&agent_id>=0&&before>=0&&limit>0&&limit<=100);bounded(term,512);
+        std::vector<row> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,"SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms FROM fragments f WHERE (?=0 OR f.seq<?) AND instr(lower(f.body),lower(?))>0 AND (?=0 OR EXISTS(SELECT 1 FROM branch_members b WHERE b.fragment_seq=f.seq AND b.agent_id=?)) ORDER BY f.seq DESC LIMIT ?");
+            s.number(1,before);s.number(2,before);s.text(3,term);s.number(4,agent_id);s.number(5,agent_id);s.number(6,limit);
+            while(s.next())rows.push_back(read_row(s));
+        }
+        for(const auto &r:rows){roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};if(cb(user,&f))break;}
+    });
+}
+roots_tree_result roots_tree_count(roots_tree *t,int64_t *out){return guard([&]{require(t&&out);std::lock_guard<std::mutex> lock(t->mutex);*out=scalar(t->db,"SELECT count(*) FROM fragments");});}
+roots_tree_result roots_tree_revision(roots_tree *t,int64_t *out){return guard([&]{require(t&&out);std::lock_guard<std::mutex> lock(t->mutex);*out=revision_of(t->db);});}
+roots_tree_result roots_tree_agent_create(roots_tree *t,const char *name,const char *term,int64_t *id){
+    if(id)*id=0;
+    return guard([&]{
+        require(t&&id);bounded(name,160,true);bounded(term,512,true);
+        std::lock_guard<std::mutex> lock(t->mutex);transaction tx(t->db);
+        if(scalar(t->db,"SELECT count(*) FROM agents")>=static_cast<int64_t>(max_agents))throw quota("agents");
+        statement insert(t->db,"INSERT INTO agents(name,term) VALUES(?,?)");insert.text(1,name);insert.text(2,term);insert.next();
+        auto a=sqlite3_last_insert_rowid(t->db);
+        statement backfill(t->db,"INSERT INTO branch_members SELECT ?,seq FROM fragments WHERE instr(lower(body),lower(?))>0");backfill.number(1,a);backfill.text(2,term);backfill.next();
+        advance(t->db);tx.commit();*id=a;
+    });
+}
+roots_tree_result roots_tree_agent_list(roots_tree *t,roots_agent_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb);std::vector<agent> agents;
+        {std::lock_guard<std::mutex> lock(t->mutex);statement s(t->db,"SELECT id,name,term FROM agents ORDER BY id");while(s.next())agents.push_back({s.integer(0),s.str(1),s.str(2)});}
+        for(const auto &a:agents)if(cb(user,a.id,a.name.c_str(),a.term.c_str()))break;
+    });
+}
+roots_tree_result roots_tree_agent_remove(roots_tree *t,int64_t id){
+    return guard([&]{require(t&&id>0);std::lock_guard<std::mutex> lock(t->mutex);transaction tx(t->db);statement s(t->db,"DELETE FROM agents WHERE id=?");s.number(1,id);s.next();if(sqlite3_changes(t->db))advance(t->db);tx.commit();});
+}
+roots_tree_result roots_tree_predicate(const char *const *parts,size_t n,char *out,size_t cap){
+    return guard([&]{
+        require(parts&&out&&n>0&&n<=8);std::string key;
+        for(size_t i=0;i<n;++i){
+            bounded(parts[i],32,true);if(i)key+='.';
+            for(size_t j=0;parts[i][j];++j){
+                char c=parts[i][j];if(c>='A'&&c<='Z')c=static_cast<char>(c-'A'+'a');
+                bool letter=c>='a'&&c<='z';
+                require(letter||(j>0&&((c>='0'&&c<='9')||c=='_'||c=='-')));
+                key+=c;
+            }
+        }
+        if(key.size()+1>cap)throw quota("predicate output");
+        std::memcpy(out,key.c_str(),key.size()+1);
+    });
+}
+roots_tree_result roots_tree_relations(roots_tree *t,int64_t id,roots_relation_callback cb,void *user){
+    return guard([&]{
+        require(t&&id>0&&cb);std::vector<edge> edges;
+        {std::lock_guard<std::mutex> lock(t->mutex);statement s(t->db,"SELECT seq,source,external_id,body,language,observed_ms FROM fragments WHERE seq=?");s.number(1,id);if(s.next()){add_edges(edges,read_row(s));membership_edges(t->db,edges,id);}}
+        for(const auto &e:edges)if(cb(user,e.subject.c_str(),e.predicate.c_str(),e.object.c_str()))break;
+    });
+}
+roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out){
+    if(out)*out=0;
+    return guard([&]{
+        require(t&&out);bounded(path,32768,true);
+        std::vector<row> rows;std::vector<edge> edges;int64_t rev;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            // Snapshot is internally consistent even if another process writes.
+            exec(t->db,"BEGIN");
+            try{
+                rev=revision_of(t->db);
+                statement s(t->db,"SELECT seq,source,external_id,body,language,observed_ms FROM fragments ORDER BY seq");
+                while(s.next()){rows.push_back(read_row(s));add_edges(edges,rows.back());}
+                membership_edges(t->db,edges,0);exec(t->db,"COMMIT");
+            }catch(...){sqlite3_exec(t->db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
+        }
+        require(!rows.empty());
+        auto dest=std::filesystem::u8path(path);
+        // This API takes a new path reserved by the application. Never overwrite
+        // an existing file. Single application compiler owns that directory.
+        require(!std::filesystem::exists(dest));
+        try{
+            std::ofstream file(dest,std::ios::binary|std::ios::out);
+            if(!file)throw std::runtime_error("open snapshot");
+            write_gguf(file,rows,edges,rev);file.close();if(!file)throw std::runtime_error("close snapshot");
+            *out=rev;
+        }catch(...){std::error_code ec;std::filesystem::remove(dest,ec);throw;}
+    });
+}
+roots_tree_result roots_tree_clear(roots_tree *t){
+    return guard([&]{require(t);std::lock_guard<std::mutex> lock(t->mutex);transaction tx(t->db);exec(t->db,"DELETE FROM agents; DELETE FROM fragments;");advance(t->db);tx.commit();});
+}
+}
