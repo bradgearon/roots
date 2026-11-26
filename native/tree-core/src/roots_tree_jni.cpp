@@ -12,7 +12,11 @@ roots_tree *ptr(jlong h) {
     return reinterpret_cast<roots_tree*>(static_cast<intptr_t>(h));
 }
 void checked(roots_tree_result r) {
-    if(r!=ROOTS_TREE_OK)throw std::runtime_error("Tree result "+std::to_string(int(r)));
+    if(r!=ROOTS_TREE_OK){
+        const char *detail=roots_tree_last_error();
+        throw std::runtime_error("Tree result "+std::to_string(int(r))+
+            (detail&&*detail?std::string(": ")+detail:std::string()));
+    }
 }
 void fail(JNIEnv *e,const char *s) {
     if(e->ExceptionCheck())return;

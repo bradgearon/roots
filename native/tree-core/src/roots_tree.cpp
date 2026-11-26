@@ -26,7 +26,11 @@ using result=roots_tree_result;
 struct invalid : std::runtime_error { using std::runtime_error::runtime_error; };
 struct quota : std::runtime_error { using std::runtime_error::runtime_error; };
 void require(bool valid) { if(!valid) throw invalid("invalid argument"); }
-void check(int code) { if(code!=SQLITE_OK && code!=SQLITE_ROW && code!=SQLITE_DONE) throw std::runtime_error("sqlite"); }
+thread_local std::string last_error;
+void check(int code) {
+    if(code!=SQLITE_OK && code!=SQLITE_ROW && code!=SQLITE_DONE)
+        throw std::runtime_error("SQLite code "+std::to_string(code)+" ("+sqlite3_errstr(code)+")");
+}
 void exec(sqlite3 *db,const char *sql) { check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)); }
 struct statement {
     sqlite3_stmt *s=nullptr;
@@ -46,9 +50,11 @@ struct transaction {
     ~transaction(){if(!committed)sqlite3_exec(db,"ROLLBACK",nullptr,nullptr,nullptr);}
 };
 template<class F> result guard(F f) noexcept {
+    last_error.clear();
     try { f(); return ROOTS_TREE_OK; }
-    catch(const invalid&) { return ROOTS_TREE_INVALID; }
-    catch(const quota&) { return ROOTS_TREE_LIMIT; }
+    catch(const invalid& e) { try {last_error=e.what();} catch(...) {} return ROOTS_TREE_INVALID; }
+    catch(const quota& e) { try {last_error=e.what();} catch(...) {} return ROOTS_TREE_LIMIT; }
+    catch(const std::exception& e) { try {last_error=e.what();} catch(...) {} return ROOTS_TREE_STORAGE; }
     catch(...) { return ROOTS_TREE_STORAGE; }
 }
 void bounded(const char *s,size_t max,bool nonempty=false){
@@ -122,6 +128,7 @@ void write_gguf(std::ofstream &stream,const std::vector<row> &rows,
 }
 extern "C" {
 uint32_t roots_tree_abi_version(void){return 1;}
+const char *roots_tree_last_error(void){return last_error.c_str();}
 roots_tree_result roots_tree_open(const char *path,roots_tree **out){
     if(out)*out=nullptr;
     return guard([&]{

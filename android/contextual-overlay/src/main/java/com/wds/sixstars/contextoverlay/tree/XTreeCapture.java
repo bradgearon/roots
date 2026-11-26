@@ -52,7 +52,7 @@ public final class XTreeCapture implements AutoCloseable {
             long surface=surfaceEpoch.get(), consent=tree.captureEpoch();
             if(closed||!tree.enabled()||!overlayConsent.getAsBoolean())return;
             Frame frame=read(root.get(),width,height);
-            tree.reportScan(frame.eligible,frame.incomplete);
+            tree.reportScan(frame.eligible,frame.incomplete,frame.discovered,frame.home,frame.privateSurface);
             if(!closed&&surface==surfaceEpoch.get()&&frame.eligible&&overlayConsent.getAsBoolean())
                 tree.accept(frame.observations,consent);
         }catch(RuntimeException ignored){tree.reportScan(false,true);}
@@ -66,7 +66,8 @@ public final class XTreeCapture implements AutoCloseable {
     }
     private static final class Frame {
         final ArrayList<NativeTree.Observation> observations=new ArrayList<>();
-        boolean eligible,incomplete;
+        boolean eligible,incomplete,home,privateSurface;
+        int discovered;
     }
     private static String low(CharSequence s){return s==null?"":s.toString().toLowerCase(Locale.ROOT);}
     static boolean homeMarker(String id,String label,boolean selected) {
@@ -121,6 +122,8 @@ public final class XTreeCapture implements AutoCloseable {
                     }
                 }finally{release(node);}
             }
+            result.discovered=result.observations.size();
+            result.home=home;result.privateSurface=privateSurface;
             result.incomplete|=!queue.isEmpty()||result.observations.size()>=MAX_OBSERVATIONS;
             // A scan whose safety context was truncated cannot establish a
             // trusted route. Prefer a missed observation over a private capture.

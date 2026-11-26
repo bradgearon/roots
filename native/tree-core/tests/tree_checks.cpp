@@ -78,7 +78,9 @@ int main(){
         need(relations.size()==3&&relations[0].find("is.a")!=std::string::npos&&relations[2].find("is.in")!=std::string::npos,"edge components");
         int agents=0;ok(roots_tree_agent_list(t,agent,&agents));need(agents==1,"agent list");
         roots_observation invalid[]={{"x","4","valid","en",5},{"x","5","","en",5}};
-        need(roots_tree_observe(t,invalid,2,&added)==ROOTS_TREE_INVALID&&query(t).size()==4,"validate entire batch");
+        need(roots_tree_observe(t,invalid,2,&added)==ROOTS_TREE_INVALID,"validate entire batch");
+        need(std::strlen(roots_tree_last_error())>0,"native error detail");
+        need(query(t).size()==4,"invalid batch rollback");
         std::atomic<bool> success{true};
         std::vector<std::thread> workers;
         for(int i=0;i<4;++i)workers.emplace_back([&,i]{for(int j=0;j<25;++j){

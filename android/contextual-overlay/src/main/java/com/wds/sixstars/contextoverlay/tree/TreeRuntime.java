@@ -28,7 +28,13 @@ public final class TreeRuntime {
     }
     private final SharedPreferences prefs;
     private final OverlayPreferences overlay;
-    private final File directory, snapshot;
+    private final File directory, snapshot, diagnostics;
+    private final Object statsLock=new Object();
+    private final AtomicBoolean statsScheduled=new AtomicBoolean();
+    private final AtomicLong discovered=new AtomicLong(), accepted=new AtomicLong(),
+        queued=new AtomicLong(), queueDrops=new AtomicLong(), cancelled=new AtomicLong(),
+        invalidText=new AtomicLong(), writeAttempts=new AtomicLong(), writeFailures=new AtomicLong(),
+        noHome=new AtomicLong(), privateScans=new AtomicLong();
     private final ScheduledExecutorService writer=Executors.newSingleThreadScheduledExecutor(r->new Thread(r,"RootsTreeWriter"));
     private final ScheduledExecutorService compiler=Executors.newSingleThreadScheduledExecutor(r->new Thread(r,"RootsTreeCompiler"));
     private final ArrayBlockingQueue<Queued> queue=new ArrayBlockingQueue<>(QUEUE_LIMIT);
@@ -49,6 +55,8 @@ public final class TreeRuntime {
         overlay=new OverlayPreferences(context);
         directory=new File(context.getNoBackupFilesDir(),"roots-tree");
         snapshot=new File(directory,"tree.gguf");
+        diagnostics=new File(context.getFilesDir(),"diagnostics");
+        restoreStats();
         // Rebuild the disposable snapshot on a worker after a restart if
         // capture was explicitly enabled previously. No implicit capture consent.
         if(enabled())requestSnapshot();
@@ -62,6 +70,59 @@ public final class TreeRuntime {
             return nativeTree;
         }
     }
+    private String[] statNames(){return new String[]{"inserted","duplicate","dropped","scans","rejected","bounded",
+        "discovered","accepted","queued","queue_drops","cancelled","invalid","write_attempts","write_failures","no_home","private_scans"};}
+    private AtomicLong[] stats(){return new AtomicLong[]{inserted,duplicate,dropped,scans,rejected,truncated,
+        discovered,accepted,queued,queueDrops,cancelled,invalidText,writeAttempts,writeFailures,noHome,privateScans};}
+    private void restoreStats(){
+        String[] names=statNames();AtomicLong[] values=stats();
+        for(int i=0;i<names.length;i++)values[i].set(prefs.getLong("stat_"+names[i],0));
+        error=prefs.getString("last_tree_error","");
+    }
+    private void saveStats(){
+        synchronized(statsLock){
+            SharedPreferences.Editor e=prefs.edit();
+            String[] names=statNames();AtomicLong[] values=stats();
+            for(int i=0;i<names.length;i++)e.putLong("stat_"+names[i],values[i].get());
+            e.putString("last_tree_error",error);
+            e.commit();
+        }
+    }
+    private void scheduleStats(){
+        if(statsScheduled.compareAndSet(false,true))writer.schedule(()->{
+            statsScheduled.set(false);saveStats();
+        },1,TimeUnit.SECONDS);
+    }
+    private void trace(String event,int size,long n,String detail){
+        synchronized(statsLock){
+            try{
+                if(!diagnostics.isDirectory()&&!diagnostics.mkdirs())return;
+                File log=new File(diagnostics,"tree-lifecycle.jsonl");
+                if(log.length()>512*1024L){
+                    File previous=new File(diagnostics,"tree-lifecycle.previous.jsonl");
+                    if(previous.exists())previous.delete();
+                    if(!log.renameTo(previous))return;
+                }
+                org.json.JSONObject obj=new org.json.JSONObject();
+                obj.put("at_ms",System.currentTimeMillis());obj.put("event",event);
+                obj.put("batch",size);obj.put("result",n);obj.put("detail",detail);
+                String[] names=statNames();AtomicLong[] values=stats();
+                for(int i=0;i<names.length;i++)obj.put(names[i],values[i].get());
+                try(java.io.FileOutputStream out=new java.io.FileOutputStream(log,true)){
+                    out.write((obj.toString()+"\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+            }catch(Exception ignored){}
+        }
+    }
+    private static boolean valid(NativeTree.Observation o){
+        return o!=null&&o.source()!=null&&!o.source().isEmpty()&&o.body()!=null&&!o.body().isEmpty()
+            && o.externalId()!=null&&o.language()!=null&&o.at()>=0
+            && o.source().indexOf(0)<0&&o.body().indexOf(0)<0&&o.externalId().indexOf(0)<0&&o.language().indexOf(0)<0
+            && o.source().getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=256
+            && o.body().getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=16384
+            && o.externalId().getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=512
+            && o.language().getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=64;
+    }
     public boolean enabled(){return NativeTree.available()&&!clearing&&overlay.enabled()&&prefs.getBoolean("capture_enabled",false);}
     public long captureEpoch(){return captureEpoch.get();}
     public void setEnabled(boolean value) {
@@ -69,21 +130,34 @@ public final class TreeRuntime {
             if(value&&(!NativeTree.available()||clearing||!overlay.enabled()))return;
             prefs.edit().putBoolean("capture_enabled",value).apply();
             captureEpoch.incrementAndGet();
-            dropped.addAndGet(queue.size());queue.clear();pending.clear();
+            cancelled.addAndGet(queue.size());dropped.addAndGet(queue.size());queue.clear();pending.clear();
         }
         if(value)requestSnapshot();
+        writer.execute(()->{trace(value?"capture_enabled":"capture_paused",0,0,"");saveStats();});
     }
-    public void reportScan(boolean eligible,boolean incomplete){scans.incrementAndGet();if(!eligible)rejected.incrementAndGet();if(incomplete)truncated.incrementAndGet();}
+    public void reportScan(boolean eligible,boolean incomplete){reportScan(eligible,incomplete,0,false,false);}
+    public void reportScan(boolean eligible,boolean incomplete,int found,boolean home,boolean privateSurface){
+        scans.incrementAndGet();discovered.addAndGet(found);
+        if(!eligible)rejected.incrementAndGet();if(incomplete)truncated.incrementAndGet();
+        if(!home)noHome.incrementAndGet();if(privateSurface)privateScans.incrementAndGet();
+        scheduleStats();
+        long n=scans.get();
+        if(n==1||n%25==0)writer.execute(()->trace("scan_summary",found,eligible?1:0,
+            "home="+home+" private="+privateSurface+" bounded="+incomplete));
+    }
     void accept(List<NativeTree.Observation> observations,long epoch){
         synchronized(intakeLock){
             if(!enabled()||epoch!=captureEpoch.get())return;
+            accepted.addAndGet(observations.size());
             for(NativeTree.Observation o:observations){
+                if(!valid(o)){invalidText.incrementAndGet();dropped.incrementAndGet();continue;}
                 String key=o.body();
                 if(!pending.add(key)){duplicate.incrementAndGet();continue;}
-                if(!queue.offer(new Queued(o,epoch))){pending.remove(key);dropped.incrementAndGet();}
+                if(!queue.offer(new Queued(o,epoch))){pending.remove(key);dropped.incrementAndGet();queueDrops.incrementAndGet();}
+                else queued.incrementAndGet();
             }
         }
-        scheduleDrain();
+        scheduleStats();scheduleDrain();
     }
     private void scheduleDrain(){if(!queue.isEmpty()&&draining.compareAndSet(false,true))writer.execute(this::drain);}
     private void drain(){
@@ -96,17 +170,30 @@ public final class TreeRuntime {
             long epoch=captureEpoch.get();
             List<NativeTree.Observation> observations=new ArrayList<>();
             for(Queued q:batch)if(q.epoch==epoch)observations.add(q.observation);
+            int stale=batch.size()-observations.size();
+            cancelled.addAndGet(stale);dropped.addAndGet(stale);
             if(observations.isEmpty())return;
             synchronized(mutationLock){
-                if(!enabled()||captureEpoch.get()!=epoch)return;
+                if(!enabled()||captureEpoch.get()!=epoch){
+                    cancelled.addAndGet(observations.size());dropped.addAndGet(observations.size());return;
+                }
                 // A native transaction already started may finish after pause.
                 // Clear, if requested, is serialized after all in-flight writes.
-                long n=tree().observe(observations);
-                inserted.addAndGet(n);duplicate.addAndGet(observations.size()-n);
-                if(n>0)requestSnapshot();
+                writeAttempts.addAndGet(observations.size());
+                try{
+                    long n=tree().observe(observations);
+                    inserted.addAndGet(n);duplicate.addAndGet(observations.size()-n);
+                    trace("write_ok",observations.size(),n,"");
+                    if(n>0)requestSnapshot();
+                }catch(Exception | LinkageError e){
+                    writeFailures.addAndGet(observations.size());dropped.addAndGet(observations.size());
+                    // Native errors report status/code rather than source content.
+                    error="Tree write refused/failed: "+e.getClass().getSimpleName()+" ("+e.getMessage()+")";
+                    trace("write_error",observations.size(),0,error);
+                    android.util.Log.e("RootsTree",error);
+                }
             }
-        }catch(Exception e){dropped.addAndGet(batch.size());error="Tree write refused/failed: "+e.getClass().getSimpleName()+" ("+e.getMessage()+")";}
-        finally{draining.set(false);scheduleDrain();}
+        }finally{try{saveStats();}finally{draining.set(false);scheduleDrain();}}
     }
     public void requestSnapshot(){if(NativeTree.available()){dirty.incrementAndGet();scheduleCompile();}}
     private void scheduleCompile(){if(!clearing&&compiling.compareAndSet(false,true))compiler.schedule(this::compile,4,TimeUnit.SECONDS);}
@@ -129,7 +216,7 @@ public final class TreeRuntime {
                     snapshotStatus="Revision "+revision+" · "+snapshot.length()+" bytes";
                 }else snapshotStatus="Tree changed during compilation; retrying";
             }
-        }catch(Exception e){snapshotStatus="Compilation failed";error="GGUF compiler: "+e.getClass().getSimpleName();}
+        }catch(Exception e){snapshotStatus="Compilation failed";trace("compile_error",0,0,e.getClass().getSimpleName());}
         finally{
             if(temp!=null)try{Files.deleteIfExists(temp.toPath());}catch(Exception ignored){}
             compiling.set(false);if(!clearing&&dirty.get()!=target)scheduleCompile();
@@ -138,7 +225,11 @@ public final class TreeRuntime {
     public String status(){
         return "Capture "+(enabled()?"ON":"OFF")+" · Queue "+queue.size()+"/"+QUEUE_LIMIT+
             "\nScans "+scans.get()+" · Rejected "+rejected.get()+" · Bounded "+truncated.get()+
-            "\nStored "+inserted.get()+" · Duplicate "+duplicate.get()+" · Dropped/refused "+dropped.get()+
+            "\nDiscovered "+discovered.get()+" · Accepted "+accepted.get()+" · Queued "+queued.get()+
+            "\nWrites attempted "+writeAttempts.get()+" · Failed "+writeFailures.get()+
+            "\nLifetime inserted "+inserted.get()+" · Duplicate "+duplicate.get()+" · Dropped/refused "+dropped.get()+
+            "\nQueue full "+queueDrops.get()+" · Cancelled "+cancelled.get()+" · Invalid "+invalidText.get()+
+            "\nNo Home "+noHome.get()+" · Private "+privateScans.get()+
             "\nGGUF "+snapshotStatus+(error.isEmpty()?"":"\n"+error);
     }
     // Call these from a presentation worker, never from the UI thread.

@@ -44,6 +44,8 @@ typedef int (*roots_relation_callback)(void *user, const char *subject,
 typedef int (*roots_agent_callback)(void *user, int64_t id, const char *name, const char *term);
 
 ROOTS_TREE_API uint32_t roots_tree_abi_version(void);
+/* Thread-local diagnostic, borrowed until the next guarded call on this thread. */
+ROOTS_TREE_API const char *roots_tree_last_error(void);
 ROOTS_TREE_API roots_tree_result roots_tree_open(const char *db_path, roots_tree **out);
 ROOTS_TREE_API void roots_tree_close(roots_tree *tree);
 /* Atomic bounded batch. Exact duplicate fragments do not add knowledge. */

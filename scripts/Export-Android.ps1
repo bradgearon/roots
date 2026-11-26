@@ -4,7 +4,9 @@ param(
     [string]$Serial,
     [string]$OutputDir,
     [string]$Adb,
-    [switch]$LogsOnly
+    [switch]$LogsOnly,
+    [string]$SevenZip,
+    [switch]$NoZip
 )
 $ErrorActionPreference = 'Stop'
 $package = 'com.wds.roots'
@@ -116,7 +118,7 @@ try {
         } else { Write-Warning 'No Tree database yet. Enable capture in Roots and browse the X Home timeline.' }
         [void](Copy-PrivateFile 'no_backup/roots-tree/tree.gguf' (Join-Path $tree 'tree.gguf') $true)
     }
-    foreach ($name in @('plamo-lifecycle.jsonl','plamo-lifecycle.previous.jsonl','functiongemma-lifecycle.jsonl','functiongemma-lifecycle.previous.jsonl')) {
+    foreach ($name in @('plamo-lifecycle.jsonl','plamo-lifecycle.previous.jsonl','functiongemma-lifecycle.jsonl','functiongemma-lifecycle.previous.jsonl','tree-lifecycle.jsonl','tree-lifecycle.previous.jsonl')) {
         [void](Copy-PrivateFile "files/diagnostics/$name" (Join-Path $logs $name) $true)
     }
     $entries = @(Get-ChildItem -LiteralPath $dest -File -Recurse | ForEach-Object {
@@ -129,6 +131,42 @@ try {
     [ordered]@{ exportedUtc = [DateTime]::UtcNow.ToString('o'); package = $package; logsOnly = [bool]$LogsOnly; files = $entries } |
         ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $dest 'manifest.json') -Encoding UTF8
     if (-not $LogsOnly) { Write-Host 'Reopen Roots. Check that its accessibility service is still enabled.' }
+    if (-not $NoZip) {
+        $zip = "$dest.zip"
+        $zipExe = $null
+        if ($SevenZip) { $zipExe = (Resolve-Path -LiteralPath $SevenZip).Path }
+        else {
+            $found = Get-Command 7z.exe,7za.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $zipExe = $found.Source }
+            else {
+                foreach ($root in @($env:ProgramFiles,${env:ProgramFiles(x86)},$env:LOCALAPPDATA)) {
+                    if (-not $root) { continue }
+                    $candidate = Join-Path $root '7-Zip\7z.exe'
+                    if (Test-Path -LiteralPath $candidate -PathType Leaf) { $zipExe = $candidate; break }
+                }
+            }
+        }
+        try {
+            if ($zipExe) {
+                Push-Location -LiteralPath $OutputDir
+                try {
+                    & $zipExe a -tzip -mx=5 $zip (Split-Path -Leaf $dest)
+                    if ($LASTEXITCODE -ne 0) { throw '7-Zip archive creation failed.' }
+                    & $zipExe t $zip
+                    if ($LASTEXITCODE -ne 0) { throw '7-Zip archive verification failed.' }
+                } finally { Pop-Location }
+            } else {
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                [IO.Compression.ZipFile]::CreateFromDirectory($dest,$zip,[IO.Compression.CompressionLevel]::Optimal,$true)
+                $check = [IO.Compression.ZipFile]::OpenRead($zip)
+                try { if ($check.Entries.Count -eq 0) { throw 'Archive has no entries.' } } finally { $check.Dispose() }
+            }
+            Write-Host "ZIP archive: $zip"
+        } catch {
+            if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+            throw
+        }
+    }
     Write-Host "Export complete: $dest"
     if ($entries.Count -eq 0) { Write-Warning 'No requested files were present.' }
     exit 0
