@@ -143,7 +143,7 @@ static void unload_model(model_slot &slot) {
     if(slot.model){llama_model_free(slot.model);slot.model=nullptr;}
     slot.backend="unloaded";
 }
-static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings,jint requested_threads,model_slot &slot,bool functions) {
+static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings,jint requested_threads,model_slot &slot,bool functions,jobject listener=nullptr) {
     std::lock_guard<std::mutex> lock(gate);
     // Contexts are independent but computation is serialized across model slots.
     // Reuse allocations, never retain a previous request's attention state.
@@ -193,6 +193,18 @@ static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings
         sampler.reset(llama_sampler_init_greedy());
         if(!sampler)throw std::runtime_error("Could not allocate sampler");
         std::string out;
+        jmethodID callback=nullptr;
+        if(listener){auto cls=env->GetObjectClass(listener);callback=env->GetMethodID(cls,"onPrefix","([B)V");env->DeleteLocalRef(cls);if(!callback||env->ExceptionCheck())return nullptr;}
+        size_t sent=0;auto last=clock_type::now();
+        auto emit=[&](bool final){
+            if(!callback||out.size()<=sent||(!final&&sent&&elapsed_ms(last)<40))return;
+            auto bytes=env->NewByteArray(static_cast<jsize>(out.size()));
+            if(!bytes||env->ExceptionCheck())throw std::runtime_error("stream allocation");
+            env->SetByteArrayRegion(bytes,0,static_cast<jsize>(out.size()),reinterpret_cast<const jbyte*>(out.data()));
+            if(!env->ExceptionCheck())env->CallVoidMethod(listener,callback,bytes);
+            env->DeleteLocalRef(bytes);if(env->ExceptionCheck())throw std::runtime_error("stream callback");
+            sent=out.size();last=clock_type::now();
+        };
         // Five compact movement resolutions must fit in a single call.
         // Ordinary function proposals retain their previous 160-token budget.
         const bool movement=functions&&prompt.find("declaration:resolve_movements{")!=std::string::npos;
@@ -225,11 +237,13 @@ static jbyteArray generate_model(JNIEnv *env,jbyteArray input,jlongArray timings
                 auto stop=out.find("<|plamo:");
                 if(stop!=std::string::npos){out.resize(stop);break;}
             }
+            emit(false);
             if(i==max_output-1)break;
             int rc=llama_decode(ctx,llama_batch_get_one(&token,1));
             if(rc)throw std::runtime_error("Generation decode code "+std::to_string(rc));
         }
         llama_synchronize(ctx);stats[4]=elapsed_ms(start);
+        emit(true);
         stage="result transfer";
         env->SetLongArrayRegion(timings,0,8,stats);
         if(env->ExceptionCheck())return nullptr;
@@ -259,3 +273,6 @@ extern "C" JNIEXPORT void JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaM
 extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_generateFunction(JNIEnv *env,jclass,jbyteArray input,jlongArray timings,jint threads) {
     return generate_model(env,input,timings,threads,function_slot,true);
 }
+
+extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_generateStreaming(JNIEnv *env,jclass,jbyteArray input,jlongArray timings,jint threads,jobject listener) {return generate_model(env,input,timings,threads,translation_slot,false,listener);}
+extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_generateFunctionStreaming(JNIEnv *env,jclass,jbyteArray input,jlongArray timings,jint threads,jobject listener) {return generate_model(env,input,timings,threads,function_slot,true,listener);}

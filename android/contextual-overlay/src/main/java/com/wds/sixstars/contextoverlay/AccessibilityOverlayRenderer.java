@@ -147,6 +147,13 @@ public final class AccessibilityOverlayRenderer {
         if (automaticMode) autoInline.setActiveTranslations(ids);
     }
 
+    public void showAutoPartial(TextCandidate candidate,String prefix){if(automaticMode)autoInline.partial(candidate,prefix);}
+    public void clearAutoPartial(String fingerprint){autoInline.clearPartial(fingerprint);}
+    public void updateDetailPartial(TextCandidate candidate,String prefix){
+        if(detail instanceof TextView && candidate.fingerprint.equals(detailFingerprint)&&onScreen(candidate)){
+            detailText=prefix;StreamText.reveal((TextView)detail,prefix);positionDetail(candidate);
+        }
+    }
     public void showAutoTranslation(TextCandidate candidate, String translation) {
         if (automaticMode) autoInline.show(candidate, translation);
     }

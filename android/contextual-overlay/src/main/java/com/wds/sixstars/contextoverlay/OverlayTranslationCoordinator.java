@@ -299,11 +299,22 @@ public final class OverlayTranslationCoordinator {
                     publishActivity();
                 });
             }
+            @Override public void partial(String prefix){
+                if(prefix==null||prefix.trim().isEmpty()||delivered.get())return;
+                main.post(()->{
+                    if(destroyed||!active||delivered.get()||epoch!=consentEpoch||!preferences.enabled()||!target.equals(preferences.targetLanguage())||!submittedProfile.equals(profile()))return;
+                    TextCandidate current=match(latestCandidates,candidate.fingerprint);
+                    if(current==null)return;
+                    if(preferences.autoPreview()&&demand.trusted()&&shouldTranslateAutomatically(current,target))renderer.showAutoPartial(current,prefix);
+                    else if(manualCandidate!=null&&k.equals(key(manualCandidate,manualTarget)))renderer.updateDetailPartial(current,prefix);
+                });
+            }
             @Override public void completed(String translated,String error){
             if(!delivered.compareAndSet(false,true))return;
             final long elapsed=SystemClock.elapsedRealtime()-submittedAt;
             main.post(()->{
             executing.remove(k);
+            renderer.clearAutoPartial(candidate.fingerprint);
             publishActivity();
             // Always release the actual outstanding request, including on
             // scroll, mode changes and X exit. Duplicate callbacks are ignored.

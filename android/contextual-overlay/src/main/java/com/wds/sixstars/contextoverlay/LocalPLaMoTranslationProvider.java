@@ -163,7 +163,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                 long inferenceStart=SystemClock.elapsedRealtime();
                 trace(app,stage,"start",inferenceStart,"runtime="+revision+" requested_backend="+requestedBackend+" requested_threads="+threads,null,queueMs);
                 long[] stats=new long[8];
-                byte[] result=Native.generate(prompt.getBytes(StandardCharsets.UTF_8),stats,threads);
+                byte[] result=Native.generateStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,threads,bytes->{if(preferences.enabled()&&!preferences.desktopTranslationEnabled())callback.partial(StreamText.translationPreview(bytes));});
                 if(result==null)throw new IllegalStateException("Native runtime returned no result buffer");
                 trace(app,stage,"ok",inferenceStart,"runtime="+revision+" "+loadedAcceleration+" result_bytes="+result.length,stats,queueMs);
                 String translated=new String(result,StandardCharsets.UTF_8).trim();
@@ -177,6 +177,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         });}catch(Exception busy){callback.completed(null,"Translation queue is busy.");}
     }
     // Keep all JNI declarations here so the separate brain build validates its complete ABI.
+    interface PrefixListener { void onPrefix(byte[] prefix); }
     static class Native {
         static { System.loadLibrary("roots_plamo"); }
         static void ensure(){}
@@ -189,5 +190,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         static native void loadFunction(String path);
         static native void unloadFunction();
         static native byte[] generateFunction(byte[] prompt,long[] stats,int threads);
+        static native byte[] generateStreaming(byte[] prompt,long[] stats,int threads,PrefixListener listener);
+        static native byte[] generateFunctionStreaming(byte[] prompt,long[] stats,int threads,PrefixListener listener);
     }
 }

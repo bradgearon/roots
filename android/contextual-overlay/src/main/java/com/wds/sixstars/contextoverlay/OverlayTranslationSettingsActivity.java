@@ -317,11 +317,15 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             boolean local=!prefs.desktopTranslationEnabled();
             String acceleration=local?(prefs.localVulkanEnabled()?"Vulkan requested":"CPU")+" / "+prefs.localThreads()+" threads":"Desktop";
             TranslationRuntime.provider(this).translate("Bonjour à tous!", "fr", prefs.targetLanguage(),
-                (result, error) -> runOnUiThread(() -> {
+                new TranslationProvider.Result(){
+                @Override public void partial(String text){runOnUiThread(()->{if(!isDestroyed())StreamText.reveal(preview,text);});}
+                @Override public void completed(String result,String error){runOnUiThread(() -> {
+                    if(isDestroyed())return;
                     sample.setEnabled(true);
                     preview.setText((error == null ? "PLaMo: " + result : "Cannot translate: " + error) +
                         "\nTransport: " + TranslationRuntime.transportStatus() + "\n" + acceleration + "\nElapsed: " + (android.os.SystemClock.elapsedRealtime()-start) + " ms");
-                }));
+                });}
+                });
         });
 
         content=RootsUi.section(this,sections,"FunctionGemma","Local micro-cognition and operation proposals",false);
@@ -349,10 +353,14 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         functionSample.setOnClickListener(v->{
             functionSample.setEnabled(false);
             functionStatus.setText("Inspecting the request locally…");
-            LocalFunctionGemmaProvider.propose(this,functionInput.getText().toString(),(message,error)->runOnUiThread(()->{
-                functionSample.setEnabled(true);
-                functionStatus.setText(error==null?message:error);
-            }));
+            LocalFunctionGemmaProvider.propose(this,functionInput.getText().toString(),new LocalFunctionGemmaProvider.Result(){
+                @Override public void partial(String prefix){runOnUiThread(()->{if(!isDestroyed())StreamText.reveal(functionStatus,prefix);});}
+                @Override public void completed(String message,String error){runOnUiThread(()->{
+                    if(isDestroyed())return;
+                    functionSample.setEnabled(true);
+                    functionStatus.setText(error==null?message:error);
+                });}
+            });
         });
         Button functionRelease=button("Release FunctionGemma memory");
         content.addView(functionRelease);

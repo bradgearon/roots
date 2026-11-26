@@ -14,6 +14,8 @@ public interface TranslationProvider {
     interface Result {
         /** Local inference begins, or remote dispatch begins (not remote GPU execution). */
         default void started() {}
+        /** Cumulative provisional text; never cache as final. */
+        default void partial(String prefix) {}
         void completed(String translation, String error);
     }
 

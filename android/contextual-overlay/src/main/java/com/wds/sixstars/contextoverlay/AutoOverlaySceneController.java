@@ -58,6 +58,7 @@ final class AutoOverlaySceneController {
                     return size() > MAX_STORED_TRANSLATIONS;
                 }
             };
+    private final Map<String, TranslationState> partials = new HashMap<>();
     private final Map<String, Controls> controls = new HashMap<>();
     private final Set<String> activeTranslations = new HashSet<>();
 
@@ -200,9 +201,17 @@ final class AutoOverlaySceneController {
     }
 
     /** A translation arrives without any AccessibilityService tree scan. */
+    void publishPartial(String id,String prefix){
+        if(destroyed||!positions.contains(id)||prefix==null||prefix.trim().isEmpty()||translations.containsKey(id))return;
+        TranslationState state=partials.get(id);
+        if(state==null){state=new TranslationState(id);partials.put(id,state);}
+        if(!prefix.equals(state.translation)){state.translation=prefix;state.invalidateLayout();frames.request();}
+    }
+    void clearPartial(String id){if(partials.remove(id)!=null)frames.request();}
     void publishTranslation(String fingerprint, String translation) {
         if (destroyed || fingerprint == null || translation == null ||
                 translation.trim().isEmpty() || !positions.contains(fingerprint)) return;
+        clearPartial(fingerprint);
         TranslationState state = translations.get(fingerprint);
         if (state == null) {
             state = new TranslationState(fingerprint);
@@ -230,6 +239,8 @@ final class AutoOverlaySceneController {
         for (AutoOverlayPositionStore.Located item : located) {
             boolean name=item.id.startsWith("name:");
             TranslationState state=translations.get(item.id);
+            boolean streaming=state==null&&partials.containsKey(item.id);
+            if(streaming)state=partials.get(item.id);
             if(state==null || state.translation==null){
                 removeNameAction(item.id);
                 removeTweetAction(item.id);
@@ -248,6 +259,12 @@ final class AutoOverlaySceneController {
                     item.rectangle.x,item.rectangle.y,item.rectangle.width,item.rectangle.height,
                     palette.background,state.inlineLayout));
             translatedCount++;
+            if(streaming){
+                removeNameAction(item.id);removeTweetAction(item.id);
+                int size=Math.min(dp(4),Math.min(item.rectangle.width,item.rectangle.height));
+                if(size>0)painted.add(new AutoOverlaySceneView.TextItem(item.rectangle.x+item.rectangle.width-size,item.rectangle.y,size,size,0xFF7BC4BB,null));
+                continue;
+            }
             if(name){
                 removeTweetAction(item.id);
                 if(state.needsMore && item.nameDetails!=null)
@@ -486,7 +503,7 @@ final class AutoOverlaySceneController {
         destroyed = true;
         clear();
         frames.stop();
-        translations.clear();
+        partials.clear();translations.clear();
     }
 
     private final class TranslationState {

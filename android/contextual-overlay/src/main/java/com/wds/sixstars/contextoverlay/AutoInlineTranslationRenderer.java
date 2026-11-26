@@ -39,6 +39,8 @@ public final class AutoInlineTranslationRenderer {
     }
 
     /** Model callback: text only, no accessibility-tree traversal. */
+    public void partial(TextCandidate candidate,String prefix){scene.publishPartial(candidate.fingerprint,prefix);}
+    public void clearPartial(String id){scene.clearPartial(id);}
     public void show(TextCandidate candidate, String translation) {
         if (candidate != null) scene.publishTranslation(candidate.fingerprint, translation);
     }

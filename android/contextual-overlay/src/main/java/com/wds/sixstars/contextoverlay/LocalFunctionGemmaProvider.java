@@ -27,7 +27,7 @@ public final class LocalFunctionGemmaProvider {
     private static long verifiedLength=-1,verifiedModified=-1;
     private static boolean loaded=false;
     private LocalFunctionGemmaProvider(){}
-    public interface Result { void completed(String message,String error); }
+    public interface Result { default void partial(String prefix){} void completed(String message,String error); }
     private static File model(Context c){
         File dir=c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
         if(dir==null)throw new IllegalStateException("App download directory unavailable.");
@@ -145,7 +145,7 @@ public final class LocalFunctionGemmaProvider {
                 String firstPrompt=PoeticMovement.selectionPrompt(input);
                 long[] firstStats=new long[8];
                 long firstStart=SystemClock.elapsedRealtime();
-                String first=movementGenerate(firstPrompt,firstStats,threads);
+                String first=movementGenerate(firstPrompt,firstStats,threads,prefix->result.progress("selection_stream",prefix));
                 trace(app,stage,"ok",firstStart,firstStats,start-submitted);
                 java.util.List<PoeticMovement.Pair> pairs;
                 try{pairs=PoeticMovement.parseSelection(input,first);}
@@ -157,7 +157,7 @@ public final class LocalFunctionGemmaProvider {
                 stage="movement_resolve";
                 result.progress(stage,"Request 2 / 2: replacing ordinary actions and resolving differences…");
                 long[] secondStats=new long[8];long secondStart=SystemClock.elapsedRealtime();
-                String second=movementGenerate(PoeticMovement.resolutionPrompt(input,pairs),secondStats,threads);
+                String second=movementGenerate(PoeticMovement.resolutionPrompt(input,pairs),secondStats,threads,prefix->result.progress("resolution_stream",prefix));
                 trace(app,stage,"ok",secondStart,secondStats,0);
                 java.util.List<PoeticMovement.Resolution> resolutions;
                 try{resolutions=PoeticMovement.parseResolution(input,second);}
@@ -172,8 +172,8 @@ public final class LocalFunctionGemmaProvider {
             }
         });}catch(java.util.concurrent.RejectedExecutionException e){result.completed(null,"Local inference queue is busy.");}
     }
-    private static String movementGenerate(String prompt,long[] stats,int threads){
-        byte[] out=LocalPLaMoTranslationProvider.Native.generateFunction(prompt.getBytes(StandardCharsets.UTF_8),stats,threads);
+    private static String movementGenerate(String prompt,long[] stats,int threads,java.util.function.Consumer<String> progress){
+        byte[] out=LocalPLaMoTranslationProvider.Native.generateFunctionStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,threads,bytes->progress.accept(StreamText.functionPreview(bytes)));
         if(out==null)throw new IllegalStateException("Native runtime returned no result.");
         return new String(out,StandardCharsets.UTF_8);
     }
@@ -199,7 +199,7 @@ public final class LocalFunctionGemmaProvider {
                     trace(c,"model_load","ok",loadStart,null,queueMs);
                 }
                 stage="inference";long inferenceStart=SystemClock.elapsedRealtime();stats=new long[8];
-                byte[] output=LocalPLaMoTranslationProvider.Native.generateFunction(prompt.getBytes(StandardCharsets.UTF_8),stats,new OverlayPreferences(c).localThreads());
+                byte[] output=LocalPLaMoTranslationProvider.Native.generateFunctionStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,new OverlayPreferences(c).localThreads(),bytes->result.partial(StreamText.functionPreview(bytes)));
                 if(output==null)throw new IllegalStateException("Native runtime returned no result.");
                 trace(c,"inference","ok",inferenceStart,stats,queueMs);
                 stage="validate_proposal";

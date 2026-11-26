@@ -70,6 +70,8 @@ public final class PoeticMovementActivity extends Activity {
             @Override public void progress(String stage,String message){runOnUiThread(()->{
                 if(closed)return;
                 switch(stage){
+                    case "selection_stream":StreamText.reveal(selected,message);break;
+                    case "resolution_stream":StreamText.reveal(resolved,message);break;
                     case "selected":selected.setText(message);break;
                     case "invalid_selection":selected.setText("Invalid model output:\n"+message);break;
                     case "invalid_resolution":resolved.setText("Invalid model output:\n"+message);break;
