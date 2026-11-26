@@ -1,0 +1,28 @@
+name: Roots Native Tree Core
+on:
+  pull_request:
+    paths:
+      - 'native/tree-core/**'
+      - '.github/workflows/roots-native-tree.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - run: cmake -S native/tree-core -B build/tree-core -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/tree-core --parallel
+      - run: ctest --test-dir build/tree-core --output-on-failure
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: pwsh
+        run: vcpkg install sqlite3:x64-windows-static-md
+      - shell: pwsh
+        run: cmake -S native/tree-core -B build/tree-core -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+      - run: cmake --build build/tree-core --config Release --parallel
+      - run: ctest --test-dir build/tree-core -C Release --output-on-failure
