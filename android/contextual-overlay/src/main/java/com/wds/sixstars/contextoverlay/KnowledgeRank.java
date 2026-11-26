@@ -48,7 +48,7 @@ final class KnowledgeRank {
             Set<String> words=vocabulary.get(record.key());double connection=0;
             for(String word:words)connection+=Math.log1p(Math.max(0,frequency.getOrDefault(word,0)-1));
             if(!words.isEmpty())connection/=words.size();
-            boolean linked=!XPostLink.canonical(record.latest("link")).isEmpty();
+            boolean linked=!XPostLink.forRecord(record).isEmpty();
             boolean localized=language.equals(body.language());
             double age=Math.max(0,now-body.at())/86400000.0;
             String id=record.key().startsWith("local:mesh:")?record.key().substring(11):"";

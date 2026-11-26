@@ -16,8 +16,10 @@ import java.util.Locale;
 public final class KnowledgeRecordAdapter extends BaseAdapter {
     private final Activity activity;
     private final List<NativeTree.Master> rows;
-    public KnowledgeRecordAdapter(Activity activity,List<NativeTree.Master> rows){
-        this.activity=activity;this.rows=rows;
+    private final java.util.Map<String,KnowledgeRank.Ranked> ranks;
+    public KnowledgeRecordAdapter(Activity activity,List<NativeTree.Master> rows){this(activity,rows,null);}
+    KnowledgeRecordAdapter(Activity activity,List<NativeTree.Master> rows,java.util.Map<String,KnowledgeRank.Ranked> ranks){
+        this.activity=activity;this.rows=rows;this.ranks=ranks;
     }
     @Override public int getCount(){return rows.size();}
     @Override public Object getItem(int p){return rows.get(p);}
@@ -25,31 +27,51 @@ public final class KnowledgeRecordAdapter extends BaseAdapter {
     @Override public boolean hasStableIds(){return true;}
     @Override public View getView(int p,View convert,ViewGroup parent){
         NativeTree.Master record=rows.get(p);
-        NativeTree.Fragment body=record.body();
+        String localLanguage=new OverlayPreferences(activity).targetLanguage();
+        NativeTree.Fragment originalBody=record.body(),body=record.localized(localLanguage);
+        boolean translated=body.source().endsWith(".translation");
+        boolean home=ranks!=null;
+        boolean mesh=record.key().startsWith("local:mesh:");
         LinearLayout outer=RootsUi.column(activity);
         LinearLayout card=RootsUi.card(activity,outer);
         boolean grouped=!record.key().isEmpty();
         String author=grouped?record.first("author"):"";
         String handle=grouped?record.first("handle"):"";
-        card.addView(RootsUi.text(activity,grouped?"X · Post record":"Raw observation",12,RootsUi.ACCENT,true));
+        card.addView(RootsUi.text(activity,mesh?"ROOTS MESH · REMEMBRANCE":grouped?"X · KNOWLEDGE":"RAW OBSERVATION",12,RootsUi.ACCENT,true));
+        String topic=record.latest("topic");if(!topic.isEmpty())card.addView(RootsUi.text(activity,topic,18,RootsUi.TEXT,true));
         if(!author.isEmpty())card.addView(RootsUi.text(activity,author,17,RootsUi.TEXT,true));
         if(!handle.isEmpty())card.addView(RootsUi.text(activity,handle,13,RootsUi.MUTED,false));
         String language=body.language().isEmpty()?"Language unknown":body.language().toUpperCase(Locale.ROOT);
-        card.addView(RootsUi.text(activity,language+" · "+DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(new Date(body.at())),12,RootsUi.MUTED,false));
+        card.addView(RootsUi.text(activity,language+(translated?" · translated":localLanguage.equals(body.language())?" · local language":" · original, not localized")+" · "+DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(new Date(originalBody.at())),12,RootsUi.MUTED,false));
         TextView original=RootsUi.text(activity,body.body(),16,RootsUi.TEXT,false);
-        original.setTextIsSelectable(true);
+        original.setTextIsSelectable(!home);
+        if(home)original.setMaxLines(9);
         original.setPadding(0,RootsUi.dp(activity,8),0,RootsUi.dp(activity,8));
         original.setLineSpacing(RootsUi.dp(activity,3),1f);card.addView(original);
-        if(grouped){
+        if(grouped&&!home){
+            if(body.sequence()!=originalBody.sequence())card.addView(RootsUi.text(activity,"Original · "+originalBody.body(),13,RootsUi.MUTED,false));
             for(NativeTree.Fragment f:record.members()){
-                if(f.sequence()==body.sequence()||f.source().endsWith(".author")||f.source().endsWith(".handle"))continue;
+                if(f.sequence()==body.sequence()||f.sequence()==originalBody.sequence()||f.source().endsWith(".author")||f.source().endsWith(".handle")||f.source().endsWith(".offer"))continue;
                 String role=f.source().substring(f.source().lastIndexOf('.')+1);
                 String label=role.replace('-',' ');
                 TextView member=RootsUi.text(activity,label+" · "+f.body(),13,RootsUi.MUTED,false);
                 member.setTextIsSelectable(true);card.addView(member);
             }
         }
-        String footer=grouped?record.members().size()+" associated fragments · local record #"+record.sequence():
+        if(home){
+            KnowledgeRank.Ranked rank=ranks.get(record.key());
+            if(rank!=null){
+                if(!rank.branches().isEmpty())card.addView(RootsUi.text(activity,"Branches · "+String.join("  /  ",rank.branches()),13,RootsUi.ACCENT,false));
+                String metrics=rank.relations()+" relation types"+(rank.replicas()>0?" · "+rank.replicas()+" observed peers":"")+(rank.demand()>0?" · "+rank.demand()+" observed wants":"");
+                card.addView(RootsUi.text(activity,metrics,12,RootsUi.MUTED,false));
+            }
+            String metrics="";for(String role:new String[]{"reply-count","repost-count","like-count","view-count"}){
+                String value=record.latest(role);if(!value.isEmpty())metrics+=(metrics.isEmpty()?"":"  ·  ")+role.replace("-count","")+" "+value;
+            }
+            if(!metrics.isEmpty())card.addView(RootsUi.text(activity,metrics,12,RootsUi.MUTED,false));
+        }
+        String footer=home?(XPostLink.forRecord(record).isEmpty()?"Tap for details · link not captured":"Open original on X  ↗  ·  hold for options"):
+            grouped?record.members().size()+" associated fragments · local record #"+record.sequence():
             body.source()+" · fragment #"+body.sequence();
         TextView foot=RootsUi.text(activity,footer,12,RootsUi.MUTED,false);
         foot.setPadding(0,RootsUi.dp(activity,8),0,0);card.addView(foot);

@@ -132,7 +132,7 @@ public final class MeshActivity extends Activity {
         EditText topic=new EditText(activity);topic.setHint("Topic / wanted label");topic.setSingleLine(true);topic.setFilters(new InputFilter[]{new InputFilter.LengthFilter(120)});box.addView(topic);
         EditText text=new EditText(activity);text.setHint("Shareable remembrance");text.setMinLines(4);text.setFilters(new InputFilter[]{new InputFilter.LengthFilter(3000)});box.addView(text);
         EditText link=new EditText(activity);link.setHint("Optional public X post URL");link.setSingleLine(true);
-        if(record!=null)link.setText(XPostLink.canonical(record.latest("link")));
+        if(record!=null)link.setText(XPostLink.forRecord(record));
         box.addView(link);
         EditText language=new EditText(activity);language.setHint("Language code");language.setSingleLine(true);language.setText(new OverlayPreferences(activity).targetLanguage());language.setFilters(new InputFilter[]{new InputFilter.LengthFilter(3)});box.addView(language);
         // Use explicit dark input colors even when invoked from the settings theme.

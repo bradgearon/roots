@@ -4,6 +4,11 @@ import java.util.Locale;
 /** Exact X status links only; never construct a post ID from a local hash. */
 public final class XPostLink {
     private XPostLink(){}
+    static String forRecord(com.wds.sixstars.contextoverlay.tree.NativeTree.Master record){
+        String confirmed=canonical(record.latest("link-confirmed"));
+        if(!confirmed.isEmpty())return confirmed;
+        return canonical(record.latest("link"));
+    }
     public static String canonical(String raw){
         try{
             URI uri=new URI(raw.trim());String host=uri.getHost();
@@ -11,7 +16,7 @@ public final class XPostLink {
             host=host.toLowerCase(Locale.ROOT);
             if(!host.equals("x.com")&&!host.equals("www.x.com")&&!host.equals("twitter.com")&&!host.equals("www.twitter.com"))return "";
             String path=uri.getPath();
-            if(path==null||!path.matches("/(?:[A-Za-z0-9_]{1,25}/status|i/web/status)/[0-9]{1,25}/?"))return "";
+            if(path==null||!path.matches("/(?:[A-Za-z0-9_]{1,25}/status|i/(?:web/)?status)/[0-9]{1,25}/?"))return "";
             return "https://x.com"+path.replaceFirst("/$","");
         }catch(Exception e){return "";}
     }
