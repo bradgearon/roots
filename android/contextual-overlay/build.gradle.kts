@@ -70,7 +70,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     if (usePrebuiltBrain) {
-        sourceSets.getByName("main").jniLibs.srcDir(brainJniDir)
+        // AGP 9.2+ getter exposes a legacy source-set type (Google issue 550220873).
+        sourceSets {
+            named("main").configure {
+                jniLibs.srcDir(brainJniDir)
+            }
+        }
         if (rootsTreeEnabled.get().toBoolean()) {
             externalNativeBuild { cmake { path = file("../../native/tree-core/CMakeLists.txt"); version = "3.22.1" } }
         }
