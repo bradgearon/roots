@@ -1,10 +1,14 @@
-# Tendrils — predicate-directed development
+# Lily Tendrils — predicate-directed semantic development
 
 Status: design proposal; native v1 currently implements literal-interest branches, not the full Tendril engine. Copyright (c) 2026 We Develop Software LLC. All rights reserved. See [LICENSE](../LICENSE).
 
+## ChristEye structural distinction
+
+Tendrils are Lily structures. Lily performs semantic recognition and relationship-directed growth, including recognition of previously developed relations and historical context. Neuronal structures work with knowledge semantics, retention and activation; Lily emphasizes the semantic relations between meanings. This is a complementary functional distinction, not a claim that neurons lack semantic processing or a verified biological cell-type assignment. The two layers can exchange scoped references, activations and evidence without collapsing their independent weight spaces. The user's Lily assignment is the design direction; exact canonical machine bindings and biological correspondence remain to be reconciled.
+
 ## Definition
 
-A Tendril is a lightweight, persistent developmental process. Its sensor queries for relationships, not merely strings. It can seek what something is, where it originates, what it belongs to, what inspired it, or what it is used for. When the sensor finds a candidate, the Tendril proposes a link, builds a node, branches or grows the Tree, subject to judgment. Higher-level agents coordinate many Tendrils according to an intention; they are not one thread or model instance per Tendril.
+A Lily Tendril is a lightweight, persistent developmental process. Its sensor queries for relationships, not merely strings. It can seek what something is, where it originates, what it belongs to, what inspired it, or what it is used for. When the sensor finds a candidate, the Tendril proposes a link, builds a node, branches or grows the Tree, subject to judgment. Higher-level agents coordinate many Tendrils according to an intention; they are not one thread or model instance per Tendril.
 
 The canonical relationship has a subject, ordered predicate components and object, with evidence, direction, epistemic status, scope, time, source and version. Predicate components such as is, a, in, part, of, inspired, by are reusable grammatical tokens rather than an ever-growing class hierarchy. Their grammatical role and semantic meaning are distinct. is.a, is.in, is.part.of, inspired.by, is.used.for and depends.on can be composed; order and direction matter. Do not conflate classification, containment, membership, part-whole, origin, similarity and causality. A shared component is not proof of equivalent meaning.
 
@@ -12,7 +16,7 @@ The canonical relationship has a subject, ordered predicate components and objec
 
 Keep exact identities and authoritative evidence alongside derived numerical weights. A candidate profile defines vocabulary, token IDs, ordered component sequence, position/role, dimensions, numeric encoding and version. For a first reference experiment encode components with one-hot or sparse weights, then compare learned low-dimensional representations.
 
-Let P[r,k,c] be the component weight for predicate r, position k and component c. A sensor S[k,c] supplies sensitivities; a bounded score can combine dot products or cosine similarity with exact direction/type constraints. Do not treat this score as truth or confidence. Component overlap can suggest candidate predicates; retain exact IDs even when representations are near one another. Tensor merging means compositional association, pooling or separately validated learning, not destructive union of distinct semantics. Compare order-aware and bag-of-components baselines; evaluate opposites and role reversal.
+Lily's sensor tensors are distinct from neuronal knowledge representations; a sensor may use a neuronal activation as a starting context but must not overwrite neuronal knowledge weights when learning a semantic relation. Let P[r,k,c] be the component weight for predicate r, position k and component c. A sensor S[k,c] supplies sensitivities; a bounded score can combine dot products or cosine similarity with exact direction/type constraints. Do not treat this score as truth or confidence. Component overlap can suggest candidate predicates; retain exact IDs even when representations are near one another. Tensor merging means compositional association, pooling or separately validated learning, not destructive union of distinct semantics. Compare order-aware and bag-of-components baselines; evaluate opposites and role reversal.
 
 A conceptual sparse relationship tensor T[subject,predicate,object] can be traversed and contracted with sensor weights without materializing the full dense Cartesian product. Typed path composition proposes candidates only: A is part of B and B is used for C do not by themselves prove A is used for C. Keep independent evidence and judgment before promotion. Evidence strength, semantic similarity, association strength, activation, preference and provenance are separate axes.
 
@@ -39,7 +43,7 @@ Observe -> activate -> query -> receive -> propose -> judge -> commit -> grow or
 
 ## C++ service implementation
 
-Use passive records and service-owned logic. PredicateVocabulary/PredicateComposer, TendrilSensor, TendrilScheduler, GrowthService, JudgmentService, TreeCompiler. A bounded shared worker pool handles sensor queries and candidate formation; a serialized transactional writer commits accepted changes; independent compilation reads a pinned revision. Persistent queue/checkpoints, per-Tendril budgets, cancellation, cycle suppression, maximum depth/fanout, dedup and policy revalidation. Favor event-triggered wakeups rather than polling. Do not block accessibility, feed rendering or translation on cognition. Batch numerical work across active Tendrils, optionally use SIMD/GPU after CPU measurement. No thread or LLM per Tendril. Agents translate user intentions into permitted sensor plans; external source access is explicitly scoped.
+Use passive records and service-owned logic. PredicateVocabulary/PredicateComposer, LilyTendrilSensor, LilyTendrilScheduler, GrowthService, JudgmentService, TreeCompiler. Lily owns sensor configuration and recognition/growth proposals; neuronal knowledge retrieval supplies context, and judgment gates authoritative changes. A bounded shared worker pool handles sensor queries and candidate formation; a serialized transactional writer commits accepted changes; independent compilation reads a pinned revision. Persistent queue/checkpoints, per-Tendril budgets, cancellation, cycle suppression, maximum depth/fanout, dedup and policy revalidation. Favor event-triggered wakeups rather than polling. Do not block accessibility, feed rendering or translation on cognition. Batch numerical work across active Tendrils, optionally use SIMD/GPU after CPU measurement. No thread or LLM per Tendril. Agents translate user intentions into permitted sensor plans; external source access is explicitly scoped.
 
 ## First implementation increments
 
@@ -51,6 +55,7 @@ Use passive records and service-owned logic. PredicateVocabulary/PredicateCompos
 
 ## Acceptance
 
+- A Lily sensor queries and develops a semantic relation using neuronal knowledge context without modifying neuronal weights or treating a semantic match as truth.
 - is.a and is.in share is without becoming equivalent; is.part.of is distinguishable from contains; inspired.by does not reverse direction.
 - Repeated identical observations cannot strengthen a claim as independent evidence.
 - A Tendril can link a known node or propose a new node, with evidence and judgment; failed or stale proposals do not mutate the Tree.
