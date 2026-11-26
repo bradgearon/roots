@@ -123,6 +123,23 @@ def remote_head(url, ref):
     return lines[-1].split()[0]
 
 
+def official_status(branch):
+    # Read the small manifest repository, not the entire platform.
+    with tempfile.TemporaryDirectory(prefix="roots-upstream-") as tmp:
+        directory = Path(tmp)
+        run(["git", "init", "-q", directory])
+        run(["git", "fetch", "--quiet", "--depth=1", MANIFEST_URL, branch], cwd=directory)
+        commit = git(directory, "rev-parse", "FETCH_HEAD")
+        xml = git(directory, "show", "FETCH_HEAD:default.xml")
+        root = ET.fromstring(xml)
+        require(not any(root.findall(tag) for tag in ("include", "extend-project", "remove-project")),
+                "Official manifest layout changed; use Repo to resolve it before checking updates")
+        revision = launcher_project(xml)
+        print("Official manifest (" + branch + "): " + commit)
+        print("Official Launcher3 revision: " + str(revision))
+        print("Official Launcher3 head: " + remote_head(LAUNCHER_URL, revision))
+
+
 def status(args):
     aosp = args.aosp
     branch = args.branch or DEFAULT_BRANCH
@@ -135,7 +152,7 @@ def status(args):
         print("Official Launcher3 head: " + remote_head(
             LAUNCHER_URL, launcher_project(source_manifest(aosp, False))), flush=True)
         print("Local manifest HEAD: " + git(aosp / ".repo/manifests", "rev-parse", "HEAD"), flush=True)
-    print("Official manifest head (" + branch + "): " + remote_head(MANIFEST_URL, branch))
+    official_status(branch)
 
 
 def sync(args):
@@ -150,8 +167,10 @@ def sync(args):
         branch = read_config(aosp)["branch"]
         require(args.branch is None or args.branch == branch,
                 "Use a separate AOSP directory for a different release branch")
-        if (aosp / ".repo").exists():
+        if (state / "manifest.lock.xml").exists():
             clean_projects(aosp)
+        elif (aosp / LAUNCHER_PATH / "Android.bp").exists():
+            clean_source(aosp)
     else:
         require(not any(aosp.iterdir()), "Choose a new empty dedicated AOSP directory")
         branch = args.branch or DEFAULT_BRANCH
@@ -397,6 +416,10 @@ def build(args):
     provenance = {
         "launcher_revision": launcher_project(raw), "manifest_sha256": digest,
         "lunch": args.lunch, "roots_revision": git(HERE, "rev-parse", "HEAD"),
+        "roots_adapter_dirty": bool(git(HERE.parent, "status", "--porcelain", "--", "launcher", "LICENSE")),
+        "adapter_inputs": {str(p.relative_to(HERE.parent)): hashlib.sha256(p.read_bytes()).hexdigest()
+                           for p in [HERE / "launcher.py", HERE.parent / "LICENSE",
+                                     *sorted((HERE / "soong").glob("*"))] if p.is_file()},
         "artifacts": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                       for p in sorted(dist.glob("*-aosp-test-signed.apk"))},
     }
