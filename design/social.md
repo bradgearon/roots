@@ -36,6 +36,10 @@ Dating is independent, optional, off by default, and limited to mutually opted-i
 
 Conversation suggestions can identify shared interests or possible topics, not determine attraction. Matching and introduction must honor both people's current settings and approval.
 
+## Anonymous nearby presence and swipe discovery
+
+The optional geographic component is shared across connection modes, not limited to dating. Preserve coarse region, pseudonymous identity, separate discoverability and availability, sparse-region protection, and voluntary disclosure; see [Garden participation](garden.md). Swipe discovery may support friendship and creative connection independently of dating. A swipe is not permission to contact or reveal identity; check mutual eligibility and explicit interest. External Forge characters are labeled and excluded from human dating matches. Native web profiles are separate from anonymous nearby presence unless explicitly linked.
+
 ## Abuse and privacy
 
 Opt-in receiving ratings is mandatory. Consider connection-based eligibility, rate limits, anti-Sybil checks, minimum aggregate sample, detection/review of coordinated voting, moderation/reporting, blocking, and appeals. Avoid public shaming, lowest-rated lists, anonymous targeted abuse, exposing raw private votes, or allowing scores to restrict essential app features. Protect minors; adult-only public personal rating and dating are recommended launch boundaries pending review. Opting out must not penalize users or leave a hidden public score.
