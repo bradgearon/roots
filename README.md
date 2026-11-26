@@ -26,6 +26,16 @@ Open chrome://extensions, enable developer mode, and load unpacked chrome-extens
 
 ## Android
 
+Windows command-line build (no Gradle on PATH required):
+
+```cmd
+build-android.cmd
+build-android.cmd clean :app:assembleDebug
+build-android.cmd :app:installDebug
+```
+
+The launcher uses Android Studio's `android/local.properties` when present, otherwise searches SDK locations including `G:\sdk`. It finds the project's Gradle version in Android Studio's wrapper distribution cache, supports the Gradle wrapper when complete, and locates a configured JDK or Studio's bundled JBR. For a custom Gradle installation, set `ROOTS_GRADLE_BAT` to the absolute `gradle.bat` or `gradle.cmd` path. It forwards additional Gradle arguments and prints the APK path. No tools are installed silently or added to the system PATH. If the matching distribution is missing, sync the project in Android Studio first.
+
 Open android/ in Android Studio. Use the Gradle version specified in android/gradle/wrapper/gradle-wrapper.properties, SDK 36, compatible Android Gradle Plugin/JDK, NDK and CMake 3.22.1. Generate the Gradle wrapper with installed Gradle if needed. Build :app:assembleDebug on an ARM64 device. The CMake build retrieves llama.cpp b11960 (PLaMo 3 tokenizer support). Existing X accessibility rendering, viewport and placement services are retained.
 
 1. Open Roots and grant the in-app disclosure and Android Accessibility permission.
