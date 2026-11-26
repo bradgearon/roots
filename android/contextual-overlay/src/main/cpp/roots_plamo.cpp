@@ -1,5 +1,8 @@
 #include <jni.h>
 #include <llama.h>
+#include <ggml-backend.h>
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -14,6 +17,9 @@ namespace {
 std::mutex gate, log_gate;
 llama_model *model=nullptr;
 llama_context *resident_ctx=nullptr;
+// The device list must outlive the model load. All calls are serialized by gate.
+ggml_backend_dev_t selected_devices[2]={nullptr,nullptr};
+std::string selected_backend="unloaded";
 using clock_type=std::chrono::steady_clock;
 int64_t elapsed_ms(clock_type::time_point start){return std::chrono::duration_cast<std::chrono::milliseconds>(clock_type::now()-start).count();}
 void release_context(){if(resident_ctx){llama_free(resident_ctx);resident_ctx=nullptr;}}
@@ -56,7 +62,29 @@ std::string load_detail() {
 extern "C" JNIEXPORT jstring JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_revision(JNIEnv *env,jclass) {
     return env->NewStringUTF(ROOTS_PLAMO_LLAMA_REVISION);
 }
-extern "C" JNIEXPORT void JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_load(JNIEnv *env,jclass,jstring path) {
+extern "C" JNIEXPORT jboolean JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_vulkanBuilt(JNIEnv *,jclass) {
+    return ROOTS_VULKAN ? JNI_TRUE : JNI_FALSE;
+}
+extern "C" JNIEXPORT jstring JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_accelerationInfo(JNIEnv *env,jclass) {
+    std::lock_guard<std::mutex> lock(gate);
+    try {
+        std::string info="kleidiai_built="+std::to_string(ROOTS_KLEIDIAI)+" vulkan_built="+std::to_string(ROOTS_VULKAN);
+#ifdef HWCAP_ASIMDDP
+        info+=" dotprod="+std::to_string(bool(getauxval(AT_HWCAP)&HWCAP_ASIMDDP));
+#endif
+#ifdef HWCAP2_I8MM
+        info+=" i8mm="+std::to_string(bool(getauxval(AT_HWCAP2)&HWCAP2_I8MM));
+#endif
+#ifdef HWCAP_ASIMDHP
+        info+=" fp16="+std::to_string(bool(getauxval(AT_HWCAP)&HWCAP_ASIMDHP));
+#endif
+        info+=" backend="+selected_backend;
+        if(backend) {const char *system=llama_print_system_info();if(system)info+=" "+std::string(system);}
+        for(char &ch:info)if(static_cast<unsigned char>(ch)>127||ch=='\r'||ch=='\n')ch=' ';
+        return env->NewStringUTF(info.c_str());
+    } catch(...) {return env->NewStringUTF("acceleration information unavailable");}
+}
+extern "C" JNIEXPORT void JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_load(JNIEnv *env,jclass,jstring path,jboolean use_vulkan) {
     std::lock_guard<std::mutex> lock(gate);
     if(!path){fail(env,"Model path missing");return;}
     const char *p=env->GetStringUTFChars(path,nullptr);
@@ -72,13 +100,31 @@ extern "C" JNIEXPORT void JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaM
             backend=true;
         }
         stage="model load";
-        auto mp=llama_model_default_params();mp.n_gpu_layers=0;
-        // Release an old model before allocating another one on a mobile device.
+        auto mp=llama_model_default_params();
+        // Free the old context before replacing the model or its device list.
         release_context();
         if(model){llama_model_free(model);model=nullptr;}
+        selected_backend="unloaded";
+        selected_devices[0]=nullptr;selected_devices[1]=nullptr;
+        mp.devices=selected_devices;
+        mp.n_gpu_layers=0;
+        std::string requested="CPU";
+        if(use_vulkan==JNI_TRUE) {
+#if ROOTS_VULKAN
+            auto device=ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+            if(!device)device=ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_IGPU);
+            if(!device)throw std::runtime_error("No supported Vulkan GPU was registered; select CPU");
+            selected_devices[0]=device;
+            mp.n_gpu_layers=-1;
+            requested=std::string("Vulkan/")+ggml_backend_dev_name(device);
+#else
+            throw std::runtime_error("Vulkan not built; select CPU or rebuild with rootsEnableVulkan=true");
+#endif
+        }
         model=llama_model_load_from_file(filename.c_str(),mp);
         if(!model)throw std::runtime_error("llama_model_load_from_file returned null"+load_detail());
-        __android_log_write(ANDROID_LOG_INFO,"RootsPLaMo","Model loaded: " ROOTS_PLAMO_LLAMA_REVISION);
+        selected_backend=requested;
+        __android_log_write(ANDROID_LOG_INFO,"RootsPLaMo",("Model loaded: " ROOTS_PLAMO_LLAMA_REVISION " "+selected_backend).c_str());
     }catch(const std::exception &ex) {
         if(p)env->ReleaseStringUTFChars(path,p);
         fail(env,stage+" [" ROOTS_PLAMO_LLAMA_REVISION "]: "+ex.what());
@@ -91,8 +137,9 @@ extern "C" JNIEXPORT void JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaM
     std::lock_guard<std::mutex> lock(gate);
     release_context();
     if(model){llama_model_free(model);model=nullptr;}
+    selected_backend="unloaded";
 }
-extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_generate(JNIEnv *env,jclass,jbyteArray input,jlongArray timings) {
+extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_LocalPLaMoTranslationProvider_00024Native_generate(JNIEnv *env,jclass,jbyteArray input,jlongArray timings,jint requested_threads) {
     std::lock_guard<std::mutex> lock(gate);
     // Context and model are shared by the one serialized native worker.
     // Reuse allocations, never retain a previous request's attention state.
@@ -102,6 +149,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_Loc
     try {
         if(!model)throw std::runtime_error("Model not loaded");
         if(!input)throw std::runtime_error("Missing prompt");
+        const int threads=std::max(1,std::min(8,static_cast<int>(requested_threads)));
         if(!timings||env->GetArrayLength(timings)!=8)throw std::runtime_error("Missing timing buffer");
         auto start=clock_type::now();
         std::string prompt(env->GetArrayLength(input),'\0');
@@ -124,11 +172,12 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_com_wds_sixstars_contextoverlay_Loc
         if(!resident_ctx){
             auto cp=llama_context_default_params();
             cp.n_ctx=4096;cp.n_batch=256;cp.n_ubatch=128;cp.n_seq_max=1;
-            cp.n_threads=4;cp.n_threads_batch=4;
+            cp.n_threads=threads;cp.n_threads_batch=threads;
             resident_ctx=llama_init_from_model(model,cp);
             if(!resident_ctx)throw std::runtime_error("Could not allocate context");
         }
         auto *ctx=resident_ctx;
+        llama_set_n_threads(ctx,threads,threads);
         stats[1]=elapsed_ms(start);stats[7]=llama_n_threads(ctx);
         stage="prompt decode";start=clock_type::now();
         for(int i=0;i<count;i+=256) {
