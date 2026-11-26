@@ -1,0 +1,23 @@
+# Developing neural intelligence and poetic cognition
+
+Status: experimental WDS implementation proposal, not a conformance requirement. Selectively adapt Engram AI's bounded numerical attention, RNA and Wind mechanisms; do not import its entire conversation runtime, native language generator, UI or server. [Network Brain](network-brain.md) remains responsible for shared network intelligence; the personal poetic micro-cognition capability remains independently scoped. The Network Brain can also develop its own poetic association style.
+
+## Three separate artifacts
+
+- Master GGUF: frozen licensed foundation model, pinned architecture, tokenizer and tensor versions.
+- Knowledge GGUF: optional compiled graph and semantic tensors, built incrementally from authoritative Tree records. Not standard LLM weights.
+- Developed neural GGUF: immutable inference snapshot of trained student parameters, only where a compatible runtime and tensor schema exist. Keep mutable checkpoints separate; stage, evaluate and explicitly activate at episode boundaries.
+
+As content is encountered, retain permitted source-linked structured understanding and separately bounded training examples. A teacher forward pass can provide hidden-state projections, logits/soft targets, intermediate activation summaries, or expected typed decisions. Pin layer/operation IDs, architecture, normalization, input provenance, model checksum, license and storage budgets. Default local; avoid persisting private prompts or activations without scope. Train small task-specific student networks for relationship types, semantic classification, association, ranking and poetic recognition; use replay of previous validated examples and reserved tests. Student uncertainty routes to teacher only under permitted processing settings. Model weights remain frozen during observation. Teacher-generated labels are hypotheses, not independent truth.
+
+## Micro-elements of master weights (research track)
+
+Investigate capturing useful computational fragments during actual teacher execution: layer/head/FFN group identities, contribution/activation summaries and dependency maps. Compare ordinary distillation against structured subnetwork extraction with appropriate architecture-preserving dependencies, input/output dimensions, normalization, residual paths and quantization metadata. Copying arbitrary isolated weights does not transfer a fact or runnable capability. Activation capture and actual parameter extraction are different. A GGUF shard does not automatically form a valid model. Use compatible executors or explicitly train projection/adaptation; validate fragment provenance and license before retention or exchange. No claim that Engram AI has implemented intermediate-layer capture or arbitrary weight-slice retrieval.
+
+## Poetic cognition and style
+
+Beyond similarity, model typed relationships: resemblance, opposition, complement, transformation, recurrence/motif, tension, continuity, possibility, significance, harmony and contrast. Preserve distinction between observable evidence, interpretation and creative hypothesis. A Tree or personal Root can develop a versioned style profile with weights for beauty, novelty, tension, abstraction, harmony, contrast, depth and playfulness. Style governs exploration and expression, not factual validity or moral/person-worth scoring. Profile can be configured, learned from explicit preferences and evaluated; share only eligible styles, not hidden personal traits. Poetic associations can suggest unexpected creative connections, alternative explanations or possible Whirlwind episodes, never fabricate reciprocal activity. System-authored expression still follows deliberate writing. Do not collapse poetic cognition into the personal micro-cognition module or confuse the two scopes.
+
+## Experiments
+
+Compare A graph/index only; B task-specific student; C student distilled from teacher representations; D structured teacher fragments plus learned integration. Use fixed curricula, separate held-out tasks, teacher-free evaluation, ablations, retention/replay, calibrated abstention, source fidelity, useful novelty judged independently, compute/memory/energy and teacher-call rate. Measure actual benefit versus ordinary distillation and exact retrieval. Train on desktop/server under explicit resource policy, collect bounded examples on mobile; no claim of real-time GPU performance. The Tree is a persistent curriculum; Whirlwind may exchange approved learning artifacts without automatic activation or mandatory shared model weights. Each model license must allow the intended use, derivative and distribution. Independent Roots implementors can omit all of this.

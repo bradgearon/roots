@@ -1,0 +1,21 @@
+# Whirlwind — distributed knowledge and computation exchange
+
+Status: proposed. Whirlwind is Roots' BitTorrent-inspired network, not a separate Torrent subsystem. It circulates independently addressable Winds, knowledge fragments and compatible learning artifacts. The established [Whirlwind episode gates](honeycomb-whirlwind.md) still require evidence of reciprocal influence or return paths and evaluated outcomes; ordinary peer transfer alone is not proof of cognitive development.
+
+## Transfer plane
+
+Content-addressed immutable pieces under a signed versioned manifest; piece hashes and lengths, schema, parent revisions, scope, expiry, compatibility and licensing. Choose bounded chunk sizes after benchmarking; stream/resume only missing pieces, verify before acceptance, stage atomically, retain revision provenance. Public shareable packages may be replicated voluntarily. Private Roots require authenticated authorized peers, encryption, minimized metadata, access grants and no public inventory advertising. Peer discovery can use approved seed peers, local discovery or a later DHT-like profile; privacy-sensitive cohorts must not advertise presence. No mandated central tracker or blockchain. NAT traversal/relays, peer authentication, key rotation, rate limits, denial-of-service controls and legal source redistribution rights are explicit open engineering requirements.
+
+Winds may convey scoped records/deltas, Branches, RNA tiles, GGUF tensor projections, style profiles, signed attestations, learning traces, trained decision policies or compatible experimental teacher fragments. The manifest differentiates immutable data from proposed new knowledge, executable model artifacts and payment records. Treat all as untrusted; verify schema and compatibility, quarantine unsafe artifacts, never execute arbitrary imported code or automatically activate a model. Do not share private dating, precise geography, votes or conversation material by default. Exported offline data cannot be forcibly recalled.
+
+## Development plane
+
+A peer may subscribe to a Branch, receive pieces, investigate unresolved questions, propose new relations, train a local candidate, evaluate results and return scoped deltas. The receiving authority independently judges and grafts accepted contributions, retaining origin and conflicting evidence; repeated echoes are not independent confirmation. Honeycomb sustains authorized neighborhoods; only evaluated beneficial feedback qualifies as Honey. Whirlwind episode metrics remain separate from transfer bytes, replication and compute receipts.
+
+Workers announce supported capabilities (storage, bandwidth, CPU/GPU, task schemas, availability, explicit budget, licenses) and can accept approved jobs while desktop/server is idle. Schedule event-driven, bounded, cancellable work with rest/defer, checkpointing and no automatic private-data disclosure. Work offers specify input rights, expected result, evaluation and cost; verify results against frozen task versions and independent tests. Free volunteering is first class. Paid contribution is an optional [economy/bounty](economy-bounties.md) contract; there is no assumption that bytes transferred or reported GPU time establish useful work or payment entitlement.
+
+Candidate Forge capabilities: whirlwind.peer.discover, whirlwind.inventory.describe, whirlwind.fragment.request, whirlwind.fragment.verify, whirlwind.branch.subscribe, whirlwind.delta.offer, whirlwind.job.offer, whirlwind.job.claim, whirlwind.result.submit. All independently authorize access, bounded budgets and state changes. root:// resolution can discover compatible resources without automatic subscriptions.
+
+## Qualification
+
+Demonstrate interrupted multi-peer transfer, duplicate/missing/corrupt pieces, independent offline edits, signed delta reconciliation, revoked permissions, malicious peers, incompatible models and private metadata isolation. Compare centralized retrieval and peer exchange under bandwidth, latency and energy constraints. Simulate fake work receipts, collusion and repeated contributions before enabling any paid settlement. No claims of BitTorrent wire compatibility or production decentralized network yet.

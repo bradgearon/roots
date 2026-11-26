@@ -40,3 +40,10 @@ Working names (Doxa, Gardens, Resonance, Poetic Field, Kairos and Tendrils) are 
 - [Network Brain and weighted feed](network-brain.md): Engram AI implementation evidence, Arc/RNA/Wind separation, shared cognition, activation, feed assembly, life-supporting recognition and independent evaluation.
 - [Portable knowledge](portable-knowledge.md) defines import, planting, grafting, nourishment, pruning, regrafting, file/API exchange and offline field/education profiles. A Tree of Life is not merely a storage graph; the packages are its possible representations.
 - [Open architecture](openness.md) separates interoperability and implementation ownership; [listening journeys](listening-journeys.md) provides the flagship accessible experience. All proposed capabilities remain subject to authorization, source terms and verification.
+
+## Decentralized cognitive web and optional economy
+
+- [root:// protocol](root-protocol.md): stable knowledge addresses, local/peer resolution and browser experience.
+- [Whirlwind exchange](whirlwind-exchange.md): the BitTorrent-inspired distribution and reciprocal development network; not a separate Torrent concept.
+- [Developing neural intelligence](developing-neural-intelligence.md): selective Engram AI reuse, teacher/student learning, micro-fragment research and poetic styles.
+- [Economy and bounties](economy-bounties.md): creator/friend payments, shared income, work contracts, optional attestations and settlement. Financial participation is independent from knowledge, Doxa and fellowship.

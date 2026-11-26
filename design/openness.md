@@ -15,3 +15,7 @@ Proposed conformance profiles: file-only reader/writer; query runtime; contribut
 ## Separation from the WDS product and research
 
 The WDS application's quality, experience, cultivated network and ChristEye approach are its product differentiation, not a required dependency or exclusive control over Roots. The intention is that others may use the design or source to create independently owned compatible applications and integrate through the API or files; not that they must license a proprietary SDK. An external implementor can use entirely different intelligence or no LLM for retrieval. Publish an interoperable contract for graph/tensor semantics, feed profiles, grafts and knowledge exchange, not a mandatory application UI or theology. The existing license remains in force until explicit reuse terms are adopted; neither this document nor an API grant changes it.
+
+## Additional optional profiles
+
+The intended open Roots specification includes root:// resolution, Whirlwind transfer, portable knowledge and optional economic/attestation capability contracts. Independent implementations may use different peer discovery, payment providers, models or no blockchain/LLM at all. WDS's selective Engram AI adaptation and ChristEye are not conformance requirements. No released license changes in this revision.
