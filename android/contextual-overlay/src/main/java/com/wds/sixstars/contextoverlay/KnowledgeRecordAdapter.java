@@ -35,6 +35,7 @@ public final class KnowledgeRecordAdapter extends BaseAdapter {
         LinearLayout outer=RootsUi.column(activity);
         LinearLayout card=RootsUi.card(activity,outer);
         boolean grouped=!record.key().isEmpty();
+        String sourceLink=XPostLink.forRecord(record);
         String author=grouped?record.first("author"):"";
         String handle=grouped?record.first("handle"):"";
         card.addView(RootsUi.text(activity,mesh?"ROOTS MESH · REMEMBRANCE":grouped?"X · KNOWLEDGE":"RAW OBSERVATION",12,RootsUi.ACCENT,true));
@@ -44,7 +45,9 @@ public final class KnowledgeRecordAdapter extends BaseAdapter {
         String language=body.language().isEmpty()?"Language unknown":body.language().toUpperCase(Locale.ROOT);
         card.addView(RootsUi.text(activity,language+(translated?" · translated":localLanguage.equals(body.language())?" · local language":" · original, not localized")+" · "+DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(new Date(originalBody.at())),12,RootsUi.MUTED,false));
         TextView original=RootsUi.text(activity,body.body(),16,RootsUi.TEXT,false);
-        original.setTextIsSelectable(!home);
+        // Selectable child views consume ListView taps and long presses.
+        // Grouped records use card navigation; raw observations remain selectable.
+        original.setTextIsSelectable(!grouped&&sourceLink.isEmpty()&&!home);
         if(home)original.setMaxLines(9);
         original.setPadding(0,RootsUi.dp(activity,8),0,RootsUi.dp(activity,8));
         original.setLineSpacing(RootsUi.dp(activity,3),1f);card.addView(original);
@@ -55,7 +58,7 @@ public final class KnowledgeRecordAdapter extends BaseAdapter {
                 String role=f.source().substring(f.source().lastIndexOf('.')+1);
                 String label=role.replace('-',' ');
                 TextView member=RootsUi.text(activity,label+" · "+f.body(),13,RootsUi.MUTED,false);
-                member.setTextIsSelectable(true);card.addView(member);
+                card.addView(member);
             }
         }
         if(home){
@@ -78,10 +81,13 @@ public final class KnowledgeRecordAdapter extends BaseAdapter {
             if(!understanding.isEmpty()){TextView note=RootsUi.text(activity,"Understanding · "+understanding,14,RootsUi.MUTED,false);note.setMaxLines(3);card.addView(note);}
             if(!record.latest("want").isEmpty())card.addView(RootsUi.text(activity,"Wanted",12,RootsUi.ACCENT,true));
         }
-        String footer=home?(XPostLink.forRecord(record).isEmpty()?"Tap for details · link not captured":"Open original on X  ↗  ·  hold for options"):
-            grouped?record.members().size()+" associated fragments · local record #"+record.sequence():
-            body.source()+" · fragment #"+body.sequence();
-        TextView foot=RootsUi.text(activity,footer,12,RootsUi.MUTED,false);
+        String footer;
+        if(!sourceLink.isEmpty())footer="Open original on X  ↗  ·  hold for options";
+        else if(record.key().startsWith("local:x:"))footer="Source link not captured · tap to attach";
+        else if(grouped)footer="Tap for details · hold for options";
+        else footer=body.source()+" · fragment #"+body.sequence();
+        if(grouped&&!home)footer+="\n"+record.members().size()+" associated fragments · local record #"+record.sequence();
+        TextView foot=RootsUi.text(activity,footer,12,sourceLink.isEmpty()?RootsUi.MUTED:RootsUi.ACCENT,false);
         foot.setPadding(0,RootsUi.dp(activity,8),0,0);card.addView(foot);
         return outer;
     }
