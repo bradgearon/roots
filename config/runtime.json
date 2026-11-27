@@ -1,7 +1,7 @@
 {
   "manifestVersion": 2,
   "provisionAiRuntime": true,
-  "useExistingStack": true,
+  "useExistingStack": false,
   "requireHashes": true,
   "logging": {
     "directory": "logs",
