@@ -34,8 +34,11 @@ public final class MeshActivity extends Activity {
     private static final long REFRESH_MS=30000;
     private static final ExecutorService CONNECTION_REFRESH=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsAxonRefresh");t.setDaemon(true);return t;});
     private final android.os.Handler refreshHandler=new android.os.Handler(android.os.Looper.getMainLooper());
-    private boolean foreground,refreshing,clearingSavedInvite;
-    private int foregroundGeneration;
+    private volatile boolean foreground;
+    private boolean refreshing,clearingSavedInvite;
+    private volatile int foregroundGeneration;
+    private android.net.ConnectivityManager refreshNetworkManager;
+    private android.net.ConnectivityManager.NetworkCallback refreshNetworkCallback;
     private String lastBoundHealth="";
     private final Runnable refreshBoundTick=new Runnable(){
         @Override public void run(){
@@ -48,7 +51,7 @@ public final class MeshActivity extends Activity {
     private EditText invitations,interests;
     private boolean busy;
     private boolean reportStale;
-    private int diagnosticRevision;
+    private volatile int diagnosticRevision;
     private MeshConnectionDiagnostics.Report connectionReport;
     private String renderedReport="",lastConnectionState="";
     private int dp(int n){return RootsUi.dp(this,n);}
@@ -155,8 +158,29 @@ public final class MeshActivity extends Activity {
             status.setText("Invitation ready. Tap Test connection or Receive.");
         }catch(Exception e){status.setText("Invalid Roots Mesh invitation.");}
     }
-    @Override protected void onResume(){super.onResume();foreground=true;foregroundGeneration++;refresh();scheduleBoundRefresh(0);}
-    @Override protected void onPause(){foreground=false;foregroundGeneration++;refreshHandler.removeCallbacks(refreshBoundTick);super.onPause();}
+    @Override protected void onResume(){
+        super.onResume();foreground=true;foregroundGeneration++;refresh();scheduleBoundRefresh(0);
+        refreshNetworkManager=(android.net.ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
+        if(refreshNetworkManager!=null){
+            android.net.ConnectivityManager.NetworkCallback callback=new android.net.ConnectivityManager.NetworkCallback(){
+                private void changed(){runOnUiThread(()->{
+                    if(foreground&&refreshNetworkCallback==this){refresh();scheduleBoundRefresh(500);}
+                });}
+                @Override public void onAvailable(android.net.Network network){changed();}
+                @Override public void onLost(android.net.Network network){changed();}
+                @Override public void onLinkPropertiesChanged(android.net.Network network,android.net.LinkProperties properties){changed();}
+            };
+            refreshNetworkCallback=callback;
+            try{refreshNetworkManager.registerDefaultNetworkCallback(callback);}
+            catch(RuntimeException ignored){refreshNetworkCallback=null;}
+        }
+    }
+    @Override protected void onPause(){
+        foreground=false;foregroundGeneration++;refreshHandler.removeCallbacks(refreshBoundTick);
+        if(refreshNetworkManager!=null&&refreshNetworkCallback!=null)
+            try{refreshNetworkManager.unregisterNetworkCallback(refreshNetworkCallback);}catch(RuntimeException ignored){}
+        refreshNetworkCallback=null;refreshNetworkManager=null;super.onPause();
+    }
     private void scheduleBoundRefresh(long delay){
         refreshHandler.removeCallbacks(refreshBoundTick);
         if(foreground)refreshHandler.postDelayed(refreshBoundTick,delay);
@@ -179,12 +203,13 @@ public final class MeshActivity extends Activity {
         refreshing=true;boundConnectionStatus.setText("Bound connection: refreshing…");
         CONNECTION_REFRESH.execute(()->{
             MeshConnectionDiagnostics.Report report=null;
-            try{report=mesh.refreshBoundConnections();}catch(Exception|LinkageError ignored){}
+            try{report=mesh.refreshBoundConnections(()->foreground&&generation==foregroundGeneration&&revision==diagnosticRevision);}
+            catch(Exception|LinkageError ignored){}
             final MeshConnectionDiagnostics.Report result=report;
             runOnUiThread(()->{
                 refreshing=false;
-                if(isDestroyed()||!foreground||generation!=foregroundGeneration||busy||revision!=diagnosticRevision||
-                    !useAxon.isChecked()||!invitations.getText().toString().trim().isEmpty())return;
+                if(isDestroyed()||!foreground||busy||!useAxon.isChecked()||!invitations.getText().toString().trim().isEmpty())return;
+                if(generation!=foregroundGeneration||revision!=diagnosticRevision){scheduleBoundRefresh(500);return;}
                 if(!network.equals(mesh.connectionStateKey())){scheduleBoundRefresh(500);return;}
                 if(result==null){boundConnectionStatus.setText("Bound connection: refresh failed; tap Refresh / test connection.");return;}
                 String health=updateBoundHealth(result);
@@ -198,8 +223,9 @@ public final class MeshActivity extends Activity {
         int bound=report.peers().size();
         try{AxonSubscription policy=AxonSubscription.load(this);if(policy!=null)bound=policy.pins.size();}catch(Exception ignored){}
         String health=connected+"/"+bound+" bound peers connected";
-        if(connected<bound||bound==0)health+=" · "+MeshConnectionDiagnostics.failureSummary(report);
-        boundConnectionStatus.setText(health+"\\nChecked "+java.text.DateFormat.getTimeInstance().format(new java.util.Date(report.checkedAtMillis())));
+        if(connected<bound||bound==0)health+=" · "+(connected==0?MeshConnectionDiagnostics.failureSummary(report):
+            "Some bound peers are unavailable or not checked; see connection details.");
+        boundConnectionStatus.setText(health+"\nChecked "+java.text.DateFormat.getTimeInstance().format(new java.util.Date(report.checkedAtMillis())));
         return health;
     }
     private void refresh(){
@@ -224,7 +250,7 @@ public final class MeshActivity extends Activity {
     private void refreshSavedAxon(){
         try{
             AxonSubscription policy=AxonSubscription.load(this);
-            if(policy==null){savedAxonStatus.setText("Saved Axon: none. Paste an invitation and choose Bind / edit .axon to save a peer.");return;}
+            if(policy==null){savedAxonStatus.setText("Saved Axon: none. Paste an invitation and choose Bind / edit .axon to save a peer.");boundConnectionStatus.setText("Bound connection: no saved binding");return;}
             String binding="Saved Axon: "+policy.pins.size()+" bound peer(s), "+policy.lanes.size()+" topic(s).";
             try{
                 int count=AxonPeerStore.load(this,policy).size();

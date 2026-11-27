@@ -85,6 +85,14 @@ final class AxonRuntime {
         try{WORK.execute(task);}catch(java.util.concurrent.RejectedExecutionException e){task.cancel(false);}
         return task;
     }
+    /** Refresh endpoint/access for the exact identities already armed, without
+     * extending the 30-minute consent or authorizing another peer. */
+    static List<MeshPeer.Invite> refreshArmedPeers(List<MeshPeer.Invite> armed,List<MeshPeer.Invite> saved){
+        List<MeshPeer.Invite> refreshed=new ArrayList<>();
+        for(MeshPeer.Invite approved:armed)for(MeshPeer.Invite current:saved)
+            if(approved.pin().equals(current.pin())){refreshed.add(current);break;}
+        return refreshed;
+    }
     private static boolean live(Context c,Session s,long deadline){
         return !Thread.currentThread().isInterrupted()&&RuntimeNeed.remaining(deadline,SystemClock.elapsedRealtime())>0&&authorized(c,s);
     }
@@ -96,6 +104,9 @@ final class AxonRuntime {
         InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin("Axon · LAN","Published knowledge","Runtime need","Explicit topic-scoped request");
         attempt.running("Resolving");
         try{
+            List<MeshPeer.Invite> currentPeers;
+            try{currentPeers=refreshArmedPeers(s.peers(),AxonPeerStore.load(app,s.policy()));}
+            catch(Exception unreadable){currentPeers=Collections.emptyList();}
             TreeRuntime tree=TreeRuntime.get(app);long epoch=tree.captureEpoch();
             List<NativeTree.Master> records=tree.allRecords("",10000);
             if(!live(app,s,deadline)||epoch!=tree.captureEpoch())throw new IllegalStateException("Request expired");
@@ -135,7 +146,7 @@ final class AxonRuntime {
                 // correctness claim. Otherwise ask up to two bound live peers.
                 if(covered>=2||evidence.size()>=laneEnd)continue;
                 int tried=0;
-                for(MeshPeer.Invite peer:s.peers()){
+                for(MeshPeer.Invite peer:currentPeers){
                     if(tried++>=2||!live(app,s,deadline)||epoch!=tree.captureEpoch())break;
                     try{
                         long peerDeadline=Math.min(deadline,SystemClock.elapsedRealtime()+2000L);

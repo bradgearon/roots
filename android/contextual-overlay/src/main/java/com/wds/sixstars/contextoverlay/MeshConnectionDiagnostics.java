@@ -147,12 +147,12 @@ final class MeshConnectionDiagnostics {
     static int connectedPeers(Report report){
         int count=0;
         for(PeerReport peer:report.peers()){
-            boolean inventory=false,failed=false;
+            java.util.Set<String> confirmed=new java.util.HashSet<>();boolean failed=false;
             for(Check check:peer.checks()){
                 if(FAIL.equals(check.state()))failed=true;
-                if("Inventory".equals(check.stage())&&PASS.equals(check.state()))inventory=true;
+                if(PASS.equals(check.state())||WARN.equals(check.state()))confirmed.add(check.stage());
             }
-            if(inventory&&!failed)count++;
+            if(!failed&&confirmed.containsAll(java.util.List.of("TCP","TLS","Protocol","Authentication","Inventory")))count++;
         }
         return count;
     }

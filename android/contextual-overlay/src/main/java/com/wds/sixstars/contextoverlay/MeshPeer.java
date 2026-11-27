@@ -151,11 +151,12 @@ final class MeshPeer {
     /** An explicit, bounded inventory-only check. Selected bound invitations
      * refresh encrypted saved access; no item requests, discovery or Tree writes. */
     Report testConnections(String rawInvitations,boolean useSavedAxon,java.util.function.Consumer<String> progress){
-        return testConnections(rawInvitations,useSavedAxon,progress,true);
+        return testConnections(rawInvitations,useSavedAxon,progress,true,()->true);
     }
-    /** Foreground health checks must not overwrite an explicit receive/test snapshot. */
-    Report refreshBoundConnections(){return testConnections("",true,null,false);}
-    private Report testConnections(String rawInvitations,boolean useSavedAxon,java.util.function.Consumer<String> progress,boolean remember){
+    /** Foreground health checks must not overwrite an explicit receive/test snapshot.
+     * Leaving the screen or changing the binding stops starting new exchanges. */
+    Report refreshBoundConnections(java.util.function.BooleanSupplier active){return testConnections("",true,null,false,active);}
+    private Report testConnections(String rawInvitations,boolean useSavedAxon,java.util.function.Consumer<String> progress,boolean remember,java.util.function.BooleanSupplier continueChecking){
         long checkedAt=System.currentTimeMillis(),testDeadline=android.os.SystemClock.elapsedRealtime()+30000L;
         List<Check> local=localChecks();List<Trace> traces=new ArrayList<>();
         if(remember)lastConnectionReport=new Report(checkedAt,local,new ArrayList<>());
@@ -171,6 +172,7 @@ final class MeshPeer {
         }
         Network network=null;try{network=wifi();}catch(RuntimeException ignored){}
         for(int i=0;i<invites.size();i++){
+            if(!continueChecking.getAsBoolean())break;
             Invite invite=invites.get(i);Trace trace=traces.get(i);
             boolean accepted=!useSavedAxon||policy!=null&&policy.pins.contains(invite.pin());
             trace.add(check("Axon binding",!useSavedAxon?SKIP:accepted?PASS:FAIL,!useSavedAxon?"No saved policy requested.":

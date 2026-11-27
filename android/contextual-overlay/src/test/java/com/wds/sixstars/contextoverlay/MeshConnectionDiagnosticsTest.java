@@ -105,7 +105,7 @@ public class MeshConnectionDiagnosticsTest {
     }
     @Test public void onlyAuthenticatedInventoryCountsAsLiveConnection(){
         PeerReport tcpOnly=new PeerReport("a","a",List.of(check("TCP",PASS,"",""),check("TLS",FAIL,"","")));
-        PeerReport connected=new PeerReport("b","b",List.of(check("TLS",PASS,"",""),check("Authentication",PASS,"",""),check("Inventory",PASS,"","")));
+        PeerReport connected=new PeerReport("b","b",List.of(check("TCP",PASS,"",""),check("TLS",PASS,"",""),check("Protocol",PASS,"",""),check("Authentication",PASS,"",""),check("Inventory",PASS,"","")));
         assertEquals(1,connectedPeers(new Report(1,List.of(),List.of(tcpOnly,connected))));
     }
     private static Check stage(Trace trace,String stage){return trace.snapshot().checks().stream().filter(c->c.stage().equals(stage)).findFirst().orElseThrow();}
