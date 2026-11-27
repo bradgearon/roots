@@ -22,7 +22,7 @@ struct roots_tree {
     ~roots_tree() { if(db) sqlite3_close(db); }
 };
 namespace {
-constexpr size_t capacity=10000, batch_max=256, dim=128;
+constexpr size_t batch_max=256, dim=128; // Durable storage has no artificial fragment count ceiling.
 constexpr size_t max_agents=32;
 using result=roots_tree_result;
 struct invalid : std::runtime_error { using std::runtime_error::runtime_error; };
@@ -188,6 +188,7 @@ roots_tree_result roots_tree_open(const char *path,roots_tree **out){
                    "CREATE TABLE IF NOT EXISTS branch_members(agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,fragment_seq INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,PRIMARY KEY(agent_id,fragment_seq));"
                    "CREATE INDEX IF NOT EXISTS branch_fragment ON branch_members(fragment_seq);"
                    "CREATE INDEX IF NOT EXISTS fragment_master ON fragments(external_id,seq) WHERE source GLOB 'record.*';"
+                   "CREATE INDEX IF NOT EXISTS fragment_master_language ON fragments(external_id,language,seq) WHERE source GLOB 'record.*';"
                    "CREATE TABLE IF NOT EXISTS work_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,fragment INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,operation TEXT NOT NULL,profile TEXT NOT NULL,priority INTEGER NOT NULL,deadline INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,state INTEGER NOT NULL DEFAULT 0,worker TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,token INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,output TEXT NOT NULL DEFAULT '',UNIQUE(fragment,operation,profile));"
                    "CREATE INDEX IF NOT EXISTS work_dispatch ON work_jobs(operation,state,priority DESC,deadline,id);"
                    "PRAGMA user_version=1;");
@@ -201,13 +202,12 @@ roots_tree_result roots_tree_observe(roots_tree *t,const roots_observation *item
         require(t&&items&&inserted&&n>0&&n<=batch_max);
         for(size_t i=0;i<n;++i){const auto &o=items[i];bounded(o.source,256,true);bounded(o.external_id,512);bounded(o.body,16384,true);bounded(o.language,64);require(o.observed_ms>=0);}
         std::lock_guard<std::mutex> lock(t->mutex);transaction tx(t->db);
-        auto total=scalar(t->db,"SELECT count(*) FROM fragments");size_t added=0;
-        statement insert(t->db,"INSERT INTO fragments(source,external_id,body,language,observed_ms) VALUES(?,?,?,?,?) ON CONFLICT(source,external_id,body) DO NOTHING");
+        size_t added=0;
+        statement insert(t->db,"INSERT INTO fragments(source,external_id,body,language,observed_ms) SELECT ?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM fragments WHERE source=? AND external_id=? AND body=?)");
         statement match(t->db,"INSERT OR IGNORE INTO branch_members(agent_id,fragment_seq) SELECT id,? FROM agents WHERE instr(lower(?),lower(term))>0");
         for(size_t i=0;i<n;++i){
-            const auto &o=items[i];insert.text(1,o.source);insert.text(2,o.external_id);insert.text(3,o.body);insert.text(4,o.language);insert.number(5,o.observed_ms);insert.next();
+            const auto &o=items[i];insert.text(1,o.source);insert.text(2,o.external_id);insert.text(3,o.body);insert.text(4,o.language);insert.number(5,o.observed_ms);insert.text(6,o.source);insert.text(7,o.external_id);insert.text(8,o.body);insert.next();
             if(sqlite3_changes(t->db)>0){
-                if(++total>static_cast<int64_t>(capacity))throw quota("tree capacity");
                 ++added;match.number(1,sqlite3_last_insert_rowid(t->db));match.text(2,o.body);match.next();match.reset();
             }
             insert.reset();
@@ -319,22 +319,25 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
                     "SELECT seq,source,external_id,body,language,observed_ms FROM fragments f "
                     "WHERE source GLOB 'record.*' AND external_id GLOB 'local:*' AND language=? "
                     "AND (source GLOB 'record.*.understanding' OR "
-                    "(source GLOB 'record.*.body' AND NOT EXISTS(SELECT 1 FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language AND (g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized'))) OR "
-                    "((source GLOB 'record.*.translation' OR source GLOB 'record.*.localized') AND seq=(SELECT max(g.seq) FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language "
-                    "AND (g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized')))) ORDER BY seq":
+                    "(source GLOB 'record.*.body' AND NOT EXISTS(SELECT 1 FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language AND g.source GLOB 'record.*' AND (g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized'))) OR "
+                    "((source GLOB 'record.*.translation' OR source GLOB 'record.*.localized') AND seq=(SELECT max(g.seq) FROM fragments g WHERE g.external_id=f.external_id AND g.language=f.language AND g.source GLOB 'record.*' "
+                    "AND (g.source GLOB 'record.*.translation' OR g.source GLOB 'record.*.localized')))) ORDER BY seq DESC LIMIT 10000":
                     "SELECT seq,source,external_id,body,language,observed_ms FROM fragments ORDER BY seq");
                 if(language)s.text(1,language);
-                rows.reserve(static_cast<size_t>(scalar(t->db,"SELECT count(*) FROM fragments")));
+                if(language)rows.reserve(10000);
                 while(s.next())rows.push_back(read_row(s));
-                membership_edges(t->db,edges,0);
                 if(language){
+                    // Bound active phone coordination, not durable capture.
+                    std::reverse(rows.begin(),rows.end());
+                    std::unordered_set<std::string> active;
+                    for(const auto &r:rows)active.insert(r.external);
                     // Preserve record-level branch membership and wanted state,
                     // even when the matching original was excluded. No private text.
                     statement branch(t->db,"SELECT DISTINCT f.external_id,b.agent_id FROM branch_members b JOIN fragments f ON f.seq=b.fragment_seq WHERE f.source GLOB 'record.*' AND f.external_id GLOB 'local:*'");
-                    while(branch.next())edges.push_back({"master:"+branch.str(0),"is.in","branch:"+std::to_string(branch.integer(1))});
+                    while(branch.next())if(active.count(branch.str(0)))edges.push_back({"master:"+branch.str(0),"is.in","branch:"+std::to_string(branch.integer(1))});
                     statement wants(t->db,"SELECT DISTINCT external_id FROM fragments WHERE source GLOB 'record.*.want' AND external_id GLOB 'local:*'");
-                    while(wants.next())edges.push_back({"master:"+wants.str(0),"has.state","state:wanted"});
-                }
+                    while(wants.next())if(active.count(wants.str(0)))edges.push_back({"master:"+wants.str(0),"has.state","state:wanted"});
+                }else membership_edges(t->db,edges,0);
                 statement a(t->db,"SELECT id,name,term FROM agents ORDER BY id");
                 while(a.next())agents.push_back({a.integer(0),a.str(1),a.str(2)});
                 exec(t->db,"COMMIT");

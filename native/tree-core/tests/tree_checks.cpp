@@ -181,6 +181,22 @@ int main(){
         need(query(t,"",branch).size()==3,"branch persistence");
         ok(roots_tree_agent_remove(t,branch));need(query(t,"",branch).empty(),"agent removal");
         ok(roots_tree_clear(t));ok(roots_tree_count(t,&count));need(count==0,"clear");
+        // The original storage ceiling must never reject new records.
+        for(int start=0;start<10240;start+=128){
+            std::vector<std::string> ids;ids.reserve(128);
+            std::vector<roots_observation> batch;batch.reserve(128);
+            for(int i=0;i<128;i++)ids.push_back("local:x:growth:"+std::to_string(start+i));
+            for(const auto &id:ids)batch.push_back({"record.x.body",id.c_str(),"Growth regression body","en",7});
+            ok(roots_tree_observe(t,batch.data(),batch.size(),&added));need(added==128,"capture beyond former cap");
+        }
+        ok(roots_tree_count(t,&count));need(count==10240,"all retained");
+        roots_observation beyond={"record.x.body","local:x:after-cap","New knowledge after cap","en",8};
+        ok(roots_tree_observe(t,&beyond,1,&added));need(added==1,"new record after cap");
+        ok(roots_tree_observe(t,&beyond,1,&added));need(added==0,"dedup after cap");
+        auto active=dir/"active-window.gguf";
+        ok(roots_tree_compile_localized(t,active.u8string().c_str(),"en",&snapshot_rev));
+        need(std::filesystem::exists(active),"active projection");
+        ok(roots_tree_count(t,&count));need(count==10241,"projection never deletes older knowledge");
         roots_tree_close(t);t=nullptr;std::filesystem::remove_all(dir);
         std::cout<<"Roots native Tree contract checks passed\n";return 0;
     }catch(const std::exception &e){roots_tree_close(t);std::error_code ec;std::filesystem::remove_all(dir,ec);std::cerr<<e.what()<<'\n';return 1;}
