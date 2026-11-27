@@ -9,5 +9,5 @@ if defined ROOTS_LAN (
 )
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-LanguageDetectorModel.ps1
 if errorlevel 1 exit /b %ERRORLEVEL%
-dotnet run --project src\Wds.Roots.Host -c Release -- %ROOTS_LAN% %*
+dotnet run --project src\Wds.Roots.Host -c Release -p:RunWorkingDirectory="%CD%" -- %ROOTS_LAN% %*
 exit /b %ERRORLEVEL%
