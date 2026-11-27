@@ -152,7 +152,7 @@ final class MeshConnectionDiagnostics {
                 if(FAIL.equals(check.state()))failed=true;
                 if(PASS.equals(check.state())||WARN.equals(check.state()))confirmed.add(check.stage());
             }
-            if(!failed&&confirmed.containsAll(java.util.List.of("TCP","TLS","Protocol","Authentication","Inventory")))count++;
+            if(!failed&&confirmed.containsAll(java.util.Arrays.asList("TCP","TLS","Protocol","Authentication","Inventory")))count++;
         }
         return count;
     }

@@ -318,6 +318,7 @@ public final class MeshActivity extends Activity {
                     if(savedAxon&&completed!=null){
                         if(!raw.trim().isEmpty()&&savedAccessWasStored(completed))clearSavedInvitationDraft();
                         lastBoundHealth=updateBoundHealth(completed);refreshSavedAxon();
+                        if(!raw.trim().isEmpty()&&savedAccessWasStored(completed))scheduleBoundRefresh(500);
                     }
                     showConnectionReport(completed);
                 }else connectionStatus.setText(failure);

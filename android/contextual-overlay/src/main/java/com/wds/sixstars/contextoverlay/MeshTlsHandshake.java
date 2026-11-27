@@ -6,7 +6,7 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.FutureTask;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
@@ -36,14 +36,19 @@ final class MeshTlsHandshake {
             listener.setEnabledProtocols(new String[]{protocol});
             listener.setSoTimeout(TIMEOUT_MS);
             listener.bind(new InetSocketAddress(loop,0),1);
-            FutureTask<Void> accepted=new FutureTask<>(()->{
+            CompletableFuture<Void> accepted=new CompletableFuture<>();
+            Thread worker=new Thread(()->{
                 try(SSLSocket socket=(SSLSocket)listener.accept()){
                     socket.setSoTimeout(TIMEOUT_MS);
                     socket.startHandshake();
-                    return null;
-                }
-            });
-            Thread worker=new Thread(accepted,"RootsMeshTlsSelfCheck");worker.setDaemon(true);worker.start();
+                    // Complete a tiny private round trip, not just the handshake.
+                    socket.getOutputStream().write(0x52);socket.getOutputStream().flush();
+                    if(socket.getInputStream().read()!=0x41)throw new IOException("TLS probe acknowledgment missing");
+                    // Signal before close_notify: some TLS 1.3 providers wait
+                    // for the other endpoint to close its socket too.
+                    accepted.complete(null);
+                }catch(Exception error){accepted.completeExceptionally(error);}
+            },"RootsMeshTlsSelfCheck");worker.setDaemon(true);worker.start();
             try(SSLSocket socket=(SSLSocket)client.getSocketFactory().createSocket()){
                 socket.setUseClientMode(true);
                 socket.setEnabledProtocols(new String[]{protocol});
@@ -51,8 +56,10 @@ final class MeshTlsHandshake {
                 socket.connect(new InetSocketAddress(loop,listener.getLocalPort()),TIMEOUT_MS);
                 socket.startHandshake();
                 if(!protocol.equals(socket.getSession().getProtocol()))throw new IOException("Unexpected TLS protocol");
+                if(socket.getInputStream().read()!=0x52)throw new IOException("TLS probe response missing");
+                socket.getOutputStream().write(0x41);socket.getOutputStream().flush();
                 accepted.get(TIMEOUT_MS,TimeUnit.MILLISECONDS);
-            }finally{accepted.cancel(true);}
+            }finally{accepted.cancel(true);worker.interrupt();}
         }
     }
 }

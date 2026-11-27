@@ -35,7 +35,10 @@ public class MeshTlsHandshakeTest {
     }
     @Test public void actualPinnedLoopbackHandshakeSucceeds()throws Exception{
         Server server=server();MeshTlsPin pin=new MeshTlsPin(server.pin());
-        assertTrue(Arrays.asList(MeshTlsHandshake.workingProtocols(server.context(),client(pin))).contains("TLSv1.2"));
+        java.util.List<String> working=Arrays.asList(MeshTlsHandshake.workingProtocols(server.context(),client(pin)));
+        assertTrue(working.contains("TLSv1.2"));
+        if(Arrays.asList(server.context().getSupportedSSLParameters().getProtocols()).contains("TLSv1.3"))
+            assertTrue(working.contains("TLSv1.3"));
         assertEquals(PASS,pin.observation().state());
     }
     @Test public void actualLoopbackHandshakeRejectsChangedIdentity()throws Exception{
