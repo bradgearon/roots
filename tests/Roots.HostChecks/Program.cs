@@ -130,6 +130,12 @@ try
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        // Check reuse before accepting a connection: Windows can retain an
+        // accepted socket in TIME_WAIT after the listener has been closed.
+        RuntimePort.EnsureAvailable(port);
+        listener = new TcpListener(IPAddress.Loopback, port);
+        listener.Start();
         try
         {
             Exception error = FailsSync(() => RuntimePort.EnsureAvailable(port));
@@ -142,7 +148,6 @@ try
             Require(probe.Connected && accepted.Connected, "The port owner was disturbed by preflight.");
         }
         finally { listener.Stop(); }
-        RuntimePort.EnsureAvailable(port);
     });
 
     if (Socket.OSSupportsIPv6)
