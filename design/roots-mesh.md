@@ -22,6 +22,23 @@ receiving or retaining published knowledge. It uses the same network, TLS, and
 inventory exchange as Receive. A local Native Tree problem is reported separately
 so transport can still be tested when the receiving database is unavailable.
 
+With **Use saved .axon subscription** selected, an empty invitation box reuses
+encrypted saved peer connections across view recreation and app restarts. Bind
+saves access, and testing/receiving with an explicit current invitation refreshes
+access for an already bound identity. The report loads the saved binding first
+and distinguishes an older policy-only binding from missing or unreadable access.
+Topic/model edits work with an empty box and retain the existing identities.
+Removing the binding removes its saved access. Runtime arming remains separate.
+
+The Android listener now authorizes `DIGEST_NONE` for its EC key because TLS
+signs prehashed handshake data. Before opening the port it performs a real
+`NONEwithECDSA` signing/verification check and reports the result. An incompatible
+legacy key is retained while a compatible replacement identity is generated.
+That one-time migration changes the certificate pin: update the listening app,
+start listening, copy its new invitation, and explicitly update the receiver's
+Axon binding. Compatible identities remain unchanged. Incoming TLS failures are
+reported without request contents or arbitrary exception messages.
+
 Each timestamped report includes the current network and local IPv4/prefix,
 listener state, subscription readiness, runtime access state, and a separate
 result for each invited endpoint. Checks show PASS, FAIL, WARN, or SKIP, with

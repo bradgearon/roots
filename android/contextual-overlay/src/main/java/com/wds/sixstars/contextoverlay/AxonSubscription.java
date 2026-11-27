@@ -20,7 +20,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /** Persistent, local subscription policy, bound to peer certificate identities.
- * Invitations are still short-lived access grants; never persist their token.
+ * Current invitation grants are stored separately by AxonPeerStore, encrypted
+ * with an Android Keystore key. They remain revocable by the serving peer.
  * Topics are explicitly chosen, element bindings optional and model-specific. */
 final class AxonSubscription {
     record Lane(String topic,List<String> elements){}
@@ -34,6 +35,10 @@ final class AxonSubscription {
     static AxonSubscription create(List<MeshPeer.Invite> peers,IntelligenceModel model,String operation,String lines){
         Set<String> pins=new HashSet<>();for(MeshPeer.Invite peer:peers)pins.add(peer.pin());
         if(pins.isEmpty()||pins.size()>8)throw new IllegalArgumentException("Provide one to eight peer invitations first.");
+        return parse(pins,model,operation,lines);
+    }
+    /** Edit allocation settings without replacing the already bound identities. */
+    AxonSubscription withSettings(IntelligenceModel model,String operation,String lines){
         return parse(pins,model,operation,lines);
     }
     private static AxonSubscription parse(Set<String> pins,IntelligenceModel model,String operation,String lines){
@@ -92,7 +97,7 @@ final class AxonSubscription {
         try{stream.write(json.toString().getBytes(StandardCharsets.UTF_8));f.finishWrite(stream);}
         catch(Exception e){f.failWrite(stream);throw e;}
     }
-    static void clear(Context c){file(c).delete();}
+    static void clear(Context c){file(c).delete();AxonPeerStore.clear(c);}
     record Allocation(List<AxonPlanner.Share> shares,int observedRequests,long waveRevision,boolean mappedFlow){}
     Allocation allocation(Context context,TreeRuntime tree,List<NativeTree.Master> records,String language){
         KnowledgeWave.Field field=tree.coordination();

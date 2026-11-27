@@ -7,8 +7,6 @@ import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
 import com.wds.sixstars.contextoverlay.tree.NativeTree;
 import com.wds.sixstars.contextoverlay.tree.TreeRuntime;
 import org.json.JSONArray;
@@ -21,8 +19,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyPairGenerator;
-import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.Principal;
 import java.security.PrivateKey;
@@ -47,7 +43,6 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.X509ExtendedKeyManager;
-import javax.security.auth.x500.X500Principal;
 import static com.wds.sixstars.contextoverlay.MeshConnectionDiagnostics.*;
 
 /** Roots Mesh v1: direct Wi-Fi peers, standard TLS, immutable content-addressed
@@ -55,7 +50,6 @@ import static com.wds.sixstars.contextoverlay.MeshConnectionDiagnostics.*;
  * custom message encryption. Invitation authorizes reading published items. */
 final class MeshPeer {
     static final int PORT=8233, MAX_INVENTORY=256, MAX_FETCH=32, MAX_FRAME=256*1024;
-    private static final String ALIAS="roots.mesh.tls.v1";
     private static MeshPeer instance;
     static synchronized MeshPeer get(Context context){
         if(instance==null)instance=new MeshPeer(context.getApplicationContext());
@@ -71,10 +65,14 @@ final class MeshPeer {
     private volatile String status="Not serving";
     private volatile Server active;
     private volatile Report lastConnectionReport;
+    private volatile Check incomingTlsFailure;
+    private volatile String tlsIdentityState=SKIP;
+    private volatile String tlsIdentityStatus="Not checked; start listening to verify this device's TLS signing key.";
     private MeshPeer(Context app){this.app=app;tree=TreeRuntime.get(app);cm=(ConnectivityManager)app.getSystemService(Context.CONNECTIVITY_SERVICE);}
     String invitation(){return invitation;}
     String status(){return status;}
     Report lastConnectionReport(){return lastConnectionReport;}
+    String tlsIdentityStatus(){return tlsIdentityStatus;}
     int replicas(String id){return observedReplicas.getOrDefault(id,0);}
     int demand(String id){return Math.max(requested.getOrDefault(id,0),observedDemand.getOrDefault(id,0));}
 
@@ -131,6 +129,8 @@ final class MeshPeer {
         Server server=active;
         checks.add(check("Local listener",server==null?SKIP:PASS,server==null?
             "Not serving on this device. A local listener is not required to receive.":"Serving at "+server.address.getHostAddress()+":"+PORT+".",""));
+        checks.add(check("Local TLS identity",tlsIdentityState,tlsIdentityStatus,FAIL.equals(tlsIdentityState)?"Update Roots on this device and try Start listening again.":""));
+        Check incoming=incomingTlsFailure;if(server!=null&&incoming!=null)checks.add(incoming);
         boolean nativeReady=false;try{nativeReady=NativeTree.available();}catch(LinkageError ignored){}
         checks.add(check("Native Tree",nativeReady?PASS:WARN,nativeReady?"Native Tree library is available; database writes are not tested.":
             "Native Tree library is unavailable. The network test can still run.",nativeReady?"":"Install a build with Native Tree before receiving knowledge."));
@@ -147,44 +147,29 @@ final class MeshPeer {
         List<PeerReport> peers=new ArrayList<>();for(Trace trace:traces)peers.add(trace.snapshot());
         Report report=new Report(checkedAt,local,peers);lastConnectionReport=report;return report;
     }
-    /** An explicit, bounded inventory-only check. No item requests, Tree writes,
-     * discovery, automatic retry or invitation persistence. */
+    /** An explicit, bounded inventory-only check. Selected bound invitations
+     * refresh encrypted saved access; no item requests, discovery or Tree writes. */
     Report testConnections(String rawInvitations,boolean useSavedAxon,java.util.function.Consumer<String> progress){
         long checkedAt=System.currentTimeMillis(),testDeadline=android.os.SystemClock.elapsedRealtime()+30000L;
         List<Check> local=localChecks();List<Trace> traces=new ArrayList<>();
         lastConnectionReport=new Report(checkedAt,local,new ArrayList<>());
-        if(rawInvitations==null||rawInvitations.length()>8192){
-            local.add(check("Invitations",FAIL,"Invitation input is missing or too large.","Paste one to eight current invitations, one per line."));return remember(checkedAt,local,traces);
-        }
-        List<String> lines=new ArrayList<>();for(String line:rawInvitations.split("\\r?\\n"))if(!line.trim().isEmpty())lines.add(line);
-        if(lines.isEmpty()||lines.size()>8){
-            local.add(check("Invitations",FAIL,"Enter one to eight invitations.","Paste one current roots://mesh/v1 invitation per peer, one per line."));return remember(checkedAt,local,traces);
-        }
-        AxonSubscription policy=null;boolean policyReady=!useSavedAxon;
-        try{
-            if(useSavedAxon){policy=AxonSubscription.load(app);policyReady=policy!=null;}
-            local.add(check("Saved Axon",!useSavedAxon?SKIP:policyReady?PASS:FAIL,!useSavedAxon?"Saved .axon policy is disabled for this test.":
-                policyReady?"Saved .axon policy loaded. Each invited identity will be checked.":"No saved .axon subscription was found.",
-                !policyReady?"Bind the intended peer or turn off Use saved .axon subscription for a direct connection test.":""));
-        }catch(Exception|LinkageError e){local.add(check("Saved Axon",FAIL,"The saved .axon subscription could not be loaded.","Rebind the intended peers or disable the saved subscription for a direct test."));}
-        List<Invite> invites=new ArrayList<>();Map<String,Integer> counts=new HashMap<>();
-        for(int i=0;i<lines.size();i++){
-            Invite invite=null;Trace trace;
-            try{invite=Invite.parse(lines.get(i));trace=trace(invite,progress);counts.merge(invite.host(),1,Integer::sum);}
-            catch(Exception e){trace=new Trace("Invitation "+(i+1),"Unavailable",progress);trace.add(check("Invitation",FAIL,
-                "This line is not a valid Mesh v1 invitation.","Copy the complete invitation from the other device, including host, port, pin and token."));}
-            invites.add(invite);traces.add(trace);
+        MeshPeerAccess.Resolution access=MeshPeerAccess.resolve(app,rawInvitations,useSavedAxon);
+        local.addAll(access.checks());
+        if(!access.ready())return remember(checkedAt,local,traces);
+        AxonSubscription policy=access.policy();List<Invite> invites=access.peers();
+        for(Invite invite:invites){
+            Trace trace=trace(invite,progress);
+            trace.add(check("Peer access",PASS,access.fromSaved()?"Using the saved peer connection; no invitation text is required.":
+                "Using the entered peer invitation.",""));
+            traces.add(trace);
         }
         Network network=null;try{network=wifi();}catch(RuntimeException ignored){}
         for(int i=0;i<invites.size();i++){
             Invite invite=invites.get(i);Trace trace=traces.get(i);
-            if(invite==null){trace.prepare();continue;}
-            boolean accepted=!useSavedAxon||policyReady&&policy.pins.contains(invite.pin());
+            boolean accepted=!useSavedAxon||policy!=null&&policy.pins.contains(invite.pin());
             trace.add(check("Axon binding",!useSavedAxon?SKIP:accepted?PASS:FAIL,!useSavedAxon?"No saved policy requested.":
                 accepted?"Invitation identity matches the saved Axon.":"Invitation identity is not authorized by the selected saved Axon.",
                 accepted?"":"Verify the intended peer, then edit the Axon binding or disable the saved policy."));
-            if(counts.get(invite.host())>1)trace.add(check("Invitation",FAIL,"More than one invitation targets this endpoint.",
-                "Keep one freshly copied invitation for this peer. Stale and current sessions must not be mixed."));
             trace.prepare();
             if(trace.failed()||network==null)continue;
             long now=android.os.SystemClock.elapsedRealtime();
@@ -240,35 +225,17 @@ final class MeshPeer {
         String uri(){return new Uri.Builder().scheme("roots").authority("mesh").path("/v1").appendQueryParameter("host",host)
             .appendQueryParameter("port",Integer.toString(PORT)).appendQueryParameter("pin",pin).appendQueryParameter("token",token).build().toString();}
     }
-    private record Identity(PrivateKey key,X509Certificate certificate){}
-    private Identity identity()throws Exception{
-        KeyStore store=KeyStore.getInstance("AndroidKeyStore");store.load(null);
-        if(!store.containsAlias(ALIAS)){
-            KeyPairGenerator generator=KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC,"AndroidKeyStore");
-            generator.initialize(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_SIGN|KeyProperties.PURPOSE_VERIFY)
-                .setAlgorithmParameterSpec(new java.security.spec.ECGenParameterSpec("secp256r1"))
-                .setDigests(KeyProperties.DIGEST_SHA256,KeyProperties.DIGEST_SHA384,KeyProperties.DIGEST_SHA512)
-                .setCertificateSubject(new X500Principal("CN=Roots Mesh"))
-                .setCertificateSerialNumber(new java.math.BigInteger(128,random).add(java.math.BigInteger.ONE))
-                .setCertificateNotBefore(new java.util.Date(System.currentTimeMillis()-86400000L))
-                .setCertificateNotAfter(new java.util.Date(System.currentTimeMillis()+5L*365*86400000L))
-                .build());
-            generator.generateKeyPair();
-        }
-        X509Certificate certificate=(X509Certificate)store.getCertificate(ALIAS);certificate.checkValidity();
-        return new Identity((PrivateKey)store.getKey(ALIAS,null),certificate);
-    }
     private static final class PeerKeyManager extends X509ExtendedKeyManager {
-        private final Identity identity;
-        PeerKeyManager(Identity identity){this.identity=identity;}
-        private String alias(String keyType){return keyType!=null&&(keyType.startsWith("EC")||keyType.equalsIgnoreCase("ECDSA"))?ALIAS:null;}
+        private final MeshTlsIdentity.Identity identity;
+        PeerKeyManager(MeshTlsIdentity.Identity identity){this.identity=identity;}
+        private String alias(String keyType){return keyType!=null&&(keyType.startsWith("EC")||keyType.equalsIgnoreCase("ECDSA"))?identity.alias():null;}
         @Override public String[] getClientAliases(String type,Principal[] issuers){return null;}
         @Override public String chooseClientAlias(String[] types,Principal[] issuers,Socket socket){return null;}
-        @Override public String[] getServerAliases(String type,Principal[] issuers){return alias(type)==null?null:new String[]{ALIAS};}
+        @Override public String[] getServerAliases(String type,Principal[] issuers){return alias(type)==null?null:new String[]{identity.alias()};}
         @Override public String chooseServerAlias(String type,Principal[] issuers,Socket socket){return alias(type);}
         @Override public String chooseEngineServerAlias(String type,Principal[] issuers,javax.net.ssl.SSLEngine engine){return alias(type);}
-        @Override public X509Certificate[] getCertificateChain(String alias){return ALIAS.equals(alias)?new X509Certificate[]{identity.certificate()}:null;}
-        @Override public PrivateKey getPrivateKey(String alias){return ALIAS.equals(alias)?identity.key():null;}
+        @Override public X509Certificate[] getCertificateChain(String alias){return identity.alias().equals(alias)?new X509Certificate[]{identity.certificate()}:null;}
+        @Override public PrivateKey getPrivateKey(String alias){return identity.alias().equals(alias)?identity.key():null;}
     }
     private static String[] protocols(String[] supported){
         return Arrays.stream(supported).filter(p->p.equals("TLSv1.2")||p.equals("TLSv1.3")).toArray(String[]::new);
@@ -285,7 +252,13 @@ final class MeshPeer {
         if(!NativeTree.available())throw new IOException("Native Tree unavailable.");
         Network network=wifi();if(network==null)throw new IOException("Connect to Wi-Fi without VPN first.");
         Inet4Address address=address(network);
-        Identity identity=identity();SSLContext context=SSLContext.getInstance("TLS");
+        MeshTlsIdentity.Identity identity;
+        try{identity=MeshTlsIdentity.loadOrCreate();}
+        catch(Exception e){tlsIdentityState=FAIL;tlsIdentityStatus="TLS signing self-check failed; this device's listener has not started.";throw e;}
+        tlsIdentityState=PASS;
+        tlsIdentityStatus="TLS signing self-check passed."+(identity.upgraded()?" TLS identity upgraded. Share the new invitation and update the receiver's Axon binding once.":"");
+        incomingTlsFailure=null;
+        SSLContext context=SSLContext.getInstance("TLS");
         context.init(new KeyManager[]{new PeerKeyManager(identity)},null,random);
         String pin=MeshItem.hex(MessageDigest.getInstance("SHA-256").digest(identity.certificate().getEncoded()));
         byte[] tokenBytes=new byte[32];random.nextBytes(tokenBytes);String token=MeshItem.hex(tokenBytes);
@@ -358,8 +331,10 @@ final class MeshPeer {
         if(active==server)write(client,new JSONObject().put("version",1).put("error",code));
     }
     private void handle(Server server,SSLSocket socket){
+        boolean handshaken=false;long handshakeStarted=android.os.SystemClock.elapsedRealtime();
         try(SSLSocket client=socket){
             client.setSoTimeout(8000);client.startHandshake();
+            handshaken=true;
             JSONObject request=read(client);
             if(active!=server)return;
             if(!MessageDigest.isEqual(server.token.getBytes(StandardCharsets.US_ASCII),request.optString("token").getBytes(StandardCharsets.US_ASCII))){reject(server,client,"unauthorized");return;}
@@ -400,7 +375,13 @@ final class MeshPeer {
                 }
             }
             if(active==server)write(client,response);
-        }catch(Exception ignored){/* No content or invitation in logs. */}
+        }catch(Exception error){
+            if(!handshaken&&active==server){
+                Check failed=failure("TLS",error,android.os.SystemClock.elapsedRealtime()-handshakeStarted);
+                incomingTlsFailure=new Check("Last incoming TLS",WARN,failed.detail(),failed.nextStep(),failed.elapsedMs());
+            }
+            // No request, content, invitation or arbitrary provider message is logged.
+        }
         finally{server.clients.remove(socket);}
     }
     private JSONObject exchange(Network network,Invite invite,JSONObject request)throws Exception{

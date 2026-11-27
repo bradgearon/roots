@@ -70,8 +70,11 @@ establishes integrity, not truth.
 
 On both devices install the same new version. On A publish a relevant
 remembrance, start the listener, and transfer its invitation to B. On B bind
-an Axon with named topics and select Arm runtime Axon (30 minutes). Credentials
-stay in memory, not in the saved subscription. Use Settings > Intelligence >
+an Axon with named topics and select Arm runtime Axon (30 minutes). Peer access
+is saved encrypted under noBackup separately from the subscription policy; an
+empty invitation box reuses those saved connections. Runtime permission still
+expires after 30 minutes, and revoking runtime permission does not remove saved
+connections used by explicit Test or Receive. Use Settings > Intelligence >
 Resolve request through Axon, confirm the proposed topics, and inspect the
 reference-count footer and Inference History. Ordinary Test general
 intelligence remains unchanged. Revoke runtime access or remove/edit the

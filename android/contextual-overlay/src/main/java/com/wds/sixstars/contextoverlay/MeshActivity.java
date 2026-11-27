@@ -30,6 +30,7 @@ public final class MeshActivity extends Activity {
     private TextView status,serve,copy,receive,stop,axonStatus;
     private TextView connectionSummary,connectionStatus,connectionDetails,analysisOutput;
     private TextView testConnection,analyzeConnection,copyConnectionReport;
+    private TextView savedAxonStatus;
     private android.widget.CheckBox useAxon;
     private EditText invitations,interests;
     private boolean busy;
@@ -59,9 +60,9 @@ public final class MeshActivity extends Activity {
         stop=RootsUi.action(this,"Stop listening",()->{mesh.stop();getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();status.setText(mesh.status());});listener.addView(stop);
         LinearLayout inbound=RootsUi.card(this,content);
         inbound.addView(RootsUi.text(this,"Receive knowledge",18,RootsUi.TEXT,true));
-        inbound.addView(RootsUi.text(this,"Paste up to eight invitations, one per line. Only missing content is requested. Your private branch terms and interests rank offers locally; they are not sent to peers.",13,RootsUi.MUTED,false));
-        invitations=new EditText(this);invitations.setHint("roots://mesh/v1?…");invitations.setMinLines(2);
-        invitations.setSaveEnabled(false); // Invitation grants remain in memory, never saved into view state.
+        inbound.addView(RootsUi.text(this,"Use your saved Axon connection, or paste up to eight invitations to add or refresh peers. Leave the invitation box empty to use saved access. Only missing content is requested; private interests stay on this device.",13,RootsUi.MUTED,false));
+        invitations=new EditText(this);invitations.setHint("Optional: new or refreshed peer invitations");invitations.setMinLines(2);
+        invitations.setSaveEnabled(false); // Credentials use encrypted private storage, never Android view state.
         if(android.os.Build.VERSION.SDK_INT>=26)invitations.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         invitations.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         invitations.setFilters(new InputFilter[]{new InputFilter.LengthFilter(8192)});inbound.addView(invitations);
@@ -71,7 +72,9 @@ public final class MeshActivity extends Activity {
         useAxon.setText("Use saved .axon subscription");useAxon.setTextColor(RootsUi.TEXT);
         useAxon.setChecked(new java.io.File(getNoBackupFilesDir(),"subscription.axon").isFile());
         inbound.addView(useAxon);
-        LinearLayout connection=RootsUi.section(this,inbound,"Connection details","Test access to published inventory, then ask local intelligence to explain the result.",true);
+        savedAxonStatus=RootsUi.text(this,"Loading saved Axon…",13,RootsUi.MUTED,false);
+        inbound.addView(savedAxonStatus);
+        LinearLayout connection=RootsUi.section(this,inbound,"Connection details","Test access to published inventory, then ask your selected intelligence model to explain the result.",true);
         connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
         connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
         testConnection=RootsUi.action(this,"Test connection",this::testConnection);connection.addView(testConnection);
@@ -84,7 +87,7 @@ public final class MeshActivity extends Activity {
             if(!busy)startActivity(new Intent(this,OverlayTranslationSettingsActivity.class));
         }));
         connection.addView(connectionDetails);
-        analysisOutput=RootsUi.text(this,"Run a test to enable analysis with your selected local model.",13,RootsUi.MUTED,false);
+        analysisOutput=RootsUi.text(this,"Run a test to enable analysis with your selected model.",13,RootsUi.MUTED,false);
         analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         inbound.addView(RootsUi.action(this,"Bind / edit .axon",this::editAxon));
         inbound.addView(RootsUi.action(this,"View current flow allocation",this::showAxon));
@@ -93,10 +96,15 @@ public final class MeshActivity extends Activity {
         inbound.addView(RootsUi.action(this,"Remove .axon binding",()->{
             if(busy)return;
             new AlertDialog.Builder(this).setTitle("Remove saved Axon?")
-                .setMessage("Removes the local subscription, not retained knowledge.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->{AxonRuntime.revoke();AxonSubscription.clear(this);useAxon.setChecked(false);axonStatus.setText("No saved Axon");invalidateDiagnostics("Axon binding removed. Test again for current details.");refresh();}).show();
+                .setMessage("Removes the local subscription and saved peer access. Retained knowledge stays here.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->{
+                    AxonRuntime.revoke();
+                    try{AxonSubscription.clear(this);useAxon.setChecked(false);axonStatus.setText("No saved Axon");invalidateDiagnostics("Axon binding removed. Test again for current details.");}
+                    catch(Exception e){axonStatus.setText("Could not finish removing saved peer access. Try Remove again.");}
+                    refresh();
+                }).show();
         }));
-        axonStatus=RootsUi.text(this,"Bind one or more peer identities and select topics.",13,RootsUi.MUTED,false);
+        axonStatus=RootsUi.text(this,"View current flow allocation to inspect your subscribed topics.",13,RootsUi.MUTED,false);
         inbound.addView(axonStatus);
         receive=RootsUi.action(this,"Receive missing knowledge",this::receive);inbound.addView(receive);
         status=RootsUi.text(this,"",14,RootsUi.ACCENT,true);content.addView(status);
@@ -110,7 +118,7 @@ public final class MeshActivity extends Activity {
         RootsUi.styleInputs(this,shell);setContentView(shell);readInvitation(getIntent());refresh();
         if(mesh.lastConnectionReport()!=null){
             showConnectionReport(mesh.lastConnectionReport());
-            invalidateDiagnostics("Previous connection snapshot. Test the current invitations to refresh it.");
+            invalidateDiagnostics("Previous connection snapshot. Test the current connection to refresh it.");
         }
     }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);readInvitation(intent);}
@@ -136,9 +144,22 @@ public final class MeshActivity extends Activity {
             invalidateDiagnostics("Local connection state changed. Test again for current details.");
         lastConnectionState=state;
         connectionSummary.setText(summary+"\n"+AxonRuntime.status()+"\nAnalysis model: "+IntelligenceModel.selected(this).label);
+        refreshSavedAxon();
         updateDiagnosticActions();
         // Keep completed receive/start errors visible when returning to this screen.
         if(!busy&&status.getText().length()==0)status.setText(NativeTree.available()?mesh.status():"Native Tree unavailable. Connection testing is still available.");
+    }
+    private void refreshSavedAxon(){
+        try{
+            AxonSubscription policy=AxonSubscription.load(this);
+            if(policy==null){savedAxonStatus.setText("Saved Axon: none. Paste an invitation and choose Bind / edit .axon to save a peer.");return;}
+            String binding="Saved Axon: "+policy.pins.size()+" bound peer(s), "+policy.lanes.size()+" topic(s).";
+            try{
+                int count=AxonPeerStore.load(this,policy).size();
+                savedAxonStatus.setText(binding+"\n"+(count==0?"This older binding has no saved connection details. Paste a current invitation once and tap Test connection to save access.":
+                    count+" encrypted peer connection(s) saved. "+(useAxon.isChecked()?"Leave the invitation box empty to use them.":"Select Use saved .axon subscription to use them.")));
+            }catch(Exception e){savedAxonStatus.setText(binding+"\nSaved access could not be opened. Paste a current invitation and Test connection to replace it.");}
+        }catch(Exception e){savedAxonStatus.setText("Saved Axon could not be loaded. Use Bind / edit .axon with a current invitation to repair it.");}
     }
     private void updateDiagnosticActions(){
         if(testConnection==null)return;
@@ -175,7 +196,7 @@ public final class MeshActivity extends Activity {
         final boolean savedAxon=useAxon.isChecked();
         busy=true;refresh();
         final int revision=++diagnosticRevision;
-        reportStale=true;connectionStatus.setText("Testing the invited peers…");
+        reportStale=true;connectionStatus.setText("Testing the selected peer connections…");
         analysisOutput.setText("Waiting for connection checks…");
         WORK.execute(()->{
             MeshConnectionDiagnostics.Report report=null;String error=null;
@@ -230,7 +251,7 @@ public final class MeshActivity extends Activity {
         if(busy)return;busy=true;refresh();status.setText("Starting local TLS listener…");
         WORK.execute(()->{
             String message;
-            try{mesh.start();message="Listening on Wi-Fi · "+mesh.offeredCount()+" published items";}
+            try{mesh.start();message="Listening on Wi-Fi · "+mesh.offeredCount()+" published items\n"+mesh.tlsIdentityStatus();}
             catch(Exception|LinkageError e){message="Could not start listener: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
             final String result=message;
             runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();if(!mesh.invitation().isEmpty())getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);status.setText(result);});
@@ -251,19 +272,28 @@ public final class MeshActivity extends Activity {
             .setMessage("Anyone holding this invitation on your local subnet can fetch the published collection until you stop listening.")
             .setNegativeButton("Cancel",null).setPositiveButton("Share",(d,w)->startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,invitation),"Roots Mesh invitation"))).show();
     }
-    private List<MeshPeer.Invite> parseInvitations()throws Exception{
-        List<MeshPeer.Invite> peers=new ArrayList<>();
-        for(String line:invitations.getText().toString().split("\\r?\\n"))if(!line.trim().isEmpty())peers.add(MeshPeer.Invite.parse(line));
-        if(peers.isEmpty()||peers.size()>8)throw new IllegalArgumentException("Enter one to eight invitations.");
-        return peers;
+    private MeshPeerAccess.Resolution selectedPeers(boolean saved){
+        return MeshPeerAccess.resolve(this,invitations.getText().toString(),saved).requireReady();
     }
     private void editAxon(){
         if(busy)return;
         final List<MeshPeer.Invite> peers;
         final AxonSubscription old;
-        try{peers=parseInvitations();old=AxonSubscription.load(this);}
+        try{
+            // Existing policy settings remain editable even when no live grant
+            // is available. Explicit input is a deliberate peer rebind.
+            AxonSubscription previous;
+            try{previous=AxonSubscription.load(this);}
+            catch(Exception e){if(invitations.getText().toString().trim().isEmpty())throw e;previous=null;}
+            old=previous;
+            if(invitations.getText().toString().trim().isEmpty()){
+                if(old==null)throw new IllegalArgumentException("Paste a peer invitation before creating an Axon binding.");
+                peers=null;
+            }else peers=selectedPeers(false).peers();
+        }
         catch(Exception e){axonStatus.setText(e.getMessage());return;}
         LinearLayout box=RootsUi.column(this);box.setPadding(dp(16),0,dp(16),0);box.setBackgroundColor(RootsUi.CARD);
+        box.addView(RootsUi.text(this,"Peer connection details are saved encrypted on this device. Test and Receive reuse them when the invitation box is empty. If a peer restarts its listener, paste its new invitation to refresh access.",13,RootsUi.MUTED,false));
         box.addView(RootsUi.text(this,"One topic per line; optional FFN group addresses from the Gemma flow analyzer. Example: music | 7:12,8:2. Use * to receive other topics too. No automatic claim about an element's meaning. Observed mapped flow gets half the allocation; local knowledge demand gets the other half.",13,RootsUi.MUTED,false));
         android.widget.Spinner model=new android.widget.Spinner(this);RootsUi.styleSpinner(this,model,IntelligenceModel.labels());
         model.setSelection((old==null?IntelligenceModel.selected(this):old.model).ordinal());box.addView(model);
@@ -274,11 +304,16 @@ public final class MeshActivity extends Activity {
         lines.setHint("music\nscience | 7:12\n*");
         lines.setText(old==null?interests.getText().toString().replace(',','\n'):old.lines());box.addView(lines);
         RootsUi.styleInputs(this,box);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Bind .axon to "+peers.size()+" invited peer(s)").setView(box)
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(peers==null?"Edit saved .axon · "+old.pins.size()+" peer(s)":"Bind .axon to "+peers.size()+" invited peer(s)").setView(box)
             .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
             try{
-                AxonSubscription next=AxonSubscription.create(peers,IntelligenceModel.values()[model.getSelectedItemPosition()],ElementFlow.OPERATIONS[op.getSelectedItemPosition()],lines.getText().toString());
+                IntelligenceModel selectedModel=IntelligenceModel.values()[model.getSelectedItemPosition()];
+                String operation=ElementFlow.OPERATIONS[op.getSelectedItemPosition()],topics=lines.getText().toString();
+                AxonSubscription next=peers==null?old.withSettings(selectedModel,operation,topics):AxonSubscription.create(peers,selectedModel,operation,topics);
+                // Access is authenticated to this exact pin set. A failed policy
+                // write cannot authorize peers outside the previous binding.
+                if(peers!=null)AxonPeerStore.save(this,next,peers);
                 AxonRuntime.revoke();next.save(this);useAxon.setChecked(true);dialog.dismiss();invalidateDiagnostics("Axon binding changed. Test the current connection.");refresh();showAxon();
             }catch(Exception e){lines.setError(e.getMessage());}
         }));dialog.show();
@@ -286,11 +321,10 @@ public final class MeshActivity extends Activity {
     private void armRuntime(){
         if(busy)return;
         try{
-            AxonSubscription policy=AxonSubscription.load(this);
-            List<MeshPeer.Invite> peers=parseInvitations();
-            if(policy==null||!policy.accepts(peers))throw new IllegalArgumentException("Bind these peers to an Axon first.");
+            MeshPeerAccess.Resolution access=selectedPeers(true);
+            AxonSubscription policy=access.policy();List<MeshPeer.Invite> peers=access.peers();
             new AlertDialog.Builder(this).setTitle("Allow runtime Axon access?")
-                .setMessage("For 30 minutes, explicit intelligence requests may ask these bound peers for published knowledge using only named subscription topics you approve. Your prompt stays here. No background requests, no automatic retention. Invitations remain in memory only.")
+                .setMessage("For 30 minutes, explicit intelligence requests may ask these bound peers for published knowledge using only named subscription topics you approve. Your prompt is not sent to Mesh peers. No background requests or automatic retention. Saved peer credentials remain encrypted on this device.")
                 .setNegativeButton("Cancel",null).setPositiveButton("Arm",(d,w)->{AxonRuntime.arm(policy,peers);axonStatus.setText(AxonRuntime.status());invalidateDiagnostics("Runtime access changed. Test again for current details.");refresh();}).show();
         }catch(Exception e){axonStatus.setText(e.getMessage());}
     }
@@ -315,10 +349,8 @@ public final class MeshActivity extends Activity {
         final List<MeshPeer.Invite> peers;
         final AxonSubscription subscription;
         try{
-            peers=parseInvitations();
-            subscription=useAxon.isChecked()?AxonSubscription.load(this):null;
-            if(useAxon.isChecked()&&subscription==null)throw new IllegalArgumentException("Bind an Axon first.");
-            if(subscription!=null&&!subscription.accepts(peers))throw new IllegalArgumentException("This peer is not bound. Edit the Axon or disable it.");
+            MeshPeerAccess.Resolution access=selectedPeers(useAxon.isChecked());
+            peers=access.peers();subscription=access.policy();
         }catch(Exception e){status.setText(e.getMessage());return;}
         final String wanted=interests.getText().toString(),lang=new OverlayPreferences(this).targetLanguage();
         busy=true;refresh();status.setText("Reading peer inventories…");

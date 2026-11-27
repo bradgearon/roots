@@ -81,8 +81,8 @@ final class MeshConnectionDiagnostics {
             detail="Access unconfirmed: the peer closed after TLS without a protocol response.";
             next="An old peer may silently reject an expired invitation; a busy or stopped peer can also close. Copy a fresh invitation and update both devices.";
         }else if(has(error,SSLException.class)){
-            detail=stage.equals("TLS")?"The TLS handshake did not complete.":"The TLS connection ended before the exchange completed.";
-            next="Keep the intended peer listening, copy a current invitation, and use compatible Roots versions on both devices.";
+            detail=stage.equals("TLS")?"The TLS handshake did not complete; invitation-token authentication has not started.":"The TLS connection ended before the exchange completed.";
+            next="Update Roots on the listening peer and check its Local TLS identity result. Restart listening, copy its current invitation, and rebind only if the peer identity changed.";
         }else if(stage.equals("Receive")){
             detail="Published content could not be validated or stored locally.";
             next="Refresh the peer inventory and retry. If this persists, check local storage space and Native Tree availability.";
