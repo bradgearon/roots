@@ -6,7 +6,9 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.os.Bundle;
+import android.text.Editable;
 import android.text.InputFilter;
+import android.text.TextWatcher;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -20,15 +22,21 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Explicit peer sharing and receiving. Opening a roots:// link never sends
- * anything until the user taps Receive. No capture permission needed. */
+/** Explicit peer sharing and receiving. Opening a roots:// link never connects
+ * until the user taps Test connection or Receive. No capture permission needed. */
 public final class MeshActivity extends Activity {
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsMeshUi");t.setDaemon(true);return t;});
     private MeshPeer mesh;
     private TextView status,serve,copy,receive,stop,axonStatus;
+    private TextView connectionSummary,connectionStatus,connectionDetails,analysisOutput;
+    private TextView testConnection,analyzeConnection,copyConnectionReport;
     private android.widget.CheckBox useAxon;
     private EditText invitations,interests;
     private boolean busy;
+    private boolean reportStale;
+    private int diagnosticRevision;
+    private MeshConnectionDiagnostics.Report connectionReport;
+    private String renderedReport="",lastConnectionState="";
     private int dp(int n){return RootsUi.dp(this,n);}
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
@@ -48,11 +56,13 @@ public final class MeshActivity extends Activity {
         serve=RootsUi.action(this,"Start listening",this::start);listener.addView(serve);
         copy=RootsUi.action(this,"Copy private invitation",this::copy);listener.addView(copy);
         listener.addView(RootsUi.action(this,"Share invitation…",this::share));
-        stop=RootsUi.action(this,"Stop listening",()->{mesh.stop();getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);refresh();});listener.addView(stop);
+        stop=RootsUi.action(this,"Stop listening",()->{mesh.stop();getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();status.setText(mesh.status());});listener.addView(stop);
         LinearLayout inbound=RootsUi.card(this,content);
         inbound.addView(RootsUi.text(this,"Receive knowledge",18,RootsUi.TEXT,true));
         inbound.addView(RootsUi.text(this,"Paste up to eight invitations, one per line. Only missing content is requested. Your private branch terms and interests rank offers locally; they are not sent to peers.",13,RootsUi.MUTED,false));
         invitations=new EditText(this);invitations.setHint("roots://mesh/v1?…");invitations.setMinLines(2);
+        invitations.setSaveEnabled(false); // Invitation grants remain in memory, never saved into view state.
+        if(android.os.Build.VERSION.SDK_INT>=26)invitations.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         invitations.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         invitations.setFilters(new InputFilter[]{new InputFilter.LengthFilter(8192)});inbound.addView(invitations);
         interests=new EditText(this);interests.setHint("Wanted topics, separated by commas (optional)");interests.setSingleLine(true);
@@ -61,21 +71,47 @@ public final class MeshActivity extends Activity {
         useAxon.setText("Use saved .axon subscription");useAxon.setTextColor(RootsUi.TEXT);
         useAxon.setChecked(new java.io.File(getNoBackupFilesDir(),"subscription.axon").isFile());
         inbound.addView(useAxon);
+        LinearLayout connection=RootsUi.section(this,inbound,"Connection details","Test access to published inventory, then ask local intelligence to explain the result.",true);
+        connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
+        connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
+        testConnection=RootsUi.action(this,"Test connection",this::testConnection);connection.addView(testConnection);
+        connectionStatus=RootsUi.text(this,"No connection test yet.",14,RootsUi.ACCENT,true);connection.addView(connectionStatus);
+        connectionDetails=RootsUi.text(this,"",13,RootsUi.TEXT,false);
+        connectionDetails.setTextIsSelectable(true);
+        copyConnectionReport=RootsUi.action(this,"Copy connection report",this::copyConnectionReport);connection.addView(copyConnectionReport);
+        analyzeConnection=RootsUi.action(this,"Analyze connection with intelligence",this::analyzeConnection);connection.addView(analyzeConnection);
+        connection.addView(RootsUi.action(this,"Intelligence model settings",()->{
+            if(!busy)startActivity(new Intent(this,OverlayTranslationSettingsActivity.class));
+        }));
+        connection.addView(connectionDetails);
+        analysisOutput=RootsUi.text(this,"Run a test to enable analysis with your selected local model.",13,RootsUi.MUTED,false);
+        analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         inbound.addView(RootsUi.action(this,"Bind / edit .axon",this::editAxon));
         inbound.addView(RootsUi.action(this,"View current flow allocation",this::showAxon));
         inbound.addView(RootsUi.action(this,"Arm runtime Axon (30 minutes)",this::armRuntime));
-        inbound.addView(RootsUi.action(this,"Revoke runtime access",()->{AxonRuntime.revoke();axonStatus.setText(AxonRuntime.status());}));
+        inbound.addView(RootsUi.action(this,"Revoke runtime access",()->{if(busy)return;AxonRuntime.revoke();axonStatus.setText(AxonRuntime.status());invalidateDiagnostics("Runtime access changed. Test again for current details.");refresh();}));
         inbound.addView(RootsUi.action(this,"Remove .axon binding",()->{
+            if(busy)return;
             new AlertDialog.Builder(this).setTitle("Remove saved Axon?")
                 .setMessage("Removes the local subscription, not retained knowledge.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->{AxonRuntime.revoke();AxonSubscription.clear(this);useAxon.setChecked(false);axonStatus.setText("No saved Axon");}).show();
+                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->{AxonRuntime.revoke();AxonSubscription.clear(this);useAxon.setChecked(false);axonStatus.setText("No saved Axon");invalidateDiagnostics("Axon binding removed. Test again for current details.");refresh();}).show();
         }));
         axonStatus=RootsUi.text(this,"Bind one or more peer identities and select topics.",13,RootsUi.MUTED,false);
         inbound.addView(axonStatus);
         receive=RootsUi.action(this,"Receive missing knowledge",this::receive);inbound.addView(receive);
         status=RootsUi.text(this,"",14,RootsUi.ACCENT,true);content.addView(status);
         shell.addView(RootsUi.action(this,"‹ Home",()->{startActivity(new Intent(this,RootsStreamActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));finish();}));
+        invitations.addTextChangedListener(new TextWatcher(){
+            @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){invalidateDiagnostics("Invitation changed. Test the current connection.");}
+            @Override public void afterTextChanged(Editable s){}
+        });
+        useAxon.setOnCheckedChangeListener((button,checked)->invalidateDiagnostics("Subscription selection changed. Test the current connection."));
         RootsUi.styleInputs(this,shell);setContentView(shell);readInvitation(getIntent());refresh();
+        if(mesh.lastConnectionReport()!=null){
+            showConnectionReport(mesh.lastConnectionReport());
+            invalidateDiagnostics("Previous connection snapshot. Test the current invitations to refresh it.");
+        }
     }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);readInvitation(intent);}
     private void readInvitation(Intent intent){
@@ -84,7 +120,7 @@ public final class MeshActivity extends Activity {
         try{
             if(raw.length()>1024)throw new IllegalArgumentException("Invalid invitation");
             MeshPeer.Invite.parse(raw);invitations.setText(raw);
-            status.setText("Invitation ready. Tap Receive to connect.");
+            status.setText("Invitation ready. Tap Test connection or Receive.");
         }catch(Exception e){status.setText("Invalid Roots Mesh invitation.");}
     }
     @Override protected void onResume(){super.onResume();refresh();}
@@ -93,7 +129,102 @@ public final class MeshActivity extends Activity {
         boolean listening=!mesh.invitation().isEmpty();
         serve.setEnabled(!listening&&!busy);copy.setEnabled(listening);stop.setEnabled(listening);
         receive.setEnabled(!busy&&NativeTree.available());
-        if(!busy)status.setText(NativeTree.available()?mesh.status():"Native Tree unavailable.");
+        invitations.setEnabled(!busy);interests.setEnabled(!busy);useAxon.setEnabled(!busy);
+        String summary=mesh.connectionSummary();
+        String state=mesh.connectionStateKey();
+        if(!lastConnectionState.isEmpty()&&!lastConnectionState.equals(state))
+            invalidateDiagnostics("Local connection state changed. Test again for current details.");
+        lastConnectionState=state;
+        connectionSummary.setText(summary+"\n"+AxonRuntime.status()+"\nAnalysis model: "+IntelligenceModel.selected(this).label);
+        updateDiagnosticActions();
+        // Keep completed receive/start errors visible when returning to this screen.
+        if(!busy&&status.getText().length()==0)status.setText(NativeTree.available()?mesh.status():"Native Tree unavailable. Connection testing is still available.");
+    }
+    private void updateDiagnosticActions(){
+        if(testConnection==null)return;
+        enable(testConnection,!busy);
+        enable(analyzeConnection,!busy&&connectionReport!=null&&!reportStale&&!renderedReport.isEmpty());
+        enable(copyConnectionReport,!busy&&!renderedReport.isEmpty());
+    }
+    private static void enable(TextView view,boolean enabled){view.setEnabled(enabled);view.setAlpha(enabled?1f:0.45f);}
+    private void invalidateDiagnostics(String reason){
+        diagnosticRevision++;
+        if(connectionReport!=null){
+            reportStale=true;connectionStatus.setText(reason+" Previous results are shown below.");
+            analysisOutput.setText("Run a fresh connection test before analyzing the changed setup.");
+        }
+        updateDiagnosticActions();
+    }
+    private void showConnectionReport(MeshConnectionDiagnostics.Report report){
+        if(report==null)return;
+        connectionReport=report;reportStale=false;
+        try{
+            renderedReport=MeshDiagnosticTemplates.report(this,report);
+            connectionDetails.setText(renderedReport);
+            connectionStatus.setText("Connection report ready.");
+            analysisOutput.setText("Ready to analyze with "+IntelligenceModel.selected(this).label+". The model receives connection checks; invitation credentials and published content are excluded.");
+        }catch(Exception e){
+            renderedReport="";connectionDetails.setText("");
+            connectionStatus.setText("Could not render the connection report ("+e.getClass().getSimpleName()+").");
+        }
+        updateDiagnosticActions();
+    }
+    private void testConnection(){
+        if(busy)return;
+        final String raw=invitations.getText().toString();
+        final boolean savedAxon=useAxon.isChecked();
+        busy=true;refresh();
+        final int revision=++diagnosticRevision;
+        reportStale=true;connectionStatus.setText("Testing the invited peers…");
+        analysisOutput.setText("Waiting for connection checks…");
+        WORK.execute(()->{
+            MeshConnectionDiagnostics.Report report=null;String error=null;
+            try{report=mesh.testConnections(raw,savedAxon,progress->runOnUiThread(()->{
+                if(!isDestroyed()&&revision==diagnosticRevision)connectionStatus.setText(progress);
+            }));}
+            catch(Exception|LinkageError e){error="Connection test could not finish ("+e.getClass().getSimpleName()+"). Try again.";}
+            final MeshConnectionDiagnostics.Report completed=report;final String failure=error;
+            runOnUiThread(()->{
+                if(isDestroyed())return;
+                busy=false;refresh();
+                if(revision!=diagnosticRevision){
+                    if(completed!=null)showConnectionReport(completed);
+                    invalidateDiagnostics("Setup changed during testing. Run a fresh test.");return;
+                }
+                if(failure==null)showConnectionReport(completed);else connectionStatus.setText(failure);
+            });
+        });
+    }
+    private void analyzeConnection(){
+        if(busy||connectionReport==null||reportStale)return;
+        // Re-check local state before using a snapshot. Do not retrieve through a
+        // potentially broken Axon to diagnose that same connection.
+        refresh();if(reportStale)return;
+        final String request;
+        try{request=MeshDiagnosticTemplates.analysis(this,connectionReport);}
+        catch(Exception e){analysisOutput.setText("Could not prepare the diagnosis request ("+e.getClass().getSimpleName()+").");return;}
+        final int revision=diagnosticRevision;
+        IntelligenceModel model=IntelligenceModel.selected(this);
+        busy=true;refresh();analysisOutput.setText("Queued for "+model.label+"…");
+        LocalIntelligenceProvider.generate(this,model,request,new LocalIntelligenceProvider.Result(){
+            @Override public void partial(String prefix){runOnUiThread(()->{
+                if(!isDestroyed()&&revision==diagnosticRevision)StreamText.reveal(analysisOutput,prefix);
+            });}
+            @Override public void completed(String message,String error){runOnUiThread(()->{
+                if(isDestroyed())return;busy=false;refresh();
+                if(revision!=diagnosticRevision){analysisOutput.setText("Setup changed during analysis. Run a fresh connection test.");return;}
+                analysisOutput.setText(error==null?"Intelligence interpretation\n"+message:
+                    "Intelligence unavailable: "+error+"\nThe measured connection report remains above. Download or select a model in Intelligence model settings.");
+            });}
+        });
+    }
+    private void copyConnectionReport(){
+        if(busy||renderedReport.isEmpty())return;
+        ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if(clipboard==null){connectionStatus.setText("Clipboard unavailable.");return;}
+        String report=(reportStale?"Previous snapshot; setup has changed.\n":"")+renderedReport;
+        clipboard.setPrimaryClip(ClipData.newPlainText("Roots Mesh connection report",report));
+        connectionStatus.setText("Connection report copied. Invitation credentials are excluded.");
     }
     private void start(){
         if(busy)return;busy=true;refresh();status.setText("Starting local TLS listener…");
@@ -148,7 +279,7 @@ public final class MeshActivity extends Activity {
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
             try{
                 AxonSubscription next=AxonSubscription.create(peers,IntelligenceModel.values()[model.getSelectedItemPosition()],ElementFlow.OPERATIONS[op.getSelectedItemPosition()],lines.getText().toString());
-                AxonRuntime.revoke();next.save(this);useAxon.setChecked(true);dialog.dismiss();showAxon();
+                AxonRuntime.revoke();next.save(this);useAxon.setChecked(true);dialog.dismiss();invalidateDiagnostics("Axon binding changed. Test the current connection.");refresh();showAxon();
             }catch(Exception e){lines.setError(e.getMessage());}
         }));dialog.show();
     }
@@ -160,11 +291,11 @@ public final class MeshActivity extends Activity {
             if(policy==null||!policy.accepts(peers))throw new IllegalArgumentException("Bind these peers to an Axon first.");
             new AlertDialog.Builder(this).setTitle("Allow runtime Axon access?")
                 .setMessage("For 30 minutes, explicit intelligence requests may ask these bound peers for published knowledge using only named subscription topics you approve. Your prompt stays here. No background requests, no automatic retention. Invitations remain in memory only.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Arm",(d,w)->{AxonRuntime.arm(policy,peers);axonStatus.setText(AxonRuntime.status());}).show();
+                .setNegativeButton("Cancel",null).setPositiveButton("Arm",(d,w)->{AxonRuntime.arm(policy,peers);axonStatus.setText(AxonRuntime.status());invalidateDiagnostics("Runtime access changed. Test again for current details.");refresh();}).show();
         }catch(Exception e){axonStatus.setText(e.getMessage());}
     }
     private void showAxon(){
-        if(!NativeTree.available())return;
+        if(busy||!NativeTree.available())return;
         final AxonSubscription subscription;
         try{subscription=AxonSubscription.load(this);if(subscription==null){axonStatus.setText("No saved .axon subscription");return;}}
         catch(Exception e){axonStatus.setText(e.getMessage());return;}
@@ -191,14 +322,17 @@ public final class MeshActivity extends Activity {
         }catch(Exception e){status.setText(e.getMessage());return;}
         final String wanted=interests.getText().toString(),lang=new OverlayPreferences(this).targetLanguage();
         busy=true;refresh();status.setText("Reading peer inventories…");
+        final int revision=++diagnosticRevision;
+        reportStale=true;analysisOutput.setText("Waiting for receive connection checks…");
         WORK.execute(()->{
             String message;
             try{
-                MeshPeer.SyncResult result=mesh.sync(peers,wanted,lang,subscription,progress->runOnUiThread(()->{if(!isDestroyed())status.setText(progress);}));
+                MeshPeer.SyncResult result=mesh.sync(peers,wanted,lang,subscription,progress->runOnUiThread(()->{if(!isDestroyed()&&revision==diagnosticRevision)status.setText(progress);}));
                 message="Received "+result.received()+" of "+result.wanted()+" missing items · "+result.peers()+" peers · "+result.failed()+" failures. Return Home to read.";
             }catch(Exception|LinkageError e){message="Receive failed: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
             String result=message;
-            runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();status.setText(result);});
+            final MeshConnectionDiagnostics.Report report=mesh.lastConnectionReport();
+            runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();status.setText(result);if(revision==diagnosticRevision)showConnectionReport(report);});
         });
     }
     /** Explicit publication confirmation; never prefill private original text. */

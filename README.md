@@ -137,5 +137,11 @@ The export also includes `tree-lifecycle.jsonl` and its rotated predecessor when
 ### Roots Mesh and knowledge stream
 Open **Roots Mesh** from Home to publish a shareable remembrance, start the Wi-Fi TLS listener, or receive from a `roots://mesh/v1` invitation. The ranked home feed prefers localized knowledge; tap a captured exact X status link, hold for record actions. Raw capture and originals stay private in SQLite. See [Roots Mesh v1](design/roots-mesh.md) for protocol, ranking, localization, and two-device smoke test.
 
+Use **Test connection** in the Mesh view to inspect each invitation through subnet,
+TCP, pinned TLS, access, and inventory checks. **Copy connection report** provides
+the measured details without invitation credentials. **Analyze connection with
+intelligence** uses the selected local model and a compact Mustache request to
+explain the evidence and suggest next steps; a model is optional for testing.
+
 ### Android NDK selection
 Gradle (including Android Studio) and `build-brain.cmd` now select the newest complete stable side-by-side NDK from the configured SDK's `ndk` directory, using the numerical package revision. Set `ROOTS_NDK_VERSION` to an exact installed version to pin both builds; e.g. `$env:ROOTS_NDK_VERSION = '30.0.16248370'` in PowerShell. The brain's explicit `-Ndk` path is still supported, but its recorded revision must match Gradle's selection for reuse. A changed NDK or older cache lacking its revision requires one `build-brain.cmd` rebuild. The old implicit `ANDROID_NDK_HOME` override is no longer used. The native Android API floor (26 CPU / 28 Vulkan) is independent of the toolchain version and unchanged. No automatic NDK downloads.

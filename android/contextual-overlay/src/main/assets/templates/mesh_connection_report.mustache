@@ -1,0 +1,25 @@
+Connection check · {{checked_at}}
+{{peer_count}} peer invitation(s) checked
+
+This device
+{{#local_checks}}
+[{{state}}] {{stage}} · {{elapsed_ms}} ms
+{{detail}}
+{{#next_step}}Next: {{.}}
+{{/next_step}}
+{{/local_checks}}
+{{#peers}}
+
+Peer {{number}} · {{endpoint}}
+{{#identity}}Identity: {{.}}
+{{/identity}}
+{{#checks}}
+[{{state}}] {{stage}} · {{elapsed_ms}} ms
+{{detail}}
+{{#next_step}}Next: {{.}}
+{{/next_step}}
+{{/checks}}
+{{/peers}}
+{{^peers}}
+No peer checks were run.
+{{/peers}}

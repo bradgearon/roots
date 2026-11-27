@@ -37,7 +37,14 @@ final class AxonRuntime {
         session=new Session(policy,Collections.unmodifiableList(new ArrayList<>(peers)),SystemClock.elapsedRealtime()+30*60*1000L);
     }
     static synchronized void revoke(){session=null;}
-    static String status(){Session s=session;return active(s)?"Runtime access armed · 30-minute session":"Runtime access off";}
+    static String status(){
+        Session s=session;
+        if(s==null)return "Runtime access off";
+        long remaining=s.expires()-SystemClock.elapsedRealtime();
+        if(remaining<=0)return "Runtime access expired · arm again for runtime requests";
+        long seconds=(remaining+999)/1000;
+        return "Runtime access armed · "+(seconds/60)+"m "+(seconds%60)+"s remaining · "+s.peers().size()+" peer(s)";
+    }
     private static boolean active(Session s){return s!=null&&session==s&&SystemClock.elapsedRealtime()<s.expires();}
     private static boolean same(AxonSubscription a,AxonSubscription b){
         return b!=null&&a.pins.equals(b.pins)&&a.model.sha.equals(b.model.sha)&&a.operation.equals(b.operation)&&a.lines().equals(b.lines());
@@ -52,7 +59,7 @@ final class AxonRuntime {
         Session current=session;
         if(!authorized(activity,current)){error.accept("Arm runtime access in Roots Mesh with a current invitation first.");return;}
         List<String> labels=new ArrayList<>();
-        for(AxonSubscription.Lane lane:current.policy().lanes())if(RuntimeNeed.validTopic(lane.topic()))labels.add(lane.topic());
+        for(AxonSubscription.Lane lane:current.policy().lanes)if(RuntimeNeed.validTopic(lane.topic()))labels.add(lane.topic());
         if(labels.isEmpty()){error.accept("Add named topics to the Axon. Wildcard bulk sync does not authorize runtime topic disclosure.");return;}
         String[] names=labels.toArray(new String[0]);boolean[] checked=new boolean[names.length];int count=0;
         for(int i=0;i<names.length;i++)if(RuntimeNeed.matches(request,names[i])&&count<2){checked[i]=true;count++;}

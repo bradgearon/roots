@@ -94,5 +94,6 @@ android {
 }
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation("com.samskivert:jmustache:1.16")
     testImplementation("junit:junit:4.13.2")
 }

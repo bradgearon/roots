@@ -14,6 +14,87 @@ Completed overlay translations are written to the same record as the original un
 * Inventory pages contain IDs, approved topics, language and bounded observed request count. Local wanted interests/branch terms never leave the device. The receiver compares up to eight invitations, ranks missing items by local interest, then fewest observed replicas, then demand, then language, and asks for up to 32 per sync. Alternate sources are tried on failure. Repeated sync receives the next missing items. No DHT, tracker, NAT traversal, global rarity estimates or background polling. Counts are local observations, not global popularity.
 * Peer content in another language is retained in SQLite and can be localized using the same home record action (requires existing local inference permission/model). Only local-language knowledge enters the compiled projection.
 
+## Connection testing and diagnosis
+
+The Mesh view has a **Connection details** section next to the invitation and
+subscription controls. **Test connection** checks the current invitations without
+receiving or retaining published knowledge. It uses the same network, TLS, and
+inventory exchange as Receive. A local Native Tree problem is reported separately
+so transport can still be tested when the receiving database is unavailable.
+
+Each timestamped report includes the current network and local IPv4/prefix,
+listener state, subscription readiness, runtime access state, and a separate
+result for each invited endpoint. Checks show PASS, FAIL, WARN, or SKIP, with
+elapsed time and an actionable next check. Tests distinguish:
+
+| Check | What the result establishes |
+| --- | --- |
+| Invitation and subscription | Valid Mesh invitation; selected saved policy exists and binds the peer identity |
+| Network and subnet | Default non-VPN Wi-Fi, an IPv4 address, and another device on that subnet |
+| TCP | The invited endpoint accepts a connection on port 8233 |
+| TLS | The handshake succeeds with the certificate identity in the invitation |
+| Protocol and authentication | A compatible peer accepts the current invitation session |
+| Inventory | A valid first inventory page is returned; zero items means the peer is reachable but empty |
+
+Later stages are marked untested when an earlier check prevents them. A test reads
+only the first inventory page, at most 256 offers, and reports whether more pages
+exist. Each peer has an eight-second exchange budget and the full diagnostic run
+has a thirty-second budget. Invitations beyond the remaining budget are marked
+untested. Conflicting invitations for the same endpoint are reported explicitly.
+Receive also preserves a connection report when an inventory or content request
+fails, instead of collapsing every error into “No peer inventory was reachable.”
+
+New peers return bounded authentication/protocol errors after TLS. An older peer
+can still close without a response; that result remains ambiguous between a stale
+invitation, a stopped/busy peer, or an incomplete exchange. TLS success alone does
+not prove invitation access. Stopping and restarting the listener generates a
+new session token: copy a new invitation even when the saved `.axon` identity
+still matches. Runtime arming and model flow observations are not required for
+manual Receive; a wildcard `*` is a valid bulk subscription.
+
+**Copy connection report** copies measured diagnostics without invitation tokens,
+full invitation URIs, private topic labels, or published content. Abbreviated
+certificate identities and LAN endpoints remain available for troubleshooting.
+Changing invitations or subscription settings marks the previous report stale.
+Returning to the screen preserves the latest in-memory report as a dated snapshot,
+and a fresh test is required before analyzing a changed setup. Invitation grants
+are excluded from Android saved view state and autofill.
+
+### Intelligence request templates
+
+**Analyze connection with intelligence** renders a compact diagnosis request and
+runs the selected downloaded local model through `LocalIntelligenceProvider`.
+The normal connection checks work without a model. The action uses ordinary local
+generation and does not depend on runtime Axon retrieval. The screen keeps the
+model's interpretation separate from the measured report, and shows model setup
+or queue errors without discarding the evidence.
+
+Both outputs use the pinned `com.samskivert:jmustache:1.16` library through the
+shared `TextTemplates` loader:
+
+- `android/contextual-overlay/src/main/assets/templates/mesh_connection_report.mustache`
+  renders the detailed on-screen and copyable report.
+- `android/contextual-overlay/src/main/assets/templates/mesh_connection_analysis.mustache`
+  renders the small request to the local model.
+
+Templates receive plain maps built from typed diagnostic records. The diagnosis
+request stays within the existing plain-text inference limit, preserves failures
+for every tested peer, and includes inventory counts even when the check passes.
+It asks for a likely cause, the supporting evidence, and two or three next actions;
+insufficient evidence must lead to a suggested test, not an invented finding.
+No raw peer response or exception text is interpolated into the model request.
+
 ## Validation
 
 Native and JNI contract tests cover localized content and private exclusion. Android JVM tests cover URL validation, content hashing, rarity ordering and home ranking. The two-device smoke test is: (1) publish one local-language remembrance on phone A, (2) start listener and copy invitation, (3) open/paste on fresh phone B and receive, (4) verify home record and second sync receives no duplicates, (5) start B listener and receive from B on another device, (6) test exact X link and retained translation, (7) stop listener and verify old invitation fails. Android build and actual two-device TLS integration require a supported Android SDK/device environment.
+
+For connection diagnostics, additionally test an empty published collection, a
+stopped listener, an old invitation after restart, an invitation copied from the
+receiving device itself, a different subnet, a VPN/default-network mismatch, and
+a mismatched certificate pin. Confirm that the reported stage is accurate, later
+stages remain untested, and no test adds a Tree record. Repeat with multiple peers,
+including one reachable and one unreachable peer. Verify Copy report and the
+model request contain no invitation grants. Run analysis with and without the
+selected model downloaded; the measured report must remain available in both
+cases. Device tests establish Android Keystore/TLS, routing, and UI behavior that
+host JVM checks cannot establish.
