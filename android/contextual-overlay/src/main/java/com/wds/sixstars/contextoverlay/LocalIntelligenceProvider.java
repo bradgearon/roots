@@ -276,21 +276,11 @@ final class LocalIntelligenceProvider {
         submit(()->{
             try{
                 ensure(app,model,msg->result.progress("loading",msg));
-                long[] firstStats=new long[8],secondStats=new long[8];
-                result.progress("select","Request 1 / 2: choosing five movements…");
-                String first=infer(app,model,"Poetic selection",PoeticMovement.intelligenceSelection(input),firstStats,
-                    prefix->result.progress("selection_stream",prefix));
-                List<PoeticMovement.Pair> pairs;
-                try{pairs=PoeticMovement.parseSelectionRows(input,rows(first));}
-                catch(IllegalArgumentException e){result.progress("invalid_selection",first);throw e;}
-                result.progress("selected",PoeticMovement.describe(pairs));
-                result.progress("resolve","Request 2 / 2: resolving displaced meanings…");
-                String second=infer(app,model,"Poetic resolution",PoeticMovement.intelligenceResolution(input,pairs),secondStats,
-                    prefix->result.progress("resolution_stream",prefix));
-                List<PoeticMovement.Resolution> resolutions;
-                try{resolutions=PoeticMovement.parseResolutionRows(input,rows(second));}
-                catch(IllegalArgumentException e){result.progress("invalid_resolution",second);throw e;}
-                result.completed(new PoeticMovement.Run(input,pairs,resolutions,firstStats,secondStats,SystemClock.elapsedRealtime()-submitted),null);
+                PoeticMovement.Outcome outcome=PoeticMovement.executeGeneral(input,
+                    (operation,prompt,stats,partial)->infer(app,model,operation,prompt,stats,partial),
+                    result::progress);
+                result.completed(new PoeticMovement.Run(input,outcome.pairs(),outcome.resolutions(),
+                    outcome.firstStats(),outcome.secondStats(),SystemClock.elapsedRealtime()-submitted),null);
             }catch(Exception|LinkageError e){result.completed(null,e.getClass().getSimpleName()+": "+e.getMessage());}
             finally{scheduleIdle();}
         },()->result.completed(null,"Local inference queue is busy."));
