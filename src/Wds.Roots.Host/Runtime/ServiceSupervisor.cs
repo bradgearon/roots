@@ -84,6 +84,8 @@ public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient 
     private AiHardwareProfile? _hardware;
     private void Report(string message) { Console.WriteLine(message); onStatus?.Invoke(message); }
     public string SelectedBackend { get; private set; } = "cpu";
+    // Exact engine directory selected and successfully installed by this supervisor.
+    internal string? ProvisionedLlmDirectory { get; private set; }
 
     public async Task StartAsync(CancellationToken token)
     {
@@ -202,10 +204,14 @@ public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient 
             }
 
             foreach (EnginePack pack in packs)
+            {
                 await EnginePackInstaller.InstallAsync(
                     aiRoot, pack, http, Report, token,
                     forceFullVerification: forceFullVerification && component.Equals("llm", StringComparison.OrdinalIgnoreCase))
                     .ConfigureAwait(false);
+                if (component.Equals("llm", StringComparison.OrdinalIgnoreCase))
+                    ProvisionedLlmDirectory = EnginePackInstaller.Under(aiRoot, pack.Directory);
+            }
         }
         finally
         {
