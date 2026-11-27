@@ -64,8 +64,8 @@ public final class MeshActivity extends Activity {
         LinearLayout content=RootsUi.column(this);content.setPadding(dp(16),0,dp(16),dp(16));scroll.addView(content);
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout publish=RootsUi.card(this,content);
-        publish.addView(RootsUi.text(this,"Publish knowledge",18,RootsUi.TEXT,true));
-        publish.addView(RootsUi.text(this,"Only explicitly published remembrances are offered. Captured posts, private messages, originals, SQLite and GGUF never leave this device through Mesh. Published knowledge can be retained and reshared by recipients.",13,RootsUi.MUTED,false));
+        publish.addView(RootsUi.text(this,"Tree graph",18,RootsUi.TEXT,true));
+        publish.addView(RootsUi.text(this,"Listening shares your Tree with connected peers.",13,RootsUi.MUTED,false));
         publish.addView(RootsUi.action(this,"Write a remembrance",()->publish(this,null,this::refresh)));
         LinearLayout listener=RootsUi.card(this,content);
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
@@ -92,7 +92,7 @@ public final class MeshActivity extends Activity {
         inbound.addView(savedAxonStatus);
         boundConnectionStatus=RootsUi.text(this,"Bound connection: not checked",13,RootsUi.MUTED,false);
         inbound.addView(boundConnectionStatus);
-        LinearLayout connection=RootsUi.section(this,inbound,"Connection details","Test access to published inventory, then ask your selected intelligence model to explain the result.",true);
+        LinearLayout connection=RootsUi.section(this,inbound,"Connection details","Test the peer connection and graph inventory.",true);
         connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
         connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
         testConnection=RootsUi.action(this,"Refresh / test connection",this::testConnection);connection.addView(testConnection);
@@ -285,7 +285,7 @@ public final class MeshActivity extends Activity {
             renderedReport=MeshDiagnosticTemplates.report(this,report);
             connectionDetails.setText(renderedReport);
             connectionStatus.setText("Connection report ready.");
-            analysisOutput.setText("Ready to analyze with "+IntelligenceModel.selected(this).label+" on "+intelligenceLocation()+". The model receives connection checks; invitation credentials and published content are excluded.");
+            analysisOutput.setText("Ready to analyze with "+IntelligenceModel.selected(this).label+" on "+intelligenceLocation()+". The model receives connection checks; invitation credentials and graph content are excluded.");
         }catch(Exception e){
             renderedReport="";connectionDetails.setText("");
             connectionStatus.setText("Could not render the connection report ("+e.getClass().getSimpleName()+").");
@@ -360,7 +360,7 @@ public final class MeshActivity extends Activity {
         if(busy)return;busy=true;refresh();status.setText("Starting local TLS listener…");
         WORK.execute(()->{
             String message;
-            try{mesh.start();message="Listening on Wi-Fi · "+mesh.offeredCount()+" published items\n"+mesh.tlsIdentityStatus();}
+            try{mesh.start();message="Listening on Wi-Fi · "+mesh.offeredCount()+" graph items\n"+mesh.tlsIdentityStatus();}
             catch(Exception|LinkageError e){message="Could not start listener: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
             final String result=message;
             runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();if(!mesh.invitation().isEmpty())getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);status.setText(result);});
@@ -377,9 +377,7 @@ public final class MeshActivity extends Activity {
     }
     private void share(){
         String invitation=mesh.invitation();if(invitation.isEmpty()){status.setText("Start listening first.");return;}
-        new AlertDialog.Builder(this).setTitle("Share access to published knowledge?")
-            .setMessage("Anyone holding this invitation on your local subnet can fetch the published collection until you stop listening.")
-            .setNegativeButton("Cancel",null).setPositiveButton("Share",(d,w)->startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,invitation),"Roots Mesh invitation"))).show();
+        startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,invitation),"Roots Mesh invitation"));
     }
     private MeshPeerAccess.Resolution selectedPeers(boolean saved){
         return MeshPeerAccess.resolve(this,invitations.getText().toString(),saved).requireReady();
@@ -403,7 +401,7 @@ public final class MeshActivity extends Activity {
         catch(Exception e){axonStatus.setText(e.getMessage());return;}
         LinearLayout box=RootsUi.column(this);box.setPadding(dp(16),0,dp(16),0);box.setBackgroundColor(RootsUi.CARD);
         box.addView(RootsUi.text(this,"Peer connection details are saved encrypted on this device. Test and Receive reuse them when the invitation box is empty. If a peer restarts its listener, paste its new invitation to refresh access.",13,RootsUi.MUTED,false));
-        box.addView(RootsUi.text(this,"One topic per line; optional FFN group addresses from the Gemma flow analyzer. Example: music | 7:12,8:2. Use * to receive other topics too. No automatic claim about an element's meaning. Observed mapped flow gets half the allocation; local knowledge demand gets the other half.",13,RootsUi.MUTED,false));
+        box.addView(RootsUi.text(this,"All knowledge is wanted by default. Optional topics and FFN groups prioritize its flow. Example: music | 7:12,8:2.",13,RootsUi.MUTED,false));
         android.widget.Spinner model=new android.widget.Spinner(this);RootsUi.styleSpinner(this,model,IntelligenceModel.labels());
         model.setSelection((old==null?IntelligenceModel.selected(this):old.model).ordinal());box.addView(model);
         android.widget.Spinner op=new android.widget.Spinner(this);RootsUi.styleSpinner(this,op,ElementFlow.OPERATIONS);
@@ -434,7 +432,7 @@ public final class MeshActivity extends Activity {
             MeshPeerAccess.Resolution access=selectedPeers(true);
             AxonSubscription policy=access.policy();List<MeshPeer.Invite> peers=access.peers();
             new AlertDialog.Builder(this).setTitle("Allow runtime Axon access?")
-                .setMessage("For 30 minutes, explicit intelligence requests may ask these bound peers for published knowledge using only named subscription topics you approve. Your prompt is not sent to Mesh peers. No background requests or automatic retention. Saved peer credentials remain encrypted on this device.")
+                .setMessage("Enable runtime knowledge requests for 30 minutes.")
                 .setNegativeButton("Cancel",null).setPositiveButton("Arm",(d,w)->{AxonRuntime.arm(policy,peers);axonStatus.setText(AxonRuntime.status());invalidateDiagnostics("Runtime access changed. Test again for current details.");refresh();}).show();
         }catch(Exception e){axonStatus.setText(e.getMessage());}
     }
