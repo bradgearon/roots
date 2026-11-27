@@ -154,10 +154,13 @@ public final class LocalFunctionGemmaProvider {
                     throw new IllegalArgumentException("Request 1 returned invalid selection: "+e.getMessage());
                 }
                 result.progress("selected",PoeticMovement.describe(pairs));
+                PoeticMovement.ResolutionInput displaced=PoeticMovement.resolutionInput(input,pairs);
+                String secondPrompt=PoeticMovement.resolutionPrompt(displaced);
+                result.progress("resolution_input",secondPrompt);
                 stage="movement_resolve";
-                result.progress(stage,"Request 2 / 2: replacing ordinary actions and resolving differences…");
+                result.progress(stage,"Request 2 / 2: finding meaningful connections…");
                 long[] secondStats=new long[8];long secondStart=SystemClock.elapsedRealtime();
-                String second=movementGenerate(app,"Poetic resolution",PoeticMovement.resolutionPrompt(input,pairs),secondStats,threads,prefix->result.progress("resolution_stream",prefix));
+                String second=movementGenerate(app,"Poetic resolution",secondPrompt,secondStats,threads,prefix->result.progress("resolution_stream",prefix));
                 trace(app,stage,"ok",secondStart,secondStats,0);
                 java.util.List<PoeticMovement.Resolution> resolutions;
                 try{resolutions=PoeticMovement.parseResolution(input,second);}
