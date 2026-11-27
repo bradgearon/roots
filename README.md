@@ -22,10 +22,10 @@ Roots preserves Resone's engine and model provisioning method, but keeps a separ
 
 ### Desktop startup and relaunch diagnostics
 
-The desktop runtime retains the original llama.cpp **b10724** engine pin
-(CUDA 13.3 on NVIDIA). Android's separate native runtime uses b11960.
-Windows CPU, CUDA and Vulkan engine archives have pinned SHA-256 digests.
-The launcher restores the configured desktop engine if its installed receipt
+The desktop runtime pins llama.cpp **b11960**, with matching CUDA 13.4
+runtime DLLs on NVIDIA. The earlier b10724 build cannot load the PLaMo 3
+tokenizer. Windows CPU, CUDA and Vulkan engine archives have pinned SHA-256
+digests. The launcher restores the configured engine if its installed receipt
 does not match the manifest. The model selection and existing verified model
 file are unchanged.
 
