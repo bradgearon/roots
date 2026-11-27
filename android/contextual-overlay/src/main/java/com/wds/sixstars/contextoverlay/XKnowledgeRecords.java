@@ -11,26 +11,87 @@ import java.util.Map;
 /** X network structural adapter. Local identities are provisional; never
  * manufacture a remote post ID. Uncertain nodes remain in the raw lane. */
 final class XKnowledgeRecords {
+    private static final int SAMPLE_LIMIT=1800;
     static final class Sample {
         final String text,id;
         final Rect bounds;
-        final boolean description;
+        final boolean description,sourceLink;
         Sample(String text,String id,Rect bounds,boolean description){
+            this(text,id,bounds,description,false);
+        }
+        Sample(String text,String id,Rect bounds,boolean description,boolean sourceLink){
             this.text=text;this.id=id==null?"":id.toLowerCase(Locale.ROOT);
-            this.bounds=new Rect(bounds);this.description=description;
+            this.bounds=new Rect(bounds);this.description=description;this.sourceLink=sourceLink;
         }
     }
+    private static String roleId(String id){
+        String value=id==null?"":id.toLowerCase(Locale.ROOT);
+        return value.substring(value.lastIndexOf('/')+1);
+    }
+    private static boolean secondaryRole(String id){
+        return id.contains("quote")||id.contains("repost")||id.contains("retweet")||id.contains("embedded");
+    }
+    static boolean isPermalinkRole(String id){
+        String role=roleId(id);
+        if(secondaryRole(role)||PostTextHeuristics.isPostTextId(role))return false;
+        return role.contains("permalink")||role.contains("timestamp")||role.contains("tweet_time")
+            ||role.contains("post_time")||role.contains("status_time")
+            ||role.matches("(tweet|post|status)_(url|uri|link|id)");
+    }
+    static boolean hasPostMetadataRole(String id){
+        String role=roleId(id);
+        return !secondaryRole(role)&&(isPermalinkRole(role)||PostTextHeuristics.isPostContainerId(role)
+            ||PostTextHeuristics.isPostTextId(role));
+    }
+    private static void sourceLink(List<Sample> out,String link,String id,Rect bounds){
+        if(link.isEmpty()||bounds.isEmpty())return;
+        // Source metadata is important even on a crowded screen; do not let
+        // arbitrary labels consume every slot before an explicit permalink.
+        if(out.size()>=SAMPLE_LIMIT){
+            int ordinary=-1;
+            for(int i=out.size()-1;i>=0;i--)if(!out.get(i).sourceLink){ordinary=i;break;}
+            if(ordinary<0)return;
+            out.remove(ordinary);
+        }
+        out.add(new Sample(link,id,bounds,false,true));
+    }
     static void sample(List<Sample> out,CharSequence value,String id,Rect bounds,boolean description){
-        if(out.size()>=1800 || value==null)return;
-        if(value instanceof android.text.Spanned && id!=null && (id.toLowerCase(Locale.ROOT).contains("timestamp")||id.toLowerCase(Locale.ROOT).contains("tweet_time")||id.toLowerCase(Locale.ROOT).contains("permalink"))){
-            android.text.Spanned spans=(android.text.Spanned)value;
-            for(android.text.style.URLSpan span:spans.getSpans(0,spans.length(),android.text.style.URLSpan.class)){
-                String link=XPostLink.canonical(span.getURL());if(!link.isEmpty()&&out.size()<1800)out.add(new Sample(link,id,bounds,description));
+        if(value==null)return;
+        if(isPermalinkRole(id)){
+            // Keep the actual URL in a URLSpan even if only a formatted date
+            // or the word "link" is visible in the accessibility label.
+            if(value instanceof android.text.Spanned){
+                android.text.Spanned spans=(android.text.Spanned)value;
+                for(android.text.style.URLSpan span:spans.getSpans(0,spans.length(),android.text.style.URLSpan.class))
+                    sourceLink(out,XPostLink.canonical(span.getURL()),id,bounds);
             }
+            // Only an explicitly designated ID view can supply a bare ID.
+            String role=roleId(id);
+            String link=role.matches("(tweet|post|status)_id")
+                ?XPostLink.fromRemoteId(value):XPostLink.fromMetadata(value);
+            sourceLink(out,link,id,bounds);
         }
         for(String text:KnowledgeText.fragments(value)){
-            if(out.size()>=1800)break;
+            if(out.size()>=SAMPLE_LIMIT)break;
             out.add(new Sample(text,id,bounds,description));
+        }
+    }
+    /** Optional app-provided accessibility extras, never Android view IDs,
+     * timestamps, local hashes or arbitrary links in a post body. */
+    static void sampleMetadata(List<Sample> out,android.os.Bundle extras,String id,Rect bounds){
+        if(extras==null||!hasPostMetadataRole(id))return;
+        for(String key:extras.keySet()){
+            String name=key.toLowerCase(Locale.ROOT);
+            name=name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf(':'))+1)
+                .replace("_","");
+            try{
+                Object value=extras.get(key);
+                if(name.matches("(tweet|post|status)(id|idstr)")){
+                    sourceLink(out,XPostLink.fromRemoteId(value),id,bounds);
+                }else if(name.matches("(tweet|post|status)(url|uri|link|permalink)|permalink")&&value!=null){
+                    sourceLink(out,XPostLink.canonical(value.toString()),id,bounds);
+                }
+            }catch(RuntimeException ignored){/* Optional metadata; raw capture still proceeds. */}
         }
     }
     static List<NativeTree.Observation> assemble(List<TextCandidate> bodies,List<Sample> samples,long at){
@@ -50,17 +111,19 @@ final class XKnowledgeRecords {
             if(!handle.isEmpty())add(out,key,"handle",handle,at);
             String permalink="";boolean ambiguous=false;
             for(Sample sample:samples){
+                if(sample.sourceLink){
+                    if(!sourceBelongs(body,sample,bodies))continue;
+                    String link=XPostLink.canonical(sample.text);
+                    if(!link.isEmpty()){
+                        if(!permalink.isEmpty()&&!XPostLink.postId(permalink).equals(XPostLink.postId(link)))ambiguous=true;
+                        if(permalink.isEmpty()||permalink.contains("/i/web/status/"))permalink=link;
+                    }
+                    continue;
+                }
                 if(!belongs(body,sample,bodies))continue;
                 if(TextFingerprint.normalized(sample.text).equals(body.text)
                         || TextFingerprint.normalized(sample.text).equals(author)
                         || sample.text.equals(handle))continue;
-                if(sample.id.contains("permalink")||sample.id.contains("tweet_time")||sample.id.contains("timestamp")){
-                    String link=XPostLink.canonical(sample.text);
-                    if(!link.isEmpty()){
-                        if(!permalink.isEmpty()&&!permalink.equals(link))ambiguous=true;
-                        permalink=link;
-                    }
-                }
                 String role=role(sample);
                 if(role!=null)add(out,key,role,sample.text,at);
             }
@@ -86,6 +149,21 @@ final class XKnowledgeRecords {
             best=value;
         }
         return best;
+    }
+    private static boolean sourceBelongs(TextCandidate body,Sample sample,List<TextCandidate> all){
+        if(belongs(body,sample,all))return true;
+        // Detail screens sometimes expose the actual source on the body node
+        // or a named card without providing a separate postBounds. Accept only
+        // a directly enclosing structural node with one unambiguous body.
+        String role=roleId(sample.id);
+        boolean direct=PostTextHeuristics.isPostTextId(role)&&sample.bounds.equals(body.bounds);
+        boolean container=PostTextHeuristics.isPostContainerId(role)&&sample.bounds.contains(body.bounds);
+        if(!direct&&!container)return false;
+        for(TextCandidate other:all){
+            if(other!=body&&!other.authorName&&(sample.bounds.contains(other.bounds)
+                ||other.hasPostContainer&&other.postBounds.contains(sample.bounds)))return false;
+        }
+        return true;
     }
     private static boolean belongs(TextCandidate body,Sample sample,List<TextCandidate> all){
         // Only trust a card that encloses the member and is unambiguous among
@@ -115,7 +193,7 @@ final class XKnowledgeRecords {
         for(String text:KnowledgeText.fragments(value)){
             String source="record.x."+role;
             String id=source+"\u001f"+key+"\u001f"+text;
-            String language=XVisibleTextReader.languageHint(text);
+            String language=role.equals("link")?"":XVisibleTextReader.languageHint(text);
             if(role.equals("body")&&language.isEmpty())language=KnowledgeLanguage.englishHint(text);
             out.putIfAbsent(id,new NativeTree.Observation(source,key,text,language,at));
         }
