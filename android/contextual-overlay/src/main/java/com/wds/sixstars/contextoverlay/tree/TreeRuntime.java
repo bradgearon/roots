@@ -48,6 +48,11 @@ public final class TreeRuntime {
     private volatile NativeTree nativeTree;
     private volatile boolean clearing;
     private volatile String snapshotStatus="Not compiled", error="";
+    private volatile String captureReaderState="Waiting for accessibility service";
+    private final AtomicLong lastVisibleScanAt=new AtomicLong(), lastAcceptedScanAt=new AtomicLong(),
+        lastNewCaptureAt=new AtomicLong(), lastVisibleCount=new AtomicLong();
+    /** Live service status contains no captured text. Historical timestamps survive a process restart. */
+    public void noteCaptureReaderState(String state){captureReaderState=state;}
     private final KnowledgeWave wave=new KnowledgeWave();
     private volatile KnowledgeWave.Field coordination=KnowledgeWave.Field.empty();
     private final java.util.concurrent.CopyOnWriteArrayList<Runnable> waveListeners=new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -130,9 +135,11 @@ public final class TreeRuntime {
         }
     }
     private String[] statNames(){return new String[]{"inserted","duplicate","dropped","scans","rejected","bounded",
-        "discovered","accepted","queued","queue_drops","cancelled","invalid","write_attempts","write_failures","no_home","private_scans"};}
+        "discovered","accepted","queued","queue_drops","cancelled","invalid","write_attempts","write_failures","no_home","private_scans",
+        "last_visible_scan_at","last_accepted_scan_at","last_new_capture_at","last_visible_count"};}
     private AtomicLong[] stats(){return new AtomicLong[]{inserted,duplicate,dropped,scans,rejected,truncated,
-        discovered,accepted,queued,queueDrops,cancelled,invalidText,writeAttempts,writeFailures,noHome,privateScans};}
+        discovered,accepted,queued,queueDrops,cancelled,invalidText,writeAttempts,writeFailures,noHome,privateScans,
+        lastVisibleScanAt,lastAcceptedScanAt,lastNewCaptureAt,lastVisibleCount};}
     private void restoreStats(){
         String[] names=statNames();AtomicLong[] values=stats();
         for(int i=0;i<names.length;i++)values[i].set(prefs.getLong("stat_"+names[i],0));
@@ -211,6 +218,10 @@ public final class TreeRuntime {
     public void acceptVisibleSnapshot(List<NativeTree.Observation> observations,long epoch,
             boolean foregroundX,boolean incomplete){
         if(!enabled() || epoch!=captureEpoch.get())return;
+        long now=System.currentTimeMillis();
+        lastVisibleScanAt.set(now);lastVisibleCount.set(observations.size());
+        if(foregroundX){lastAcceptedScanAt.set(now);captureReaderState="Foreground X scan accepted";}
+        else captureReaderState="Foreground changed during scan; discarded";
         scans.incrementAndGet();discovered.addAndGet(observations.size());
         if(incomplete)truncated.incrementAndGet();
         if(!foregroundX)rejected.incrementAndGet();
@@ -299,6 +310,7 @@ public final class TreeRuntime {
                 try{
                     long n=tree().observe(observations);
                     inserted.addAndGet(n);duplicate.addAndGet(observations.size()-n);
+                    if(n>0)lastNewCaptureAt.set(System.currentTimeMillis());
                     error="";
                     synchronized(intakeLock){
                         if(captureEpoch.get()==epoch&&!clearing)for(NativeTree.Observation o:observations){
@@ -362,8 +374,16 @@ public final class TreeRuntime {
             compiling.set(false);if(!clearing&&dirty.get()!=target)scheduleCompile();
         }
     }
+    private static String diagnosticTime(long millis){
+        return millis==0?"Not recorded yet":java.text.DateFormat.getDateTimeInstance(
+            java.text.DateFormat.SHORT,java.text.DateFormat.MEDIUM).format(new java.util.Date(millis));
+    }
     public String status(){
         return "Capture "+(enabled()?"ON":"OFF")+" · Queue "+queue.size()+"/"+QUEUE_LIMIT+
+            "\nReader: "+captureReaderState+
+            "\nLast visible scan: "+diagnosticTime(lastVisibleScanAt.get())+" · "+lastVisibleCount.get()+" fragments"+
+            "\nLast accepted scan: "+diagnosticTime(lastAcceptedScanAt.get())+
+            "\nLast new capture: "+diagnosticTime(lastNewCaptureAt.get())+
             "\nScans "+scans.get()+" · Rejected "+rejected.get()+" · Bounded "+truncated.get()+
             "\nDiscovered "+discovered.get()+" · Accepted "+accepted.get()+" · Queued "+queued.get()+
             "\nWrites attempted "+writeAttempts.get()+" · Lifetime failed "+writeFailures.get()+
