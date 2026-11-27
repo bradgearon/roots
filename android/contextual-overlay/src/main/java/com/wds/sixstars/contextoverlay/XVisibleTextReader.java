@@ -119,6 +119,11 @@ public final class XVisibleTextReader {
                         retain(observations,node.getContentDescription(),observedAt);
                         XKnowledgeRecords.sample(knowledgeSamples,node.getText(),node.getViewIdResourceName(),observedBounds,false);
                         XKnowledgeRecords.sample(knowledgeSamples,node.getContentDescription(),node.getViewIdResourceName(),observedBounds,true);
+                        String metadataRole=node.getViewIdResourceName();
+                        if(XKnowledgeRecords.hasPostMetadataRole(metadataRole)){
+                            try{XKnowledgeRecords.sampleMetadata(knowledgeSamples,node.getExtras(),metadataRole,observedBounds);}
+                            catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
+                        }
                     }
                 }
 
