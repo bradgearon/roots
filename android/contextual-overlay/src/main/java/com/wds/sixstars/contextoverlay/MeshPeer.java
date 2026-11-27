@@ -45,9 +45,8 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.X509ExtendedKeyManager;
 import static com.wds.sixstars.contextoverlay.MeshConnectionDiagnostics.*;
 
-/** Roots Mesh v1: direct Wi-Fi peers, standard TLS, immutable content-addressed
- * items, inventory and explicit wants. No DHT, trackers, raw-tree access or
- * custom message encryption. Invitation authorizes reading published items. */
+/** Direct Wi-Fi peers, pinned TLS and content-addressed knowledge. A current
+ * invitation authorizes the Tree graph; legacy clients can still read offers. */
 final class MeshPeer {
     static final int PORT=8233, MAX_INVENTORY=256, MAX_FETCH=32, MAX_FRAME=256*1024;
     private static MeshPeer instance;
@@ -61,6 +60,9 @@ final class MeshPeer {
     private final SecureRandom random=new SecureRandom();
     private final Map<String,Integer> requested=new ConcurrentHashMap<>();
     private volatile Map<String,Integer> observedReplicas=java.util.Collections.emptyMap(), observedDemand=java.util.Collections.emptyMap();
+    private final Object catalogLock=new Object();
+    private record GraphCatalog(long revision,long epoch,Map<String,MeshItem> items){}
+    private GraphCatalog graphCache;
     private volatile String invitation="";
     private volatile String status="Not serving";
     private volatile Server active;
@@ -289,7 +291,7 @@ final class MeshPeer {
             Server server=new Server(network,address,token,socket);
             active=server;
             invitation=new Invite(address.getHostAddress(),pin,token).uri();
-            status="Serving published knowledge on Wi-Fi";
+            status="Sharing Tree graph on Wi-Fi";
             server.callback=new ConnectivityManager.NetworkCallback(){
                 @Override public void onLost(Network n){if(n.equals(network))stopIfCurrent(server);}
                 @Override public void onLinkPropertiesChanged(Network n,LinkProperties lp){
@@ -324,17 +326,52 @@ final class MeshPeer {
             }
         }catch(IOException e){if(active==server)stopIfCurrent(server);}
     }
-    private Map<String,MeshItem> catalog(){
+    // The graph is the default for current clients. No per-record publication
+    // gate; this is the extension point for future outbound graph restrictions.
+    private Map<String,MeshItem> graphCatalog()throws Exception{
+        synchronized(catalogLock){
+            long epoch=tree.captureEpoch(),revision=tree.graphRevision();
+            if(graphCache!=null&&graphCache.revision()==revision&&graphCache.epoch()==epoch)return graphCache.items();
+            Map<String,MeshItem> items=new java.util.TreeMap<>();
+            long before=0;
+            while(true){
+                List<NativeTree.Fragment> page=tree.query("",0,before,100);
+                if(page.isEmpty())break;
+                for(NativeTree.Fragment fragment:page){
+                    MeshItem item=MeshItem.fromFragment(fragment);
+                    items.putIfAbsent(item.id(),item);
+                }
+                long next=page.get(page.size()-1).sequence();
+                if(next<=0||(before!=0&&next>=before))throw new IOException("Invalid Tree cursor");
+                before=next;
+                if(tree.captureEpoch()!=epoch)throw new IOException("Tree changed during graph inventory");
+                if(page.size()<100)break;
+            }
+            for(NativeTree.Agent agent:tree.agents()){
+                MeshItem item=MeshItem.fromBranch(agent);
+                items.putIfAbsent(item.id(),item);
+            }
+            if(tree.captureEpoch()!=epoch)throw new IOException("Tree changed during graph inventory");
+            graphCache=new GraphCatalog(revision,epoch,java.util.Collections.unmodifiableMap(items));
+            return graphCache.items();
+        }
+    }
+    private Map<String,MeshItem> legacyCatalog(){
         Map<String,MeshItem> items=new java.util.TreeMap<>();
-        // Explicit offer records only. No raw observations, original post bodies,
-        // private branch terms, GGUF, or SQLite are ever served.
         for(NativeTree.Master record:tree.allRecords("",10000)){
             MeshItem item=MeshItem.from(record);if(item!=null)items.putIfAbsent(item.id(),item);
-
         }
         return items;
     }
-    int offeredCount(){return catalog().size();}
+    int offeredCount()throws Exception{return graphCatalog().size();}
+    // Keep batches within the existing framed TLS transport, including JSON
+    // escaping for large raw fragments.
+    private static int appendWithinFrame(JSONArray entries,MeshItem item,int bytes)throws Exception{
+        JSONObject json=item.json();
+        int size=json.toString().getBytes(StandardCharsets.UTF_8).length+1;
+        if(bytes+size>MAX_FRAME-4096)return -1;
+        entries.put(json);return bytes+size;
+    }
     static JSONObject read(Socket socket)throws Exception{
         DataInputStream in=new DataInputStream(socket.getInputStream());
         int size=in.readInt();if(size<2||size>MAX_FRAME)throw new Failure("Protocol","The peer sent an invalid Mesh frame length.","Update both Roots installations and test again.");
@@ -360,8 +397,11 @@ final class MeshPeer {
             if(!MessageDigest.isEqual(server.token.getBytes(StandardCharsets.US_ASCII),request.optString("token").getBytes(StandardCharsets.US_ASCII))){reject(server,client,"unauthorized");return;}
             if(request.optInt("version")!=1){reject(server,client,"unsupported_version");return;}
             String op=request.optString("op");
-            if(!op.equals("inventory")&&!op.equals("want")&&!op.equals("need")){reject(server,client,"unsupported_operation");return;}
-            Map<String,MeshItem> catalog=catalog();
+            if(!op.equals("inventory")&&!op.equals("want")&&!op.equals("want_batch")&&!op.equals("need")){reject(server,client,"unsupported_operation");return;}
+            boolean graph=request.optBoolean("graph",false);
+            if(op.equals("want_batch")&&!graph){reject(server,client,"unsupported_operation");return;}
+            long epoch=tree.captureEpoch();
+            Map<String,MeshItem> catalog=graph?graphCatalog():legacyCatalog();
             JSONObject response=new JSONObject().put("version",1);
             if(op.equals("inventory")){
                 String after=request.optString("after");if(!after.isEmpty()&&!after.matches("[0-9a-f]{64}")){reject(server,client,"invalid_request");return;}
@@ -372,18 +412,40 @@ final class MeshPeer {
                     entries.put(new JSONObject().put("id",item.id()).put("language",item.language())
                         .put("topic",item.topic()).put("demand",Math.min(1000,requested.getOrDefault(item.id(),0))));
                 }
-                response.put("items",entries).put("next",next);
+                response.put("items",entries).put("next",next).put("graph",graph).put("total",catalog.size());
+            }else if(op.equals("want_batch")){
+                JSONArray ids=request.getJSONArray("ids");
+                if(ids.length()<1||ids.length()>MAX_FETCH){reject(server,client,"invalid_request");return;}
+                Set<String> unique=new HashSet<>();JSONArray delivered=new JSONArray();
+                int processed=0,bytes=0;
+                for(int i=0;i<ids.length();i++){
+                    String id=ids.getString(i);
+                    if(!id.matches("[0-9a-f]{64}")||!unique.add(id)){reject(server,client,"invalid_request");return;}
+                    MeshItem item=catalog.get(id);
+                    if(item!=null){
+                        int size=appendWithinFrame(delivered,item,bytes);
+                        if(size<0){if(processed==0){reject(server,client,"invalid_request");return;}break;}
+                        bytes=size;
+                        if(requested.size()>4096)requested.clear();
+                        requested.merge(id,1,(a,b)->Math.min(1000,a+b));
+                    }
+                    processed++;
+                }
+                response.put("items",delivered).put("processed",processed);
             }else if(op.equals("need")){
                 // One bounded request/response, no arbitrary search query, file access or computation.
                 String id=request.optString("request_id"),topic=request.optString("topic"),language=request.optString("language");
                 int limit=request.optInt("limit",0);
                 if(!id.matches("[0-9a-f-]{36}")||!RuntimeNeed.validTopic(topic)||!language.matches("[a-z]{2,3}")||limit<1||limit>3){reject(server,client,"invalid_request");return;}
                 List<MeshItem> candidates=new ArrayList<>();
-                for(MeshItem item:catalog.values())if(RuntimeNeed.matches(item.topic(),topic))candidates.add(item);
+                for(MeshItem item:catalog.values())if(item.matchesTopic(topic))candidates.add(item);
                 candidates.sort(Comparator.comparingInt((MeshItem item)->item.language().equals(language)?0:1)
+                    .thenComparingInt(MeshItem::retrievalRank)
                     .thenComparing(Comparator.comparingInt((MeshItem item)->requested.getOrDefault(item.id(),0)).reversed()).thenComparing(MeshItem::id));
-                JSONArray delivered=new JSONArray();
-                for(int i=0;i<Math.min(limit,candidates.size());i++)delivered.put(candidates.get(i).json());
+                JSONArray delivered=new JSONArray();int bytes=0;
+                for(int i=0;i<Math.min(limit,candidates.size());i++){
+                    int size=appendWithinFrame(delivered,candidates.get(i),bytes);if(size<0)break;bytes=size;
+                }
                 response.put("op","deliver").put("request_id",id).put("items",delivered);
             }else{
                 String id=request.optString("id");MeshItem item=catalog.get(id);
@@ -394,7 +456,7 @@ final class MeshPeer {
                     response.put("item",item.json());
                 }
             }
-            if(active==server)write(client,response);
+            if(active==server&&tree.captureEpoch()==epoch)write(client,response);
         }catch(Exception error){
             if(!handshaken&&active==server){
                 Check failed=failure("TLS",error,android.os.SystemClock.elapsedRealtime()-handshakeStarted);
@@ -458,7 +520,7 @@ final class MeshPeer {
                         String protocol=socket.getSession().getProtocol();
                         trace.pass("TLS","Pinned certificate and certificate dates verified; "+(protocol.equals("TLSv1.3")?"TLS 1.3":"TLS 1.2")+" established.",android.os.SystemClock.elapsedRealtime());
                         trace.begin("Authentication",android.os.SystemClock.elapsedRealtime());
-                        request.put("version",1).put("token",invite.token());write(socket,request);
+                        request.put("version",1).put("token",invite.token()).put("graph",true);write(socket,request);
                         JSONObject response=read(socket);
                         if(response.optInt("version")!=1)throw new Failure("Protocol","The peer returned an unsupported Mesh protocol version.","Update both Roots installations to compatible versions.");
                         trace.pass("Protocol","Mesh protocol version 1 accepted.",android.os.SystemClock.elapsedRealtime());
@@ -483,28 +545,34 @@ final class MeshPeer {
             throw failure instanceof Failure?failure:new Failure(safe.stage(),safe.detail(),safe.nextStep());
         }
     }
-    record InventoryPage(JSONArray items,String next){}
+    record InventoryPage(JSONArray items,String next,boolean graph,int total){
+        InventoryPage(JSONArray items,String next){this(items,next,false,items.length());}
+    }
     private InventoryPage inventory(Network network,Invite invite,String after,long deadline,Trace trace)throws Exception{
         JSONObject response=exchange(network,invite,new JSONObject().put("op","inventory").put("after",after),deadline,trace);
         trace.begin("Inventory",android.os.SystemClock.elapsedRealtime());
         try{
             InventoryPage page=validateInventory(response,after);
-            trace.pass("Inventory",page.items().length()==0&&page.next().isEmpty()?"Connected. The peer currently has no published items.":
-                "Inventory accepted: "+page.items().length()+" published item(s) on this page."+(page.next().isEmpty()?"":" More pages are available."),android.os.SystemClock.elapsedRealtime());
+            String label=page.graph()?"graph items":"legacy published items";
+            trace.pass("Inventory","Connected · "+page.total()+" "+label+" available."
+                +(page.next().isEmpty()?"":" "+page.items().length()+" on this page."),android.os.SystemClock.elapsedRealtime());
             return page;
         }catch(Exception e){trace.fail(e,android.os.SystemClock.elapsedRealtime());throw new Failure("Inventory","The peer inventory was malformed or incompatible.","Update both Roots installations and test again.");}
     }
     /** Shared by receive and diagnostics: validation must have the same meaning. */
     static InventoryPage validateInventory(JSONObject response,String after)throws Exception{
         JSONArray rows=response.getJSONArray("items");if(rows.length()>MAX_INVENTORY)throw new IOException("Oversized inventory.");
-        Set<String> seen=new HashSet<>();
+        Set<String> seen=new HashSet<>();String previous=after;
         for(int i=0;i<rows.length();i++){
             JSONObject row=rows.getJSONObject(i);String id=row.getString("id"),language=row.getString("language"),topic=row.getString("topic");
-            if(!id.matches("[0-9a-f]{64}")||!language.matches("[a-z]{2,3}")||topic.isEmpty()||topic.length()>120||!seen.add(id))throw new IOException("Invalid inventory entry.");
+            if(!id.matches("[0-9a-f]{64}")||!language.matches("[a-z]{2,3}")||topic.isEmpty()||topic.length()>120||!seen.add(id)||id.compareTo(previous)<=0)throw new IOException("Invalid inventory entry.");
+            previous=id;
         }
         String next=response.optString("next");
-        if(!next.isEmpty()&&(!next.matches("[0-9a-f]{64}")||next.compareTo(after)<=0||rows.length()==0))throw new IOException("Invalid inventory cursor.");
-        return new InventoryPage(rows,next);
+        if(!next.isEmpty()&&(!next.equals(previous)||rows.length()==0))throw new IOException("Invalid inventory cursor.");
+        boolean graph=response.optBoolean("graph",false);int total=response.optInt("total",rows.length());
+        if(total<rows.length())throw new IOException("Invalid inventory count");
+        return new InventoryPage(rows,next,graph,total);
     }
     List<MeshItem> need(Invite invite,String topic,String language,int limit,long deadline)throws Exception{
         if(!RuntimeNeed.validTopic(topic)||limit<1||limit>3)throw new IllegalArgumentException("Invalid need");
@@ -517,7 +585,7 @@ final class MeshPeer {
         List<MeshItem> items=new ArrayList<>();Set<String> seen=new HashSet<>();
         for(int i=0;i<rows.length();i++){
             MeshItem item=MeshItem.parse(rows.getJSONObject(i));
-            if(!RuntimeNeed.matches(item.topic(),topic))throw new IOException("Unexpected topic");
+            if(!item.matchesTopic(topic))throw new IOException("Unexpected topic");
             if(seen.add(item.id()))items.add(item);
         }
         return items;
