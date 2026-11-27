@@ -76,7 +76,7 @@ class Observer:
         self.scope_revision=manifest["scope_revision"] if manifest else HfApi().model_info(SCOPE).sha
         self.layers=tuple(manifest["layers"]) if manifest else tuple(args.layers)
         self.tokenizer=AutoTokenizer.from_pretrained(REF,revision=self.ref_revision)
-        self.model=AutoModelForCausalLM.from_pretrained(REF,revision=self.ref_revision,torch_dtype=torch.float32).to(self.device).eval()
+        self.model=AutoModelForCausalLM.from_pretrained(REF,revision=self.ref_revision,torch_dtype=torch.float32,attn_implementation="eager").to(self.device).eval()
         self.blocks=self.model.model.layers
         if len(self.blocks)!=18 or self.model.config.hidden_size!=640 or self.model.config.intermediate_size!=2048:
             raise ValueError("Unexpected reference architecture")
@@ -105,32 +105,57 @@ class Observer:
         prompt=self.tokenizer.apply_chat_template([{"role":"user","content":text}],tokenize=False,add_generation_prompt=True)
         return self.tokenizer(prompt,return_tensors="pt",add_special_tokens=False,truncation=True,max_length=256).to(self.device)
     def observe(self,text):
-        t=self.torch; features={}; groups={}; handles=[]
+        t=self.torch; features={}; groups={}; handles=[]; residual={}; ffn={}
+        # Identify actual user-content tokens rather than the chat-template suffix.
+        prompt=self.tokenizer.apply_chat_template([{"role":"user","content":text}],tokenize=False,add_generation_prompt=True)
+        start=prompt.rfind(text)
+        if start<0:raise ValueError("Could not identify request span in template")
+        encoded=self.tokenizer(prompt,return_tensors="pt",add_special_tokens=False,return_offsets_mapping=True)
+        offsets=encoded.pop("offset_mapping")[0].tolist()
+        if len(offsets)>256:raise ValueError("Probe exceeds the 256-token observation budget")
+        positions=[i for i,(a,b) in enumerate(offsets) if b>a and a<start+len(text) and b>start]
+        if not positions:raise ValueError("No user-content tokens")
+        if len(positions)>32:
+            positions=[positions[i*(len(positions)-1)//31] for i in range(32)]
+        pos=t.tensor(positions,device=self.device,dtype=t.long)
         def layer_hook(l):
             def hook(module,inp,out):
                 x=out[0] if isinstance(out,tuple) else out
-                # Pool last 8 prompt token rows, excluding no special tokens by claim.
-                x=x[0,-8:,:].float()
-                w,b,threshold=self.sae[l]
-                z=x@w+b
-                a=t.where(z>threshold,z,t.zeros_like(z)).clamp_min(0).mean(dim=0)
-                vals,ids=t.topk(a,64)
-                v=core.normalized({f"{l}:{int(i)}":float(s) for i,s in zip(ids.tolist(),vals.tolist()) if s>0})
-                features.update(v)
+                residual[l]=x[0].index_select(0,pos).float().clone()
             return hook
         def ffn_hook(l):
             def hook(module,inp):
-                x=inp[0][0,-8:,:].float()
+                x=inp[0][0].index_select(0,pos).float()
                 if x.shape[-1]!=2048:raise ValueError("FFN channel mismatch")
-                a=x.square().reshape(x.shape[0],64,32).sum(dim=(0,2))
-                v=core.normalized({f"{l}:{i}":float(s) for i,s in enumerate(a.tolist())})
-                groups.update(v)
+                ffn[l]=x.square().reshape(x.shape[0],64,32).sum(dim=2)
             return hook
         for l,block in enumerate(self.blocks):
             handles.append(block.mlp.down_proj.register_forward_pre_hook(ffn_hook(l)))
             if l in self.sae:handles.append(block.register_forward_hook(layer_hook(l)))
         try:
-            with t.inference_mode():self.model(**self.tokens(text),use_cache=False)
+            with t.inference_mode():
+                output=self.model.model(**encoded.to(self.device),use_cache=False,output_attentions=True,return_dict=True)
+                attentions=output.attentions
+                if attentions is None or len(attentions)!=len(self.blocks):
+                    raise RuntimeError("Eager attention weights unavailable")
+                for l in range(len(self.blocks)):
+                    attn=attentions[l]
+                    if attn is None or attn.ndim!=4 or attn.shape[-1]!=len(offsets):
+                        raise RuntimeError("Unexpected attention shape")
+                    a=attn[0,:,-1,:].float().mean(dim=0).index_select(0,pos)
+                    total=a.sum()
+                    # Attention is a routing signal, not causal importance.
+                    uniform=t.ones_like(a)/len(positions)
+                    weights=.5*uniform+.5*(a/total if float(total)>0 else uniform)
+                    energy=(ffn[l]*weights[:,None]).sum(dim=0)
+                    groups.update(core.normalized({f"{l}:{i}":float(v) for i,v in enumerate(energy.tolist())}))
+                    if l in residual:
+                        w,b,threshold=self.sae[l]
+                        z=residual[l]@w+b
+                        active=t.where(z>threshold,z,t.zeros_like(z)).clamp_min(0)
+                        pooled=(active*weights[:,None]).sum(dim=0)
+                        vals,ids=t.topk(pooled,64)
+                        features.update(core.normalized({f"{l}:{int(i)}":float(v) for i,v in zip(ids.tolist(),vals.tolist()) if v>0}))
         finally:
             for h in handles:h.remove()
         if not features or not groups:raise RuntimeError("No feature/group observations")
@@ -205,7 +230,9 @@ def build(args):
             print("Controller abstained; using fixed probes only for this round.",flush=True);continue
         print("Micro-cognition:",proposal["speech"],"\nNext question:",proposal["question"],flush=True)
         used.add(proposal["question"].casefold())
-        rows.append(sample(obs,proposal["category"],proposal["question"],f"adaptive-{round}"))
+        try:rows.append(sample(obs,proposal["category"],proposal["question"],f"adaptive-{round}"))
+        except ValueError as e:
+            print("Controller probe rejected:",str(e),flush=True);continue
         controller.append(proposal)
     atlas=core.learn(rows)
     tests=[sample(obs,cat,text,f"test-{cat}-{i}") for cat,texts in TEST.items() for i,text in enumerate(texts)]
@@ -213,6 +240,7 @@ def build(args):
     manifest={"format":"roots.cognitive-atlas.v1","reference":REF,"reference_revision":obs.ref_revision,
               "scope":SCOPE,"scope_revision":obs.scope_revision,"layers":list(obs.layers),"sae_sha256":obs.sae_hash,
               "gguf_sha256":digest,"gguf_file":str(path.resolve()),"versions":obs.versions,
+              "pooling":"user-token span, up to 32 rows, half uniform and half final-position head-mean attention",
               "compatibility":"structural alignment only; reference FP32 activations not validated against quantized runtime"}
     save(args.out/"atlas.json",{"manifest":manifest,"tensors":tensors,"graph":atlas,"training":rows,"evaluation":metrics,"controller":controller})
     print(json.dumps(metrics["mean"],indent=2),flush=True)
@@ -226,6 +254,7 @@ def build(args):
 def query(args):
     file=args.out/"atlas.json";data=json.loads(file.read_text(encoding="utf-8"))
     manifest=data["manifest"]
+    if manifest.get("pooling")!="user-token span, up to 32 rows, half uniform and half final-position head-mean attention":raise ValueError("Rebuild Atlas with the current attention pooling method")
     path=Path(args.gguf) if args.gguf else Path(manifest["gguf_file"])
     if sha(path)!=manifest["gguf_sha256"]:raise ValueError("GGUF identity differs from atlas")
     tensors=inventory(path)
