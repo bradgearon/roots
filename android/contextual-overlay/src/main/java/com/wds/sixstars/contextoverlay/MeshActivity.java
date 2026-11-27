@@ -29,7 +29,7 @@ public final class MeshActivity extends Activity {
     private MeshPeer mesh;
     private TextView status,serve,copy,receive,stop,axonStatus;
     private TextView connectionSummary,connectionStatus,connectionDetails,analysisOutput;
-    private TextView testConnection,checkDevice,analyzeConnection,copyConnectionReport;
+    private TextView testConnection,analyzeConnection,copyConnectionReport;
     private TextView savedAxonStatus,boundConnectionStatus;
     private static final long REFRESH_MS=30000;
     private static final ExecutorService CONNECTION_REFRESH=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsAxonRefresh");t.setDaemon(true);return t;});
@@ -71,14 +71,11 @@ public final class MeshActivity extends Activity {
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
         listener.addView(RootsUi.text(this,"Create a roots:// invitation for another phone. Keep Roots running while the other phone receives. Stop serving to invalidate the invitation.",13,RootsUi.MUTED,false));
         serve=RootsUi.action(this,"Start listening",this::start);listener.addView(serve);
-        checkDevice=RootsUi.action(this,"Check this device",()->runConnectionTest(true));listener.addView(checkDevice);
         copy=RootsUi.action(this,"Copy private invitation",this::copy);listener.addView(copy);
         listener.addView(RootsUi.action(this,"Share invitation…",this::share));
         stop=RootsUi.action(this,"Stop listening",()->{mesh.stop();getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();status.setText(mesh.status());});listener.addView(stop);
-        // Device diagnostics belong to the listener, not an inbound Axon.
-        // Always render this card, even if there are no saved peers.
-        LinearLayout connection=RootsUi.card(this,content);
-        connection.addView(RootsUi.text(this,"Connection details",18,RootsUi.TEXT,true));
+        // One shared connection control, outside the optional Axon section.
+        LinearLayout connection=RootsUi.section(this,content,"Connection details","Check this device and any selected peers.",true);
         connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
         connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
         testConnection=RootsUi.action(this,"Refresh / test connection",this::testConnection);connection.addView(testConnection);
@@ -270,7 +267,6 @@ public final class MeshActivity extends Activity {
     private void updateDiagnosticActions(){
         if(testConnection==null)return;
         enable(testConnection,!busy);
-        if(checkDevice!=null)enable(checkDevice,!busy);
         enable(analyzeConnection,!busy&&connectionReport!=null&&!reportStale&&!renderedReport.isEmpty());
         enable(copyConnectionReport,!busy&&!renderedReport.isEmpty());
     }
@@ -297,12 +293,11 @@ public final class MeshActivity extends Activity {
         }
         updateDiagnosticActions();
     }
-    private void testConnection(){runConnectionTest(false);}
-    private void runConnectionTest(boolean localOnly){
+    private void testConnection(){
         if(busy)return;
         final String raw=invitations.getText().toString();
-        final boolean savedAxon=!localOnly&&useAxon.isChecked();
-        final boolean localCheck=localOnly||(!savedAxon&&raw.trim().isEmpty());
+        final boolean savedAxon=useAxon.isChecked()&&(!raw.trim().isEmpty()||new java.io.File(getNoBackupFilesDir(),"subscription.axon").isFile());
+        final boolean localCheck=!savedAxon&&raw.trim().isEmpty();
         busy=true;refresh();
         final int revision=++diagnosticRevision;
         reportStale=true;connectionStatus.setText(localCheck?"Checking this device…":"Testing the selected peer connections…");
