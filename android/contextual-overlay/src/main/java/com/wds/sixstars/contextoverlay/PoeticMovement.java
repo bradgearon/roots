@@ -18,7 +18,7 @@ public final class PoeticMovement {
     // The ordinary action and original candidate lists cannot cross this boundary.
     public record Displacement(String noun,String replacement){}
     public record ResolutionInput(List<Displacement> movements,String profile,boolean rate){
-        public ResolutionInput{movements=List.copyOf(movements);}
+        public ResolutionInput{movements=Collections.unmodifiableList(new ArrayList<>(movements));}
     }
     public record Resolution(int index,String expression,Integer rating){}
     public record Run(Input input,List<Pair> pairs,List<Resolution> resolutions,long[] firstStats,long[] secondStats,long elapsedMs){}
@@ -119,6 +119,7 @@ public final class PoeticMovement {
     static String intelligenceResolution(ResolutionInput in){
         return resolutionTask(in)+"Return exactly five lines: "+(in.rate()?"index|sentence|rating 1-10":"index|sentence")+". No explanation.";
     }
+    static String intelligenceResolution(Input in,List<Pair> pairs){return intelligenceResolution(resolutionInput(in,pairs));}
     private static int index(String s,int max){
         String v=s.trim();if(!v.matches("[0-9]{1,2}"))throw new IllegalArgumentException("Invalid index.");
         int i=Integer.parseInt(v)-1;if(i<0||i>=max)throw new IllegalArgumentException("Index outside supplied list.");return i;
