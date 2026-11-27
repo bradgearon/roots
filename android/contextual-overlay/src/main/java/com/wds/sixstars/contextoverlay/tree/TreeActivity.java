@@ -13,6 +13,7 @@ import com.wds.sixstars.contextoverlay.OverlayPreferences;
 import com.wds.sixstars.contextoverlay.OverlayDiagnostics;
 import com.wds.sixstars.contextoverlay.RootsUi;
 import com.wds.sixstars.contextoverlay.KnowledgeRecordAdapter;
+import com.wds.sixstars.contextoverlay.KnowledgeRecordActions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -90,6 +91,13 @@ public final class TreeActivity extends Activity {
         adapter=new KnowledgeRecordAdapter(this,rows);
         list.setDivider(null);list.setSelector(android.R.color.transparent);
         list.setAdapter(adapter);layout.addView(list,new LinearLayout.LayoutParams(-1,0,1));
+        list.setOnItemClickListener((parent,view,position,id)->{
+            if(position<rows.size())KnowledgeRecordActions.open(this,rows.get(position),()->{reset();refreshStatus();});
+        });
+        list.setOnItemLongClickListener((parent,view,position,id)->{
+            if(position>=rows.size())return false;
+            KnowledgeRecordActions.options(this,rows.get(position),()->{reset();refreshStatus();});return true;
+        });
         list.setOnScrollListener(new AbsListView.OnScrollListener(){
             @Override public void onScrollStateChanged(AbsListView v,int state){}
             @Override public void onScroll(AbsListView v,int first,int visible,int total){
