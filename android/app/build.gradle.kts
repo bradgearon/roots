@@ -17,6 +17,7 @@ val nativeMinSdk = if (usePrebuiltBrain) {
 android {
     namespace = "com.wds.roots"
     compileSdk = 36
+    ndkVersion = rootProject.extra["rootsNdkVersion"] as String
     defaultConfig { applicationId = "com.wds.roots"; minSdk = nativeMinSdk; targetSdk = 36; versionCode = 1; versionName = "0.1.0" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 }

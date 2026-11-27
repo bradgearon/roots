@@ -35,6 +35,9 @@ if (usePrebuiltBrain) {
         manifest.getProperty("cpp_sha256") == sha256(source.resolve("roots_plamo.cpp").readBytes()) &&
         manifest.getProperty("jni_sha256") == sha256(signatures.toByteArray(Charsets.UTF_8)) &&
         manifest.getProperty("library_sha256") == sha256(brainLib.readBytes())) { invalid }
+    require(manifest.getProperty("ndk_version") == (rootProject.extra["rootsNdkVersion"] as String)) {
+        "Cached brain NDK differs from selected NDK (or its version is unknown). Run build-brain.cmd again."
+    }
     val expectedApi = if (manifest.getProperty("vulkan") == "ON") 28 else 26
     require(manifest.getProperty("android_api")?.toIntOrNull() == expectedApi) { invalid }
     nativeMinSdk = expectedApi
@@ -51,6 +54,7 @@ logger.lifecycle("Roots: native Tree ${if (rootsTreeEnabled.get().toBoolean()) "
 android {
     namespace = "com.wds.sixstars.contextoverlay"
     compileSdk = 36
+    ndkVersion = rootProject.extra["rootsNdkVersion"] as String
     defaultConfig {
         minSdk = nativeMinSdk
         ndk { abiFilters += listOf("arm64-v8a") }
