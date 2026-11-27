@@ -98,8 +98,8 @@ public final class EncounterActivity extends Activity {
             .setNegativeButton("Close",null)
             .setNeutralButton("Rename",(d,w)->rename(peer))
             .setPositiveButton(peer.blocked()?"Unblock":"Block",(d,w)->mutate(()->{
-                EncounterBindings.get(this).setBlocked(id,!peer.blocked());
-                if(!peer.blocked())EncounterService.disconnectPeer(id);
+                try{EncounterBindings.get(this).setBlocked(id,!peer.blocked());}
+                finally{if(EncounterBindings.get(this).blocked(id))EncounterService.disconnectPeer(id);else EncounterService.refreshDiscovery();}
             })).show();
     }
     private void rename(EncounterBindings.Peer peer){

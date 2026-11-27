@@ -24,6 +24,7 @@ final class EncounterSync {
     private int received,sent;
     int received(){return received;}
     int sent(){return sent;}
+    boolean firstEncounter(){return binding.encounters()==1;}
 
     EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active)throws Exception{
         this.channel=channel;this.active=active;bindings=EncounterBindings.get(context);

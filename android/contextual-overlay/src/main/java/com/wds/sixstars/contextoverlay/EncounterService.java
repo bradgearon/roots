@@ -47,6 +47,10 @@ public final class EncounterService extends Service {
     static String activePeer(){return activePeer;}
     static void noteStartDeferred(){if(!started)status="Start deferred by Android · resumes when Roots opens";}
     static boolean available(Context c){return Build.VERSION.SDK_INT>=31&&c.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE);}
+    static void refreshDiscovery(){
+        EncounterService service=instance;Radio r=service==null?null:service.radio;
+        if(r!=null)r.clearCooldown();
+    }
     static void disconnectPeer(String id){
         EncounterService service=instance;Radio r=service==null?null:service.radio;
         if(r!=null&&id.equals(activePeer))r.interruptSession(id);
@@ -91,7 +95,7 @@ public final class EncounterService extends Service {
             status="Starting nearby discovery";next.start();
         }catch(Exception failure){scheduleRecovery("Radio unavailable");}
     }
-    private void closeRadio(){Radio previous=radio;radio=null;if(previous!=null)previous.close();}
+    private void closeRadio(){Radio previous=radio;radio=null;activePeer="";if(previous!=null)previous.close();}
     private void scheduleRecovery(String reason){
         closeRadio();if(!running)return;
         status=reason+" · retrying automatically";
@@ -118,10 +122,7 @@ public final class EncounterService extends Service {
 
     // Unsigned per-radio random rank, not a persistent identifier. Two fully
     // automatic phones prefer one initiator; old Posts omit COORD and work as before.
-    static int compareRank(byte[] a,byte[] b){
-        for(int i=0;i<8;i++){int d=(a[i]&255)-(b[i]&255);if(d!=0)return d;}
-        return 0;
-    }
+
     private record Offer(int psm,byte[] rank){}
     private final class Radio {
         private final BluetoothManager manager;
@@ -239,7 +240,7 @@ public final class EncounterService extends Service {
                 try{
                     if(active()){
                         int count=connect(device);
-                        if(count>=0)synchronized(cooldown){cooldown.put(address,SystemClock.elapsedRealtime()+(count==0?120000:30000)+jitter.nextInt(15000));}
+                        if(count>=0||count==-2)synchronized(cooldown){cooldown.put(address,SystemClock.elapsedRealtime()+EncounterArbitration.cooldownMs(count)+jitter.nextInt(15000));}
                     }
                 }catch(Exception|LinkageError failure){if(active())lastResult="Nearby attempt interrupted · retrying automatically";}
                 finally{busy.set(false);idleStatus();}
@@ -288,7 +289,7 @@ public final class EncounterService extends Service {
                 Offer remote=offer.get(8,TimeUnit.SECONDS);
                 if(!active())return -1;
                 if(remote.rank()!=null&&advertisingReady){
-                    int comparison=compareRank(rank,remote.rank());
+                    int comparison=EncounterArbitration.compareRank(rank,remote.rank());
                     // Equal ranks imply a self-discovery or negligible random collision.
                     // Occasionally let the other side initiate in case its scan is throttled.
                     if(comparison==0||(comparison>0&&jitter.nextInt(4)!=0))return -1;
@@ -313,11 +314,13 @@ public final class EncounterService extends Service {
                 deadline=timer.schedule(()->closeResource(connection),25,TimeUnit.SECONDS);
                 status="Authenticating nearby Axon";
                 EncounterChannel channel=EncounterChannel.open(connection.getInputStream(),connection.getOutputStream(),key,client);
-                peer=channel.peerId;activePeer=peer;
-                if(!active()||EncounterBindings.get(EncounterService.this).blocked(peer)){result="Blocked or stopped";return -1;}
+                peer=channel.peerId;
+                if(!active()){result="Blocked or stopped";return -1;}
+                if(EncounterBindings.get(EncounterService.this).blocked(peer)){result="Blocked or stopped";return -2;}
+                activePeer=peer;
                 status="Exchanging published Axons";
                 sync=new EncounterSync(EncounterService.this,channel,this::active);
-                sync.exchange(client);result="Completed";return sync.sent()+sync.received();
+                sync.exchange(client);result=sync.firstEncounter()?"New binding · completed":"Binding refreshed · completed";return sync.sent()+sync.received();
             }catch(Exception|LinkageError failure){return -1;}
             finally{
                 if(deadline!=null)deadline.cancel(false);
@@ -325,12 +328,13 @@ public final class EncounterService extends Service {
                 // Don't build a persistent tracking record of repeatedly rejected blocked encounters.
                 if(!peer.isEmpty()&&!"Blocked or stopped".equals(result)){
                     try{EncounterBindings.get(EncounterService.this).outcome(peer,result,sent,received);}
-                    catch(Exception failure){lastResult="Could not save interaction history";}
+                    catch(Exception failure){result+=" · history not saved";}
                 }
                 if(radio==this){lastResult=result+" · "+sent+" sent · "+received+" received";activePeer="";}
                 sessionSocket=null;
             }
         }
+        void clearCooldown(){synchronized(cooldown){cooldown.clear();}}
         void interruptSession(String peer){if(peer.equals(activePeer))closeResource(sessionSocket);}
         void close(){
             closed=true;scanning=false;advertisingReady=false;
