@@ -1,82 +1,116 @@
 package com.wds.sixstars.contextoverlay;
 
-import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.Intent;
-import android.content.pm.PackageManager;
+import android.app.*;
 import android.os.*;
+import android.text.InputFilter;
 import android.widget.*;
+import java.text.DateFormat;
+import java.util.*;
+import java.util.concurrent.*;
 
 public final class EncounterActivity extends Activity {
-    private static final int REQUEST=8234;
     private final Handler handler=new Handler(Looper.getMainLooper());
-    private String requested;
-    private TextView status,bindings,last,publish,passerby,stop;
-    private final Runnable refresh=new Runnable(){@Override public void run(){update();handler.postDelayed(this,2000);}};
+    private final ExecutorService work=Executors.newSingleThreadExecutor();
+    private TextView status,summary,permission,last;
+    private Switch toggle;
+    private LinearLayout peerList,eventList;
+    private boolean updating,visible,loading;
+    private String active="";
+    private EncounterBindings.Snapshot snapshot;
+    private final Runnable refresh=new Runnable(){@Override public void run(){if(!visible)return;update();handler.postDelayed(this,2000);}};
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
-        LinearLayout shell=RootsUi.shell(this);
-        shell.addView(RootsUi.header(this,"Roots Encounters","Bluetooth · no Wi-Fi or Internet"));
-        ScrollView scroll=new ScrollView(this);
-        LinearLayout content=RootsUi.column(this);content.setPadding(RootsUi.dp(this,16),0,RootsUi.dp(this,16),RootsUi.dp(this,16));
-        scroll.addView(content);shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout open=RootsUi.card(this,content);
-        open.addView(RootsUi.text(this,"Open exchange",18,RootsUi.TEXT,true));
-        open.addView(RootsUi.text(this,"Automatically bind to nearby Roots Posts and exchange all explicitly published topics in both directions. Your raw captured Tree, prompts and LAN invitation credentials are not published. Copies can travel onward and cannot reliably be recalled.",14,RootsUi.MUTED,false));
-        publish=RootsUi.action(this,"Start Publisher · advertise a Roots Post",()->confirm(EncounterService.PUBLISHER));open.addView(publish);
-        passerby=RootsUi.action(this,"Start Passerby · listen for Roots Posts",()->confirm(EncounterService.PASSERBY));open.addView(passerby);
-        stop=RootsUi.action(this,"Stop nearby exchange",()->{
-            startService(new Intent(this,EncounterService.class).setAction(EncounterService.ACTION_STOP));
-        });open.addView(stop);
-        status=RootsUi.text(this,"",14,RootsUi.ACCENT,true);open.addView(status);
-        bindings=RootsUi.text(this,"",14,RootsUi.TEXT,false);open.addView(bindings);
-        last=RootsUi.text(this,"",13,RootsUi.MUTED,false);open.addView(last);
-        open.addView(RootsUi.text(this,"A persistent notification keeps the radio service visible while Roots is in the background. Android 12+ and compatible BLE hardware are required; discovery is best effort. Stop before switching roles. Saved bindings survive disconnection.",13,RootsUi.MUTED,false));
-        shell.addView(RootsUi.action(this,"‹ Roots Mesh",this::finish));
-        setContentView(shell);update();
+        LinearLayout shell=RootsUi.shell(this);shell.addView(RootsUi.header(this,"Roots Encounters","Automatic Bluetooth knowledge exchange"));
+        ScrollView scroll=new ScrollView(this);LinearLayout content=RootsUi.column(this);
+        content.setPadding(RootsUi.dp(this,16),0,RootsUi.dp(this,16),0);scroll.addView(content);shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout controls=RootsUi.card(this,content);
+        toggle=new Switch(this);toggle.setText("Nearby exchange");toggle.setTextColor(RootsUi.TEXT);toggle.setTextSize(18);
+        controls.addView(toggle);
+        status=RootsUi.text(this,"",14,RootsUi.ACCENT,true);controls.addView(status);
+        summary=RootsUi.text(this,"",13,RootsUi.MUTED,false);controls.addView(summary);
+        last=RootsUi.text(this,"",13,RootsUi.MUTED,false);controls.addView(last);
+        permission=RootsUi.action(this,"Allow nearby exchange",()->EncounterSettings.authorize(this));controls.addView(permission);
+        controls.addView(RootsUi.text(this,"When enabled, Roots discovers and publishes automatically, even while you use other apps. All published topics are included; raw captures and private prompts are excluded.",13,RootsUi.MUTED,false));
+        LinearLayout peers=RootsUi.card(this,content);peers.addView(RootsUi.text(this,"Bound Axons",18,RootsUi.TEXT,true));
+        peers.addView(RootsUi.text(this,"Bindings persist offline. Block a peer to stop future exchange; previously transferred knowledge remains.",13,RootsUi.MUTED,false));
+        peerList=RootsUi.column(this);peers.addView(peerList);
+        LinearLayout history=RootsUi.card(this,content);history.addView(RootsUi.text(this,"Recent interactions",18,RootsUi.TEXT,true));
+        history.addView(RootsUi.action(this,"Clear interaction history",()->new AlertDialog.Builder(this).setTitle("Clear interaction history?")
+            .setMessage("Saved bindings and transfer totals will remain.").setNegativeButton("Cancel",null)
+            .setPositiveButton("Clear",(d,w)->mutate(()->EncounterBindings.get(this).clearHistory())).show()));
+        eventList=RootsUi.column(this);history.addView(eventList);
+        shell.addView(RootsUi.action(this,"‹ Roots Mesh",this::finish));setContentView(shell);
+        toggle.setOnCheckedChangeListener((button,on)->{
+            if(updating)return;EncounterSettings.setEnabled(this,on);
+            if(on){if(EncounterSettings.eligible(this))EncounterSettings.startIfAllowed(this);else EncounterSettings.authorize(this);}
+            update();
+        });
     }
-    @Override protected void onResume(){super.onResume();handler.removeCallbacks(refresh);refresh.run();}
-    @Override protected void onPause(){handler.removeCallbacks(refresh);super.onPause();}
-    private void update(){
-        boolean available=EncounterService.available(this),running=EncounterService.isRunning();
-        status.setText(available?EncounterService.status():"Nearby exchange requires Android 12+ and Bluetooth LE");
-        bindings.setText(new EncounterBindings(this).count()+" persistent encounter Axon(s) · all published topics");
-        last.setText(EncounterService.lastResult());
-        enable(publish,available&&!running);enable(passerby,available&&!running);enable(stop,running);
-    }
-    private static void enable(TextView view,boolean enabled){view.setEnabled(enabled);view.setAlpha(enabled?1f:0.45f);}
-    private void confirm(String role){
-        if(!EncounterService.available(this)||EncounterService.isRunning())return;
-        // Global consent is required once per installation; never per encounter.
-        if(getPreferences(MODE_PRIVATE).getBoolean("open_exchange_v1",false)){authorize(role);return;}
-        new AlertDialog.Builder(this).setTitle("Enable open Roots exchange?")
-            .setMessage("Every nearby compatible Roots peer can automatically bind and receive your explicitly published knowledge, across all topics. Received publications can be forwarded to others. Only publish information you have permission to redistribute. You can stop exchange at any time; already delivered copies cannot be recalled.")
-            .setNegativeButton("Cancel",null).setPositiveButton("Enable",(dialog,which)->{
-                getPreferences(MODE_PRIVATE).edit().putBoolean("open_exchange_v1",true).apply();authorize(role);
-            }).show();
-    }
-    @android.annotation.TargetApi(31)
-    private void authorize(String role){
-        requested=role;
-        String[] permissions=EncounterService.permissions(role);
-        for(String permission:permissions)if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED){
-            requestPermissions(permissions,REQUEST);return;
-        }
-        launch(role);
-    }
+    @Override protected void onResume(){super.onResume();visible=true;EncounterSettings.foreground(this);handler.removeCallbacks(refresh);refresh.run();}
+    @Override protected void onPause(){visible=false;handler.removeCallbacks(refresh);super.onPause();}
+    @Override protected void onDestroy(){work.shutdownNow();super.onDestroy();}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
-        super.onRequestPermissionsResult(request,permissions,results);
-        if(request!=REQUEST||requested==null)return;
-        for(String permission:EncounterService.permissions(requested))if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED){
-            Toast.makeText(this,"Nearby devices permission required",Toast.LENGTH_LONG).show();return;
-        }
-        launch(requested);
+        super.onRequestPermissionsResult(request,permissions,results);EncounterSettings.permissionResult(this,request);update();
     }
-    private void launch(String role){
-        try{
-            startForegroundService(new Intent(this,EncounterService.class).putExtra(EncounterService.EXTRA_MODE,role));
-            Toast.makeText(this,"Starting Roots nearby exchange",Toast.LENGTH_SHORT).show();
-        }catch(Exception failure){Toast.makeText(this,"Could not start nearby exchange",Toast.LENGTH_LONG).show();}
-        update();
+    private void update(){
+        boolean supported=EncounterService.available(this),enabled=EncounterSettings.enabled(this),eligible=EncounterSettings.eligible(this);
+        updating=true;toggle.setChecked(enabled);toggle.setEnabled(supported);updating=false;
+        status.setText(!supported?"Requires Android 12+ and BLE":!enabled?"Off":!eligible?"On · awaiting one-time permission":EncounterService.status());
+        last.setText(EncounterService.lastResult());permission.setVisibility(supported&&enabled&&!eligible?android.view.View.VISIBLE:android.view.View.GONE);
+        if(loading||work.isShutdown())return;loading=true;
+        work.execute(()->{
+            EncounterBindings.Snapshot next=EncounterBindings.get(this).snapshot();
+            runOnUiThread(()->{
+                loading=false;if(!visible||isDestroyed())return;
+                String now=EncounterService.activePeer();
+                if(!next.equals(snapshot)||!active.equals(now)){snapshot=next;active=now;render();}
+            });
+        });
+    }
+    private static String date(long at){return at<=0?"Unknown":DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(new Date(at));}
+    private static String name(EncounterBindings.Peer peer){return peer.label().isEmpty()?"Axon "+peer.binding().peer().substring(0,12):peer.label();}
+    private void render(){
+        peerList.removeAllViews();eventList.removeAllViews();
+        long sent=0,received=0;int allowed=0;Map<String,String> names=new HashMap<>();
+        for(EncounterBindings.Peer peer:snapshot.peers()){
+            sent+=peer.sent();received+=peer.received();if(!peer.blocked())allowed++;
+            names.put(peer.binding().peer(),name(peer));
+        }
+        summary.setText(allowed+" bound · "+(snapshot.peers().size()-allowed)+" blocked · "+sent+" sent · "+received+" received");
+        if(snapshot.peers().isEmpty())peerList.addView(RootsUi.text(this,"No encounters yet. Roots will bind automatically when a peer is nearby.",13,RootsUi.MUTED,false));
+        for(EncounterBindings.Peer peer:snapshot.peers()){
+            String id=peer.binding().peer();
+            LinearLayout item=RootsUi.card(this,peerList);
+            item.addView(RootsUi.text(this,name(peer),16,RootsUi.TEXT,true));
+            item.addView(RootsUi.text(this,peer.blocked()?"Blocked":id.equals(active)?"Connected · exchanging":"Bound · offline",13,RootsUi.ACCENT,true));
+            item.addView(RootsUi.text(this,"Last seen "+date(peer.lastSeen())+" · "+peer.binding().encounters()+" encounters\n"+peer.sent()+" sent · "+peer.received()+" received · "+peer.result(),13,RootsUi.MUTED,false));
+            item.addView(RootsUi.action(this,"Manage connection",()->manage(peer)));
+        }
+        if(snapshot.events().isEmpty())eventList.addView(RootsUi.text(this,"No recorded interactions.",13,RootsUi.MUTED,false));
+        for(EncounterBindings.Event event:snapshot.events()){
+            String who=names.getOrDefault(event.peer(),event.peer().isEmpty()?"Nearby peer":"Axon "+event.peer().substring(0,12));
+            eventList.addView(RootsUi.text(this,who+" · "+event.result()+"\n"+date(event.at())+" · "+event.sent()+" sent · "+event.received()+" received",13,RootsUi.TEXT,false));
+        }
+    }
+    private void manage(EncounterBindings.Peer peer){
+        String id=peer.binding().peer();
+        new AlertDialog.Builder(this).setTitle(name(peer)).setMessage("Identity: "+id+"\nFirst seen: "+date(peer.firstSeen())+"\nScope: all published topics\nBlocking prevents automatic reconnection.")
+            .setNegativeButton("Close",null)
+            .setNeutralButton("Rename",(d,w)->rename(peer))
+            .setPositiveButton(peer.blocked()?"Unblock":"Block",(d,w)->mutate(()->{
+                EncounterBindings.get(this).setBlocked(id,!peer.blocked());
+                if(!peer.blocked())EncounterService.disconnectPeer(id);
+            })).show();
+    }
+    private void rename(EncounterBindings.Peer peer){
+        EditText input=new EditText(this);input.setSingleLine(true);input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(60)});input.setText(peer.label());input.setHint("Local label");
+        new AlertDialog.Builder(this).setTitle("Rename Axon").setView(input).setNegativeButton("Cancel",null)
+            .setPositiveButton("Save",(d,w)->{String label=input.getText().toString();mutate(()->EncounterBindings.get(this).rename(peer.binding().peer(),label));}).show();
+    }
+    private interface Mutation{void run()throws Exception;}
+    private void mutate(Mutation mutation){
+        if(work.isShutdown())return;
+        work.execute(()->{try{mutation.run();}catch(Exception failure){runOnUiThread(()->Toast.makeText(this,"Could not save connection change",Toast.LENGTH_LONG).show());}
+            runOnUiThread(()->{if(visible)update();});});
     }
 }
