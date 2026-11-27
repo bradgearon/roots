@@ -13,11 +13,20 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Source navigation never uses fabricated X IDs or a search URL as a post URL. */
-final class KnowledgeRecordActions {
+public final class KnowledgeRecordActions {
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsRecordActions");t.setDaemon(true);return t;});
-    static void open(Activity activity,NativeTree.Master record,Runnable changed){
+    public static void open(Activity activity,NativeTree.Master record,Runnable changed){
         String url=XPostLink.forRecord(record);
-        if(url.isEmpty()){options(activity,record,changed);return;}
+        if(url.isEmpty()){
+            if(record.key().startsWith("local:x:")){
+                new AlertDialog.Builder(activity).setTitle("Original post link unavailable")
+                    .setMessage("X has not exposed an unambiguous source URL for this record. Copy the exact post link in X to attach it, or view the retained knowledge.")
+                    .setPositiveButton("Attach link",(d,w)->attach(activity,record,changed))
+                    .setNeutralButton("Record options",(d,w)->options(activity,record,changed))
+                    .setNegativeButton("Close",null).show();
+            }else options(activity,record,changed);
+            return;
+        }
         Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
         try{activity.startActivity(new Intent(intent).setPackage("com.twitter.android"));}
         catch(android.content.ActivityNotFoundException e){
@@ -26,7 +35,11 @@ final class KnowledgeRecordActions {
     }
     private static void toast(Activity a,String message){if(!a.isDestroyed())Toast.makeText(a,message,Toast.LENGTH_LONG).show();}
     private static String prefix(NativeTree.Master record){return record.key().startsWith("local:mesh:")?"record.mesh.":"record.x.";}
-    static void options(Activity activity,NativeTree.Master record,Runnable changed){
+    public static void options(Activity activity,NativeTree.Master record,Runnable changed){
+        if(record.key().isEmpty()){
+            new AlertDialog.Builder(activity).setTitle("Raw observation").setMessage(record.body().body()).setPositiveButton("Close",null).show();
+            return;
+        }
         String language=new OverlayPreferences(activity).targetLanguage();
         String title=record.latest("topic");if(title.isEmpty())title=record.first("author");if(title.isEmpty())title="Knowledge record";
         final String[] labels={"View original and localized text","Attach exact X post link","Translate into "+language,"Confirm original is already "+language,"Add private understanding","Mark wanted","Publish a shareable remembrance"};
