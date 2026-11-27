@@ -39,6 +39,8 @@ public final class TreeRuntime {
     private final ScheduledExecutorService compiler=Executors.newSingleThreadScheduledExecutor(r->new Thread(r,"RootsTreeCompiler"));
     private final ArrayBlockingQueue<Queued> queue=new ArrayBlockingQueue<>(QUEUE_LIMIT);
     private final HashSet<String> pending=new HashSet<>();
+    // Only successfully committed recent observations; SQLite remains authoritative.
+    private final java.util.LinkedHashMap<String,Boolean> committed=new java.util.LinkedHashMap<>(4096,0.75f,true);
     private final Object intakeLock=new Object(), mutationLock=new Object(), openLock=new Object();
     private final AtomicBoolean draining=new AtomicBoolean(), compiling=new AtomicBoolean();
     private final AtomicLong captureEpoch=new AtomicLong(), snapshotEpoch=new AtomicLong(), dirty=new AtomicLong();
@@ -89,7 +91,34 @@ public final class TreeRuntime {
         restoreStats();
         // Rebuild the disposable snapshot on a worker after a restart if
         // capture was explicitly enabled previously. No implicit capture consent.
-        if(directory.exists()||enabled())requestSnapshot();
+        if(directory.exists()||enabled()){
+            requestSnapshot();
+            if(!prefs.getBoolean("english_hint_backfill_v1",false))writer.execute(()->backfillEnglish(0,captureEpoch.get()));
+        }
+    }
+    /** Recover previously unlabeled English bodies without modifying originals. */
+    private void backfillEnglish(long before,long epoch){
+        if(clearing||captureEpoch.get()!=epoch)return;
+        try{
+            List<NativeTree.Master> page=records("",0,before,100);
+            List<NativeTree.Observation> rows=new ArrayList<>();
+            for(NativeTree.Master record:page){
+                if(!record.key().startsWith("local:x:"))continue;
+                NativeTree.Fragment body=record.body();
+                if(!body.source().endsWith(".body")||!body.language().isEmpty()||"en".equals(record.localized("en").language()))continue;
+                if(!"en".equals(com.wds.sixstars.contextoverlay.KnowledgeLanguage.englishHint(body.body())))continue;
+                rows.add(new NativeTree.Observation("record.x.en.localized",record.key(),body.body(),"en",body.at()));
+            }
+            if(!rows.isEmpty())storeExplicit(rows,epoch);
+            if(clearing||captureEpoch.get()!=epoch)return;
+            if(page.size()==100){
+                long cursor=page.get(page.size()-1).sequence();
+                writer.execute(()->backfillEnglish(cursor,epoch));
+            }else{
+                prefs.edit().putBoolean("english_hint_backfill_v1",true).apply();
+                requestSnapshot();
+            }
+        }catch(Exception|LinkageError ex){trace("language_backfill_failed",0,0,ex.getClass().getSimpleName());}
     }
     private NativeTree tree() {
         synchronized(openLock) {
@@ -162,7 +191,7 @@ public final class TreeRuntime {
             if(value)consent.putInt("capture_scope_version",2);
             consent.apply();
             captureEpoch.incrementAndGet();
-            cancelled.addAndGet(queue.size());dropped.addAndGet(queue.size());queue.clear();pending.clear();
+            cancelled.addAndGet(queue.size());dropped.addAndGet(queue.size());queue.clear();pending.clear();committed.clear();
         }
         if(value)requestSnapshot();
         writer.execute(()->{trace(value?"capture_enabled":"capture_paused",0,0,"");saveStats();});
@@ -200,7 +229,7 @@ public final class TreeRuntime {
             for(NativeTree.Observation o:observations){
                 if(!valid(o)){invalidText.incrementAndGet();dropped.incrementAndGet();acceptedAll=false;continue;}
                 String key=observationKey(o);
-                if(!pending.add(key)){duplicate.incrementAndGet();continue;}
+                if(committed.get(key)!=null||!pending.add(key)){duplicate.incrementAndGet();continue;}
                 if(!queue.offer(new Queued(o,epoch))){pending.remove(key);dropped.incrementAndGet();queueDrops.incrementAndGet();acceptedAll=false;}
                 else queued.incrementAndGet();
             }
@@ -252,7 +281,7 @@ public final class TreeRuntime {
         try {
             synchronized(intakeLock){
                 queue.drainTo(batch,BATCH_SIZE);
-                for(Queued q:batch)pending.remove(observationKey(q.observation));
+                // Keep in-flight observations pending until the transaction finishes.
             }
             long epoch=captureEpoch.get();
             List<NativeTree.Observation> observations=new ArrayList<>();
@@ -270,6 +299,15 @@ public final class TreeRuntime {
                 try{
                     long n=tree().observe(observations);
                     inserted.addAndGet(n);duplicate.addAndGet(observations.size()-n);
+                    error="";
+                    synchronized(intakeLock){
+                        if(captureEpoch.get()==epoch&&!clearing)for(NativeTree.Observation o:observations){
+                            String key=observationKey(o);
+                            if(key.length()>2048)continue;
+                            committed.put(key,true);
+                            if(committed.size()>4096)committed.remove(committed.keySet().iterator().next());
+                        }
+                    }
                     trace("write_ok",observations.size(),n,"");
                     if(n>0)requestSnapshot();
                 }catch(Exception | LinkageError e){
@@ -280,7 +318,10 @@ public final class TreeRuntime {
                     android.util.Log.e("RootsTree",error);
                 }
             }
-        }finally{try{saveStats();}finally{draining.set(false);scheduleDrain();}}
+        }finally{
+            synchronized(intakeLock){for(Queued q:batch)if(q.epoch==captureEpoch.get())pending.remove(observationKey(q.observation));}
+            try{saveStats();}finally{draining.set(false);scheduleDrain();}
+        }
     }
     public void languageChanged(){
         snapshotEpoch.incrementAndGet();coordination=KnowledgeWave.Field.empty();notifyWave();
@@ -309,7 +350,7 @@ public final class TreeRuntime {
                 if(!clearing&&epoch==snapshotEpoch.get()&&t.revision()==revision&&language.equals(overlay.targetLanguage())){
                     if(temp.exists()){
                         Files.move(temp.toPath(),snapshot.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
-                        snapshotStatus="Localized "+language+" · revision "+revision+" · "+snapshot.length()+" bytes";published=true;
+                        snapshotStatus="Localized "+language+" · revision "+revision+" · "+snapshot.length()+" bytes · active window ≤10000 nodes";published=true;
                     }else {Files.deleteIfExists(snapshot.toPath());snapshotStatus="Waiting for localized knowledge ("+language+")";emptyProjection=true;}
                 }else snapshotStatus="Tree changed during compilation; retrying";
             }
@@ -325,7 +366,7 @@ public final class TreeRuntime {
         return "Capture "+(enabled()?"ON":"OFF")+" · Queue "+queue.size()+"/"+QUEUE_LIMIT+
             "\nScans "+scans.get()+" · Rejected "+rejected.get()+" · Bounded "+truncated.get()+
             "\nDiscovered "+discovered.get()+" · Accepted "+accepted.get()+" · Queued "+queued.get()+
-            "\nWrites attempted "+writeAttempts.get()+" · Failed "+writeFailures.get()+
+            "\nWrites attempted "+writeAttempts.get()+" · Lifetime failed "+writeFailures.get()+
             "\nLifetime inserted "+inserted.get()+" · Duplicate "+duplicate.get()+" · Dropped/refused "+dropped.get()+
             "\nQueue full "+queueDrops.get()+" · Cancelled "+cancelled.get()+" · Invalid "+invalidText.get()+
             "\nScope: visible X text · legacy Home rejections "+noHome.get()+
@@ -354,7 +395,7 @@ public final class TreeRuntime {
         synchronized(intakeLock){
             if(clearing){done.accept("Clear already in progress.");return;}
             clearing=true;prefs.edit().putBoolean("capture_enabled",false).apply();
-            captureEpoch.incrementAndGet();snapshotEpoch.incrementAndGet();coordination=KnowledgeWave.Field.empty();queue.clear();pending.clear();
+            captureEpoch.incrementAndGet();snapshotEpoch.incrementAndGet();coordination=KnowledgeWave.Field.empty();queue.clear();pending.clear();committed.clear();
         }
         writer.execute(()->{
             try{

@@ -76,3 +76,5 @@ Validate the existing experimental Android capture adapter with a controlled fee
 JNI and P/Invoke both call the same native core. Next: confirm Android and MSVC builds, then an independent GGUF reader and portable manifest, desktop capture/browser and Forge integration, weighted feed assembly, [Lily Tendril semantic sensors](../../design/tendrils.md) and external-source agents. Existing translation and Forge contracts remain unchanged.
 
 No biological equivalence, measured social usefulness or production scalability is asserted.
+
+Capture growth fix: duplicate observations use a conditional insert to avoid duplicate AUTOINCREMENT churn, plus a bounded cache of successful writes. Conservative English hints apply only to grouped bodies; a paged local migration adds English projections to eligible previously unlabeled bodies without altering originals. Unknown language remains unknown. Lifetime failed-write statistics remain visible after recovery. The active coordination window is not a storage limit.

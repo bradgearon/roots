@@ -115,7 +115,9 @@ final class XKnowledgeRecords {
         for(String text:KnowledgeText.fragments(value)){
             String source="record.x."+role;
             String id=source+"\u001f"+key+"\u001f"+text;
-            out.putIfAbsent(id,new NativeTree.Observation(source,key,text,XVisibleTextReader.languageHint(text),at));
+            String language=XVisibleTextReader.languageHint(text);
+            if(role.equals("body")&&language.isEmpty())language=KnowledgeLanguage.englishHint(text);
+            out.putIfAbsent(id,new NativeTree.Observation(source,key,text,language,at));
         }
     }
 }

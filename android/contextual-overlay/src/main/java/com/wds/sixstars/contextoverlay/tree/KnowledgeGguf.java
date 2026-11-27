@@ -14,7 +14,7 @@ import java.util.Set;
 /** Strict reader for Roots' own GGUF v3 snapshots, not arbitrary model GGUF.
  * Reads vector/relationship data without reading or retaining node.text. */
 public final class KnowledgeGguf {
-    private static final int MAX_NODES=10000, MAX_ARRAY=100000, DIM=128;
+    private static final int MAX_NODES=10000, MAX_ARRAY=400000, DIM=128;
     private static final long MAX_FILE=512L*1024*1024;
     public record Node(String key,String master,String source,float[] vector){}
     public record Edge(String subject,String predicate,String object){}
