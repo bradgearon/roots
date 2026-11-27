@@ -62,7 +62,19 @@ try
             RootsDailyLog.Write("PLaMo", line);
         });
         Console.WriteLine($"PLaMo PID {engine.ProcessId}; waiting for {PLaMoReadiness.BaseUrl}…");
-        await engine.WaitUntilReadyAsync(token => PLaMoReadiness.CheckAsync(readiness, token), TimeSpan.FromMinutes(3), quit.Token);
+        // This is the server we launched with the configured model and alias.
+        // Restore the original /health readiness contract for the owned process;
+        // /v1/models verification remains required for an externally managed server.
+        await engine.WaitUntilReadyAsync(async token =>
+        {
+            try
+            {
+                using var response = await readiness.GetAsync(PLaMoReadiness.BaseUrl + "/health", token);
+                return response.IsSuccessStatusCode;
+            }
+            catch (HttpRequestException) { return false; }
+            catch (TaskCanceledException) when (!token.IsCancellationRequested) { return false; }
+        }, TimeSpan.FromMinutes(3), quit.Token);
     }
     else
     {
@@ -70,7 +82,7 @@ try
         await PLaMoReadiness.WaitForExternalAsync(readiness, TimeSpan.FromMinutes(3), quit.Token);
     }
 
-    Console.WriteLine("PLaMo ready; model alias verified.");
+    Console.WriteLine(external ? "PLaMo ready; model alias verified." : "PLaMo ready.");
     await using var gateway = new LocalTranslationGateway(8223, PLaMoReadiness.BaseUrl + "/v1/completions", lan);
     await gateway.StartAsync(quit.Token);
     Task shutdown = Task.Delay(Timeout.Infinite, quit.Token);
