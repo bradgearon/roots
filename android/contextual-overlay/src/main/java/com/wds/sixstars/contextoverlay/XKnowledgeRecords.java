@@ -55,9 +55,15 @@ final class XKnowledgeRecords {
         }
         out.add(new Sample(link,id,bounds,false,true));
     }
+    static boolean secondarySourceRole(String id){
+        return secondaryRole(roleId(id));
+    }
     static void sample(List<Sample> out,CharSequence value,String id,Rect bounds,boolean description){
+        sample(out,value,id,bounds,description,true);
+    }
+    static void sample(List<Sample> out,CharSequence value,String id,Rect bounds,boolean description,boolean allowSource){
         if(value==null)return;
-        if(isPermalinkRole(id)){
+        if(allowSource&&isPermalinkRole(id)){
             // Keep the actual URL in a URLSpan even if only a formatted date
             // or the word "link" is visible in the accessibility label.
             if(value instanceof android.text.Spanned){
