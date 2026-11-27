@@ -10,6 +10,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import com.wds.sixstars.contextoverlay.OverlayPreferences;
+import com.wds.sixstars.contextoverlay.OverlayDiagnostics;
 import com.wds.sixstars.contextoverlay.RootsUi;
 import com.wds.sixstars.contextoverlay.KnowledgeRecordAdapter;
 import java.util.ArrayList;
@@ -29,7 +30,7 @@ public final class TreeActivity extends Activity {
     private boolean rawMode;
     private long generation, before, branch;
     private String term="";
-    private boolean loading,ended,closed;
+    private boolean loading,ended,closed,refreshOnResume;
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
         LinearLayout shell=RootsUi.shell(this);
@@ -62,7 +63,7 @@ public final class TreeActivity extends Activity {
         LinearLayout tools=new LinearLayout(this);
         tools.addView(button("Diagnostics",()->{
             refreshStatus();
-            TextView details=RootsUi.text(this,status.getText().toString(),13,RootsUi.TEXT,false);
+            TextView details=RootsUi.text(this,runtime.status()+"\n\nAccessibility:\n"+OverlayDiagnostics.summary(this),13,RootsUi.TEXT,false);
             int p=RootsUi.dp(this,16);details.setPadding(p,p,p,p);
             android.widget.ScrollView scroll=new android.widget.ScrollView(this);scroll.addView(details);
             new AlertDialog.Builder(this).setTitle("Tree diagnostics").setView(scroll)
@@ -175,6 +176,14 @@ public final class TreeActivity extends Activity {
                 runtime.clear(error->runOnUiThread(()->{if(!closed){branch=0;branchLabel.setText("Branch: all records");reset();refreshStatus();if(error!=null)status.setText(error);}}));
             }).show();
     }
-    @Override protected void onResume(){super.onResume();if(runtime!=null)refreshStatus();}
+    @Override protected void onPause(){refreshOnResume=true;super.onPause();}
+    @Override protected void onResume(){
+        super.onResume();
+        if(runtime!=null){
+            refreshStatus();
+            if(refreshOnResume)reset();
+        }
+        refreshOnResume=false;
+    }
     @Override protected void onDestroy(){closed=true;generation++;reader.shutdownNow();super.onDestroy();}
 }
