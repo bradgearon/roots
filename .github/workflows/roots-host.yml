@@ -1,0 +1,38 @@
+name: Roots Host Checks
+on:
+  pull_request:
+    paths:
+      - 'src/Wds.Roots.Host/**'
+      - 'src/Wds.Roots.Api/**'
+      - 'tests/Roots.HostChecks/**'
+      - 'tests/Roots.ContractChecks/**'
+      - 'config/runtime.json'
+      - '.github/workflows/roots-host.yml'
+  push:
+    branches: ['feature/native-tree-core']
+    paths:
+      - 'src/Wds.Roots.Host/**'
+      - 'src/Wds.Roots.Api/**'
+      - 'tests/Roots.HostChecks/**'
+      - 'tests/Roots.ContractChecks/**'
+      - 'config/runtime.json'
+      - '.github/workflows/roots-host.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet build src/Wds.Roots.Host -c Release
+      - run: dotnet run --project tests/Roots.ContractChecks -c Release
+      - run: dotnet run --project tests/Roots.HostChecks -c Release

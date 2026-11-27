@@ -20,6 +20,67 @@ The launcher builds the Roots host and its API, downloads the small FastText mod
 
 Roots preserves Resone's engine and model provisioning method, but keeps a separate llama-server process for PLaMo PFML3 completions rather than importing the music-specific in-process bridge.
 
+### Desktop startup and relaunch diagnostics
+
+The desktop runtime now uses the same PLaMo-compatible llama.cpp **b11960** release
+as Android. Windows CPU, CUDA and Vulkan engine archives have pinned SHA-256
+digests. CUDA also installs the matching **13.4 runtime DLL companion archive**;
+the backend archive alone does not include that companion. The first CUDA launch
+after this update may download about 589 MB of engine/runtime archives. The model
+selection and existing verified model file are unchanged.
+
+Before loading a model, the launcher checks the exclusive Roots host lease and
+the required local ports: **8081** for PLaMo, **8224** for the local gateway, and
+**8223** when LAN mode is enabled. If a leftover server or another application
+owns a port, startup reports the conflict and, when Windows exposes the metadata,
+its PID and executable. It never terminates a process based on its name or port.
+For a conflict on 8081, inspect the reported owner in PowerShell:
+
+```powershell
+Get-NetTCPConnection -State Listen -LocalPort 8081 |
+    Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+A newly started PLaMo process belongs to this launch. Its stdout/stderr are shown
+with a `[PLaMo]` prefix and appended to the displayed daily log path. Early exits
+include the PID, decimal/hexadecimal exit code, executable path, and a bounded
+tail of recent output. Readiness timeout and cancellation clean up the owned
+process. A Windows kill-on-close job also ends an attached model process when its
+launcher is forcibly terminated; attachment happens immediately after process
+creation. An already orphaned process from an older launcher must be inspected
+separately. A model exit after startup now shuts down its gateway and reports the
+model failure.
+
+`launch.cmd --external-model` leaves the existing process under its original
+owner. It requires the expected llama.cpp health response and the
+`plamo-3-translate` model ID or alias from `/v1/models`; a generic successful
+health response is insufficient. These checks establish API compatibility, not
+proof of the model file's provenance. Start a compatible external server with
+`--alias plamo-3-translate`.
+
+The existing `AI_PLATFORM` override remains available for explicit CPU testing
+when the captured error identifies a CUDA/driver compatibility problem:
+
+```bat
+set AI_PLATFORM=cpu
+launch
+```
+
+Clear the override with `set AI_PLATFORM=` before returning to automatic backend
+selection. Selecting CUDA from a detected NVIDIA adapter does not by itself prove
+successful GPU execution; inspect the PLaMo startup output for actual device use.
+
+Host lifecycle checks run without a model download:
+
+```bat
+dotnet build src\Wds.Roots.Host -c Release
+dotnet run --project tests\Roots.HostChecks -c Release
+```
+
+The Roots Host Checks workflow runs the build and checks on Windows and Linux.
+The Windows suite includes listener-PID diagnostics and forced-launcher-exit job
+cleanup. Host checks do not replace testing the real Windows GPU and model.
+
 ## Chrome
 
 Open chrome://extensions, enable developer mode, and load unpacked chrome-extension/roots-translate. Enter the Roots desktop token in the popup. Existing automatic translation of nearby foreign posts, original text, inline results, cancellation, caching and manual translation are retained.
