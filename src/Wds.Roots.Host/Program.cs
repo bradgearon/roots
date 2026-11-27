@@ -42,7 +42,9 @@ try
         var enabledModels = manifest.Models.Where(m => m.Enabled && m.Path.StartsWith("models/llm/", StringComparison.OrdinalIgnoreCase)).ToArray();
         if (enabledModels.Length != 1) throw new InvalidDataException("Enable exactly one LLM model in config/runtime.json.");
         string model = EnginePackInstaller.Under(aiRoot, enabledModels[0].Path);
-        string dir = AiRuntimeRoot.ResolveEngineDirectory("llm", "engines/llm/llama-cpp-dynamic-win-x64");
+        // Use the existing Six Stars runtime directly; a shared .active pointer
+        // can otherwise select a separately provisioned, incompatible engine.
+        string dir = EnginePackInstaller.Under(aiRoot, "engines/llm/llama-cpp-dynamic-win-x64");
         string exe = Path.Combine(dir, "llama-server.exe");
         if (!File.Exists(exe)) throw new FileNotFoundException("llama-server not found", exe);
         if (!File.Exists(model)) throw new FileNotFoundException("PLaMo model not found", model);
