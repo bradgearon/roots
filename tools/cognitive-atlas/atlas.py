@@ -212,28 +212,38 @@ def read_ranges(path,selected,out):
 def build(args):
     path=resolve_gguf(args);tensors=inventory(path);digest=sha(path)
     obs=Observer(args)
-    rows=[];used=set()
+    rows=[];calibration=[];used=set()
     for cat,texts in TRAIN.items():
         for i,text in enumerate(texts):
-            print("Observe",cat,i+1,flush=True)
-            rows.append(sample(obs,cat,text,f"train-{cat}-{i}"));used.add(text.casefold())
-    # Adaptive training never receives held-out examples. Fixed test set is frozen.
+            split="calibration" if i==len(texts)-1 else "train"
+            print("Observe",split,cat,i+1,flush=True)
+            target=calibration if split=="calibration" else rows
+            target.append(sample(obs,cat,text,f"{split}-{cat}-{i}"));used.add(text.casefold())
+    # Calibration is visible as aggregate metrics only; final test is frozen.
     frozen={q.casefold() for vals in TEST.values() for q in vals}
     controller=[]
     for round in range(args.rounds if not args.no_micro else 0):
         index=core.learn(rows)
-        weakest=min(TRAIN,key=lambda c:sum(p["category"]==c for p in rows))
-        summary={"observations":len(rows),"features":len(index["freq"]),"least_sampled_category":weakest,
-                 "rare_features":sum(n==1 for n in index["freq"].values())}
+        measured=core.evaluate(calibration,index,tensors,args.budget*1024*1024)
+        # Choose a category with the greatest gap to the observation-informed oracle.
+        gaps={p["category"]:max(0.0,p["oracle"]-p["atlas"]) for p in measured["rows"]}
+        weakest=max(gaps,key=lambda cat:(gaps[cat],cat))
+        summary={"observations":len(rows),"features":len(index["freq"]),
+                 "largest_calibration_gap":weakest,
+                 "coverage":{k:round(v,4) for k,v in measured["mean"].items()},
+                 "gaps":{k:round(v,4) for k,v in gaps.items()}}
+        print("Calibration",round+1,json.dumps(summary),flush=True)
         proposal=obs.micro(summary,"choose next training probe")
+        entry={"round":round+1,"calibration":summary,"proposal":proposal,"accepted":False}
+        controller.append(entry)
         if not proposal or proposal["question"].casefold() in used|frozen:
-            print("Controller abstained; using fixed probes only for this round.",flush=True);continue
+            print("Controller abstained; no new training observation this round.",flush=True);continue
         print("Micro-cognition:",proposal["speech"],"\nNext question:",proposal["question"],flush=True)
         used.add(proposal["question"].casefold())
         try:rows.append(sample(obs,proposal["category"],proposal["question"],f"adaptive-{round}"))
         except ValueError as e:
             print("Controller probe rejected:",str(e),flush=True);continue
-        controller.append(proposal)
+        entry["accepted"]=True
     atlas=core.learn(rows)
     tests=[sample(obs,cat,text,f"test-{cat}-{i}") for cat,texts in TEST.items() for i,text in enumerate(texts)]
     metrics=core.evaluate(tests,atlas,tensors,args.budget*1024*1024)
@@ -242,7 +252,7 @@ def build(args):
               "gguf_sha256":digest,"gguf_file":str(path.resolve()),"versions":obs.versions,
               "pooling":"user-token span, up to 32 rows, half uniform and half final-position head-mean attention",
               "compatibility":"structural alignment only; reference FP32 activations not validated against quantized runtime"}
-    save(args.out/"atlas.json",{"manifest":manifest,"tensors":tensors,"graph":atlas,"training":rows,"evaluation":metrics,"controller":controller})
+    save(args.out/"atlas.json",{"manifest":manifest,"tensors":tensors,"graph":atlas,"training":rows,"calibration":core.evaluate(calibration,atlas,tensors,args.budget*1024*1024),"evaluation":metrics,"controller":controller})
     print(json.dumps(metrics["mean"],indent=2),flush=True)
     print("Saved",args.out/"atlas.json")
     if not args.no_micro:
