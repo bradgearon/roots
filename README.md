@@ -22,12 +22,12 @@ Roots preserves Resone's engine and model provisioning method, but keeps a separ
 
 ### Desktop startup and relaunch diagnostics
 
-The desktop runtime now uses the same PLaMo-compatible llama.cpp **b11960** release
-as Android. Windows CPU, CUDA and Vulkan engine archives have pinned SHA-256
-digests. CUDA also installs the matching **13.4 runtime DLL companion archive**;
-the backend archive alone does not include that companion. The first CUDA launch
-after this update may download about 589 MB of engine/runtime archives. The model
-selection and existing verified model file are unchanged.
+The desktop runtime retains the original llama.cpp **b10724** engine pin
+(CUDA 13.3 on NVIDIA). Android's separate native runtime uses b11960.
+Windows CPU, CUDA and Vulkan engine archives have pinned SHA-256 digests.
+The launcher restores the configured desktop engine if its installed receipt
+does not match the manifest. The model selection and existing verified model
+file are unchanged.
 
 Before loading a model, the launcher checks the exclusive Roots host lease and
 the required local ports: **8081** for PLaMo, **8224** for the local gateway, and
