@@ -14,7 +14,8 @@ public final class PoeticMovementActivity extends Activity {
     private EditText profile;
     private CryptoWordGenerator.Words words;
     private CheckBox rate;
-    private TextView candidates,selected,resolved,status;
+    private TextView candidates,selected,resolutionInput,resolved,status;
+    private boolean secondStarted;
     private Button run,random,download;
     private android.widget.Spinner modelSelector;
     private boolean busy,closed;
@@ -54,6 +55,8 @@ public final class PoeticMovementActivity extends Activity {
         selected=RootsUi.text(this,"Not run",15,RootsUi.TEXT,false);selected.setTextIsSelectable(true);first.addView(selected);
         LinearLayout second=RootsUi.card(this,content);
         second.addView(RootsUi.text(this,"2 · Displacement and resolution",17,RootsUi.TEXT,true));
+        second.addView(RootsUi.text(this,"Independent request 2 input",13,RootsUi.MUTED,true));
+        resolutionInput=RootsUi.text(this,"Not prepared",13,RootsUi.MUTED,false);resolutionInput.setTextIsSelectable(true);second.addView(resolutionInput);
         resolved=RootsUi.text(this,"Not run",15,RootsUi.TEXT,false);resolved.setTextIsSelectable(true);second.addView(resolved);
         shell.addView(RootsUi.action(this,"‹ Back",this::finish));
         RootsUi.styleInputs(this,shell);setContentView(shell);generateWords();
@@ -81,7 +84,7 @@ public final class PoeticMovementActivity extends Activity {
         if(busy)return;
         words=CryptoWordGenerator.generate();
         candidates.setText("Nouns: "+String.join(", ",words.nouns())+"\n\nVerbs: "+String.join(", ",words.verbs()));
-        selected.setText("Not run");resolved.setText("Not run");status.setText(LocalIntelligenceProvider.localStatus(this,model()));
+        selected.setText("Not run");resolutionInput.setText("Not prepared");resolved.setText("Not run");status.setText(LocalIntelligenceProvider.localStatus(this,model()));
     }
     private void showCandidates(PoeticMovement.Input in){
         candidates.setText("Nouns: "+String.join(", ",in.nouns())+"\n\nVerbs: "+String.join(", ",in.verbs()));
@@ -92,7 +95,7 @@ public final class PoeticMovementActivity extends Activity {
         try{in=input();}catch(IllegalArgumentException e){status.setText(e.getMessage());return;}
         final IntelligenceModel chosen=model();
         showCandidates(in);busy=true;run.setEnabled(false);random.setEnabled(false);profile.setEnabled(false);rate.setEnabled(false);modelSelector.setEnabled(false);download.setEnabled(false);
-        selected.setText("Waiting…");resolved.setText("Waiting…");status.setText("Queued on local inference engine…");
+        secondStarted=false;selected.setText("Waiting…");resolutionInput.setText("Awaiting valid selection");resolved.setText("Not started");status.setText("Queued on local inference engine…");
         LocalIntelligenceProvider.testMovement(this,chosen,in,new LocalFunctionGemmaProvider.MovementResult(){
             @Override public void progress(String stage,String message){runOnUiThread(()->{
                 if(closed)return;
@@ -100,7 +103,9 @@ public final class PoeticMovementActivity extends Activity {
                     case "selection_stream":StreamText.reveal(selected,message);break;
                     case "resolution_stream":StreamText.reveal(resolved,message);break;
                     case "selected":selected.setText(message);break;
-                    case "invalid_selection":selected.setText("Invalid model output:\n"+message);break;
+                    case "resolution_input":resolutionInput.setText(message);break;
+                    case "resolve":case "movement_resolve":secondStarted=true;resolved.setText("Generating…");status.setText(message);break;
+                    case "invalid_selection":selected.setText("Invalid model output:\n"+message);resolved.setText("Not started — request 1 invalid");break;
                     case "invalid_resolution":resolved.setText("Invalid model output:\n"+message);break;
                     default:status.setText(message);
                 }
@@ -108,7 +113,7 @@ public final class PoeticMovementActivity extends Activity {
             @Override public void completed(PoeticMovement.Run result,String error){runOnUiThread(()->{
                 if(closed)return;
                 busy=false;run.setEnabled(true);random.setEnabled(true);profile.setEnabled(true);rate.setEnabled(true);modelSelector.setEnabled(true);download.setEnabled(true);
-                if(error!=null){status.setText(error);return;}
+                if(error!=null){status.setText(error);if(!secondStarted){resolutionInput.setText("Not prepared — request 1 did not complete");resolved.setText("Not started — request 1 did not complete");}else if(resolved.getText().toString().equals("Generating…"))resolved.setText("Request 2 failed");return;}
                 StringBuilder b=new StringBuilder();
                 for(PoeticMovement.Resolution r:result.resolutions()){
                     PoeticMovement.Pair p=result.pairs().get(r.index()-1);
