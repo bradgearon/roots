@@ -13,3 +13,6 @@ android/.roots-brain/
 
 # Verified native dependency download cache
 android/.roots-deps/
+
+# Local cognitive atlas weights and research artifacts
+.roots-atlas/
