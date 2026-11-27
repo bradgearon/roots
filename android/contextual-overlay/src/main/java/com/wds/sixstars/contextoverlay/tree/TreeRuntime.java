@@ -398,6 +398,21 @@ public final class TreeRuntime {
         return tree().query(term,agent,before,limit);
     }
     public List<NativeTree.Agent> agents(){if(clearing)throw new IllegalStateException("Tree is clearing");return tree().agents();}
+    /** Mesh revision: native observations and branch definitions change this value. */
+    public long graphRevision(){
+        if(clearing)throw new IllegalStateException("Tree is clearing");
+        return tree().revision();
+    }
+    /** Import a peer branch by its definition; numeric agent IDs are device-local.
+     * The native core rebuilds membership for existing and future fragments. */
+    public long storeSharedBranch(String name,String term,long expectedEpoch){
+        synchronized(mutationLock){
+            if(clearing||captureEpoch.get()!=expectedEpoch)throw new IllegalStateException("Tree changed during receive");
+            NativeTree t=tree();
+            for(NativeTree.Agent a:t.agents())if(a.name().equals(name)&&a.term().equals(term))return 0;
+            t.createAgent(name,term);requestSnapshot();return 1;
+        }
+    }
     public long count(){return tree().count();}
     public void createAgent(String name,String term,Consumer<String> done){
         writer.execute(()->{
