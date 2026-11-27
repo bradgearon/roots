@@ -596,6 +596,64 @@ final class MeshPeer {
         int demand,interest;
         Offer(String id,String language,String topic){this.id=id;this.language=language;this.topic=topic;}
     }
+    private static MeshItem verifyOffer(JSONObject json,Offer offer)throws Exception{
+        MeshItem item=MeshItem.parse(json);
+        if(!item.id().equals(offer.id)||!item.topic().equals(offer.topic)
+                ||(item.graph()==null&&!item.language().equals(offer.language)))
+            throw new IOException("Inventory does not match verified content.");
+        return item;
+    }
+    private List<MeshItem> fetchGraphBatch(Network network,Invite peer,List<Offer> offers,Trace trace)throws Exception{
+        List<MeshItem> delivered=new ArrayList<>();
+        int offset=0;
+        while(offset<offers.size()){
+            JSONArray ids=new JSONArray();
+            for(int i=offset;i<offers.size();i++)ids.put(offers.get(i).id);
+            JSONObject answer=exchange(network,peer,new JSONObject().put("op","want_batch").put("ids",ids),0,trace);
+            trace.begin("Receive",android.os.SystemClock.elapsedRealtime());
+            int processed=answer.getInt("processed");
+            if(processed<1||processed>offers.size()-offset)throw new IOException("Invalid graph batch cursor");
+            Map<String,Offer> expected=new HashMap<>();
+            for(int i=offset;i<offset+processed;i++)expected.put(offers.get(i).id,offers.get(i));
+            JSONArray rows=answer.getJSONArray("items");
+            if(rows.length()>processed)throw new IOException("Oversized graph batch");
+            for(int i=0;i<rows.length();i++){
+                JSONObject json=rows.getJSONObject(i);
+                Offer offer=expected.remove(json.getString("id"));
+                if(offer==null)throw new IOException("Unexpected or duplicate graph item");
+                MeshItem item=verifyOffer(json,offer);
+                if(item.graph()==null)throw new IOException("Expected graph item");
+                delivered.add(item);
+            }
+            offset+=processed;
+            trace.pass("Receive","Graph batch verified.",android.os.SystemClock.elapsedRealtime());
+        }
+        return delivered;
+    }
+    private int storeReceived(List<MeshItem> items,Map<String,Offer> pending,long epoch,Trace trace)throws Exception{
+        List<NativeTree.Observation> observations=new ArrayList<>();
+        List<String> observationIds=new ArrayList<>();
+        int received=0;
+        for(MeshItem item:items){
+            MeshItem.Graph graph=item.graph();
+            if(graph!=null&&graph.kind().equals("fragment")){
+                observations.add(new NativeTree.Observation(graph.source(),graph.key(),item.text(),graph.language(),graph.at()));
+                observationIds.add(item.id());
+            }
+        }
+        if(!observations.isEmpty()){
+            received+=(int)tree.storeExplicit(observations,epoch);
+            for(String id:observationIds)pending.remove(id);
+        }
+        for(MeshItem item:items){
+            if(item.graph()!=null&&item.graph().kind().equals("fragment"))continue;
+            try{
+                if(item.store(tree,epoch)>0)received++;
+                pending.remove(item.id());
+            }catch(Exception e){trace.fail(e,android.os.SystemClock.elapsedRealtime());}
+        }
+        return received;
+    }
     record SyncResult(int peers,int wanted,int received,int failed){}
     SyncResult sync(List<Invite> invites,String interests,String language,java.util.function.Consumer<String> progress)throws Exception{
         return sync(invites,interests,language,null,progress);
@@ -623,15 +681,17 @@ final class MeshPeer {
         try{network=wifi();}catch(RuntimeException e){local.add(failure("Wi-Fi",e,0));network=null;}
         if(network==null)throw new IOException(failureSummary(remember(checkedAt,local,traces)));
         final long epoch=tree.captureEpoch();
-        Map<String,Offer> offers=new HashMap<>();int peers=0,failed=0;
-        // The inventory carries approved topic labels, never the receiver's private interests.
+        Map<String,Offer> offers=new HashMap<>();Set<Invite> graphPeers=new HashSet<>();int peers=0,failed=0;
+        // Read all inventory pages. Receiver preferences affect order, not eligibility.
         for(int peerIndex=0;peerIndex<invites.size();peerIndex++){
             Invite invite=invites.get(peerIndex);Trace trace=traces.get(peerIndex);
             progress.accept("Reading peer inventory "+(peerIndex+1)+" of "+invites.size()+"…");
             try{
                 Set<String> seen=new HashSet<>();String after="";
-                for(int page=0;page<16;page++){
+                for(int page=0;;page++){
+                    if(Thread.currentThread().isInterrupted()||!network.equals(wifi())||tree.captureEpoch()!=epoch)throw new IOException("Receive interrupted");
                     InventoryPage inventoryPage=inventory(network,invite,after,0,trace);
+                    if(inventoryPage.graph())graphPeers.add(invite);
                     JSONArray inventory=inventoryPage.items();
                     if(page==0)peers++;
                     for(int i=0;i<inventory.length();i++){
@@ -652,7 +712,7 @@ final class MeshPeer {
             Map<String,Integer> replicas=new HashMap<>(),demand=new HashMap<>();
             for(Offer o:offers.values()){replicas.put(o.id,o.sources.size());demand.put(o.id,o.demand);}
             observedReplicas=java.util.Collections.unmodifiableMap(new HashMap<>(replicas));observedDemand=java.util.Collections.unmodifiableMap(new HashMap<>(demand));
-            Set<String> known=new HashSet<>();
+            Set<String> known=new HashSet<>(graphCatalog().keySet());
             List<String> terms=new ArrayList<>();
             List<NativeTree.Master> records=tree.allRecords("",10000);
             for(NativeTree.Master record:records){
@@ -679,35 +739,63 @@ final class MeshPeer {
                 AxonSubscription.Allocation allocation=axon.allocation(app,tree,records,language);
                 List<AxonPlanner.Offer> candidates=new ArrayList<>();
                 for(Offer o:want)candidates.add(new AxonPlanner.Offer(o.id,o.topic,o.sources.size(),o.demand,o.language.equals(language)));
-                wanted=0;for(AxonPlanner.Offer o:candidates)if(!AxonPlanner.lane(o.topic(),allocation.shares()).isEmpty())wanted++;
-                List<String> ids=AxonPlanner.order(candidates,allocation.shares(),MAX_FETCH);
+                List<String> ids=AxonPlanner.order(candidates,allocation.shares(),want.size());
+                // Even when no named lane matches, every missing item is wanted.
+                Map<String,Offer> remaining=new LinkedHashMap<>();
+                for(Offer o:want)remaining.put(o.id,o);
                 want=new ArrayList<>();
-                for(String id:ids)want.add(offers.get(id));
+                for(String id:ids){Offer item=remaining.remove(id);if(item!=null)want.add(item);}
+                want.addAll(remaining.values());
                 progress.accept(axon.describe(allocation));
             }
-            int received=0,attempted=0;
-            for(Offer o:want){
-                if(attempted++>=MAX_FETCH)break;
-                if(!network.equals(wifi())||tree.captureEpoch()!=epoch)break;
-                progress.accept("Receiving "+(received+1)+" · "+o.sources.size()+" available peer"+(o.sources.size()==1?"":"s"));
-                boolean ok=false;
-                for(Invite source:o.sources){
+            int received=0;
+            Set<Invite> unavailable=new HashSet<>();
+            for(int offset=0;offset<want.size();offset+=MAX_FETCH){
+                if(Thread.currentThread().isInterrupted()||!network.equals(wifi())||tree.captureEpoch()!=epoch){
+                    failed+=want.size()-offset;break;
+                }
+                Map<String,Offer> pending=new LinkedHashMap<>();
+                for(int i=offset;i<Math.min(offset+MAX_FETCH,want.size());i++){
+                    Offer offer=want.get(i);pending.put(offer.id,offer);
+                }
+                progress.accept("Receiving graph · "+received+" / "+wanted);
+                for(Invite source:invites){
+                    if(pending.isEmpty()||unavailable.contains(source))continue;
+                    if(Thread.currentThread().isInterrupted()||!network.equals(wifi())||tree.captureEpoch()!=epoch)break;
+                    List<Offer> batch=new ArrayList<>();
+                    for(Offer offer:pending.values())if(offer.sources.contains(source))batch.add(offer);
+                    if(batch.isEmpty())continue;
                     Trace trace=traces.get(invites.indexOf(source));
-                    try{
-                        JSONObject answer=exchange(network,source,new JSONObject().put("op","want").put("id",o.id),0,trace);
+                    if(graphPeers.contains(source)){
+                        List<MeshItem> items;
+                        try{items=fetchGraphBatch(network,source,batch,trace);}
+                        catch(Exception e){
+                            if(trace.currentStage().equals("Receive"))trace.fail(e,android.os.SystemClock.elapsedRealtime());
+                            unavailable.add(source);continue;
+                        }
                         trace.begin("Receive",android.os.SystemClock.elapsedRealtime());
-                        MeshItem item=MeshItem.parse(answer.getJSONObject("item"));
-                        if(!item.id().equals(o.id))throw new IOException("Unexpected content ID.");
-                        if(!item.topic().equals(o.topic)||!item.language().equals(o.language))throw new IOException("Inventory does not match verified content.");
-                        long added=item.store(tree,epoch);if(added>0)received++;ok=true;
-                        trace.pass("Receive","Published content verified and processed locally.",android.os.SystemClock.elapsedRealtime());break;
-                    }catch(Exception e){
-                        // exchange() already records transport errors. Parsing/storage
-                        // failures happen at Receive and never expose peer content.
-                        if(trace.currentStage().equals("Receive"))trace.fail(e,android.os.SystemClock.elapsedRealtime());
+                        try{
+                            received+=storeReceived(items,pending,epoch,trace);
+                            trace.pass("Receive","Verified graph merged into the local Tree.",android.os.SystemClock.elapsedRealtime());
+                        }catch(Exception e){trace.fail(e,android.os.SystemClock.elapsedRealtime());}
+                    }else{
+                        for(Offer offer:batch){
+                            if(Thread.currentThread().isInterrupted()||!network.equals(wifi())||tree.captureEpoch()!=epoch)break;
+                            try{
+                                JSONObject answer=exchange(network,source,new JSONObject().put("op","want").put("id",offer.id),0,trace);
+                                trace.begin("Receive",android.os.SystemClock.elapsedRealtime());
+                                MeshItem item=verifyOffer(answer.getJSONObject("item"),offer);
+                                if(item.store(tree,epoch)>0)received++;
+                                pending.remove(offer.id);
+                                trace.pass("Receive","Verified knowledge merged.",android.os.SystemClock.elapsedRealtime());
+                            }catch(Exception e){
+                                if(trace.currentStage().equals("Receive"))trace.fail(e,android.os.SystemClock.elapsedRealtime());
+                                else {unavailable.add(source);break;}
+                            }
+                        }
                     }
                 }
-                if(!ok)failed++;
+                failed+=pending.size();
             }
             remember(checkedAt,local,traces);
             return new SyncResult(peers,wanted,received,failed);
