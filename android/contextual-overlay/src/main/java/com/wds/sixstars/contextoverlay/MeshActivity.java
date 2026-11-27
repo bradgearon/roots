@@ -29,7 +29,7 @@ public final class MeshActivity extends Activity {
     private MeshPeer mesh;
     private TextView status,serve,copy,receive,stop,axonStatus;
     private TextView connectionSummary,connectionStatus,connectionDetails,analysisOutput;
-    private TextView testConnection,analyzeConnection,copyConnectionReport;
+    private TextView testConnection,checkDevice,analyzeConnection,copyConnectionReport;
     private TextView savedAxonStatus,boundConnectionStatus;
     private static final long REFRESH_MS=30000;
     private static final ExecutorService CONNECTION_REFRESH=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsAxonRefresh");t.setDaemon(true);return t;});
@@ -96,6 +96,7 @@ public final class MeshActivity extends Activity {
         connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
         connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
         testConnection=RootsUi.action(this,"Refresh / test connection",this::testConnection);connection.addView(testConnection);
+        checkDevice=RootsUi.action(this,"Check this device",()->runConnectionTest(true));connection.addView(checkDevice);
         connectionStatus=RootsUi.text(this,"No connection test yet.",14,RootsUi.ACCENT,true);connection.addView(connectionStatus);
         connectionDetails=RootsUi.text(this,"",13,RootsUi.TEXT,false);
         connectionDetails.setTextIsSelectable(true);
@@ -266,6 +267,7 @@ public final class MeshActivity extends Activity {
     private void updateDiagnosticActions(){
         if(testConnection==null)return;
         enable(testConnection,!busy);
+        if(checkDevice!=null)enable(checkDevice,!busy);
         enable(analyzeConnection,!busy&&connectionReport!=null&&!reportStale&&!renderedReport.isEmpty());
         enable(copyConnectionReport,!busy&&!renderedReport.isEmpty());
     }
@@ -292,17 +294,19 @@ public final class MeshActivity extends Activity {
         }
         updateDiagnosticActions();
     }
-    private void testConnection(){
+    private void testConnection(){runConnectionTest(false);}
+    private void runConnectionTest(boolean localOnly){
         if(busy)return;
         final String raw=invitations.getText().toString();
-        final boolean savedAxon=useAxon.isChecked();
+        final boolean savedAxon=!localOnly&&useAxon.isChecked();
+        final boolean localCheck=localOnly||(!savedAxon&&raw.trim().isEmpty());
         busy=true;refresh();
         final int revision=++diagnosticRevision;
-        reportStale=true;connectionStatus.setText("Testing the selected peer connections…");
+        reportStale=true;connectionStatus.setText(localCheck?"Checking this device…":"Testing the selected peer connections…");
         analysisOutput.setText("Waiting for connection checks…");
         WORK.execute(()->{
             MeshConnectionDiagnostics.Report report=null;String error=null;
-            try{report=mesh.testConnections(raw,savedAxon,progress->runOnUiThread(()->{
+            try{report=localCheck?mesh.testLocal():mesh.testConnections(raw,savedAxon,progress->runOnUiThread(()->{
                 if(!isDestroyed()&&revision==diagnosticRevision)connectionStatus.setText(progress);
             }));}
             catch(Exception|LinkageError e){error="Connection test could not finish ("+e.getClass().getSimpleName()+"). Try again.";}
@@ -315,7 +319,7 @@ public final class MeshActivity extends Activity {
                     invalidateDiagnostics("Setup changed during testing. Run a fresh test.");return;
                 }
                 if(failure==null){
-                    if(savedAxon&&completed!=null){
+                    if(!localCheck&&savedAxon&&completed!=null){
                         if(!raw.trim().isEmpty()&&savedAccessWasStored(completed))clearSavedInvitationDraft();
                         lastBoundHealth=updateBoundHealth(completed);refreshSavedAxon();
                         if(!raw.trim().isEmpty()&&savedAccessWasStored(completed))scheduleBoundRefresh(500);
