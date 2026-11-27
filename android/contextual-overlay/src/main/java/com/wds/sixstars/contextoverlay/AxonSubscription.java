@@ -63,7 +63,7 @@ final class AxonSubscription {
             }
             lanes.add(new Lane(topic,Collections.unmodifiableList(elements)));
         }
-        if(lanes.isEmpty())throw new IllegalArgumentException("Enter at least one topic, or * for all published knowledge.");
+        if(lanes.isEmpty())lanes.add(new Lane("*",Collections.emptyList()));
         return new AxonSubscription(pins,model,operation,lanes);
     }
     String lines(){
@@ -123,6 +123,9 @@ final class AxonSubscription {
             if(observed>0)mappedFlow=true;
             masses.add(new AxonPlanner.Need(lane.topic(),need,observed));
         }
+        // Always retain a catch-all desire. Named topics and element flow only prioritize.
+        if(lanes.stream().noneMatch(lane->lane.topic().equals("*")))
+            masses.add(new AxonPlanner.Need("*",1,0));
         return new Allocation(AxonPlanner.allocate(masses),profile.requests(),field.revision(),mappedFlow);
     }
     String describe(Allocation allocation){
