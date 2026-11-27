@@ -71,9 +71,28 @@ public final class MeshActivity extends Activity {
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
         listener.addView(RootsUi.text(this,"Create a roots:// invitation for another phone. Keep Roots running while the other phone receives. Stop serving to invalidate the invitation.",13,RootsUi.MUTED,false));
         serve=RootsUi.action(this,"Start listening",this::start);listener.addView(serve);
+        checkDevice=RootsUi.action(this,"Check this device",()->runConnectionTest(true));listener.addView(checkDevice);
         copy=RootsUi.action(this,"Copy private invitation",this::copy);listener.addView(copy);
         listener.addView(RootsUi.action(this,"Share invitation…",this::share));
         stop=RootsUi.action(this,"Stop listening",()->{mesh.stop();getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();status.setText(mesh.status());});listener.addView(stop);
+        // Device diagnostics belong to the listener, not an inbound Axon.
+        // Always render this card, even if there are no saved peers.
+        LinearLayout connection=RootsUi.card(this,content);
+        connection.addView(RootsUi.text(this,"Connection details",18,RootsUi.TEXT,true));
+        connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
+        connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
+        testConnection=RootsUi.action(this,"Refresh / test connection",this::testConnection);connection.addView(testConnection);
+        connectionStatus=RootsUi.text(this,"No connection test yet.",14,RootsUi.ACCENT,true);connection.addView(connectionStatus);
+        connectionDetails=RootsUi.text(this,"",13,RootsUi.TEXT,false);
+        connectionDetails.setTextIsSelectable(true);
+        copyConnectionReport=RootsUi.action(this,"Copy connection report",this::copyConnectionReport);connection.addView(copyConnectionReport);
+        analyzeConnection=RootsUi.action(this,"Analyze connection with intelligence",this::analyzeConnection);connection.addView(analyzeConnection);
+        connection.addView(RootsUi.action(this,"Intelligence model settings",()->{
+            if(!busy)startActivity(new Intent(this,OverlayTranslationSettingsActivity.class));
+        }));
+        connection.addView(connectionDetails);
+        analysisOutput=RootsUi.text(this,"Run a test to enable analysis with your selected model.",13,RootsUi.MUTED,false);
+        analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         LinearLayout inbound=RootsUi.card(this,content);
         inbound.addView(RootsUi.text(this,"Receive knowledge",18,RootsUi.TEXT,true));
         inbound.addView(RootsUi.text(this,"Use your saved Axon connection, or paste up to eight invitations to add or refresh peers. Leave the invitation box empty to use saved access. Only missing content is requested; private interests stay on this device.",13,RootsUi.MUTED,false));
@@ -92,22 +111,6 @@ public final class MeshActivity extends Activity {
         inbound.addView(savedAxonStatus);
         boundConnectionStatus=RootsUi.text(this,"Bound connection: not checked",13,RootsUi.MUTED,false);
         inbound.addView(boundConnectionStatus);
-        LinearLayout connection=RootsUi.section(this,inbound,"Connection details","Test the peer connection and graph inventory.",true);
-        connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
-        connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
-        testConnection=RootsUi.action(this,"Refresh / test connection",this::testConnection);connection.addView(testConnection);
-        checkDevice=RootsUi.action(this,"Check this device",()->runConnectionTest(true));connection.addView(checkDevice);
-        connectionStatus=RootsUi.text(this,"No connection test yet.",14,RootsUi.ACCENT,true);connection.addView(connectionStatus);
-        connectionDetails=RootsUi.text(this,"",13,RootsUi.TEXT,false);
-        connectionDetails.setTextIsSelectable(true);
-        copyConnectionReport=RootsUi.action(this,"Copy connection report",this::copyConnectionReport);connection.addView(copyConnectionReport);
-        analyzeConnection=RootsUi.action(this,"Analyze connection with intelligence",this::analyzeConnection);connection.addView(analyzeConnection);
-        connection.addView(RootsUi.action(this,"Intelligence model settings",()->{
-            if(!busy)startActivity(new Intent(this,OverlayTranslationSettingsActivity.class));
-        }));
-        connection.addView(connectionDetails);
-        analysisOutput=RootsUi.text(this,"Run a test to enable analysis with your selected model.",13,RootsUi.MUTED,false);
-        analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         inbound.addView(RootsUi.action(this,"Bind / edit .axon",this::editAxon));
         inbound.addView(RootsUi.action(this,"View current flow allocation",this::showAxon));
         inbound.addView(RootsUi.action(this,"Arm runtime Axon (30 minutes)",this::armRuntime));
