@@ -69,4 +69,10 @@ public class PostTextHeuristicsTest {
         assertTrue(PostTextHeuristics.isListClass("androidx.recyclerview.widget.RecyclerView"));
         assertTrue(PostTextHeuristics.isListClass("android.widget.ListView"));
     }
+    @Test public void detailAndReplyBodyIdentifiersAndShortText() {
+        assertTrue(PostTextHeuristics.isPostTextId("com.twitter.android:id/tweet_detail_text"));
+        assertTrue(PostTextHeuristics.isPostTextId("com.twitter.android:id/reply_context_text"));
+        assertTrue(PostTextHeuristics.score("Great!",null,"android.widget.TextView",false,true,320,30,"",true)>0);
+        assertTrue(PostTextHeuristics.score("Post your reply",null,"android.widget.TextView",false,true,320,30,"en",true)<0);
+    }
 }

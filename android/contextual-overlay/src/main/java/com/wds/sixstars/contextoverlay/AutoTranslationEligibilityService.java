@@ -33,10 +33,15 @@ public final class AutoTranslationEligibilityService {
         // X exposed a stable view ID or a recognizable post container.
         if (text == null || text.trim().length() < (recognizedBody ? 1 : 2) || text.length() > 1100)
             return false;
-        if (source == null || source.isEmpty() || target == null ||
-                target.isEmpty() || source.equalsIgnoreCase(target))
-            return false;
+        if (target == null || target.isEmpty()) return false;
+        if (source != null && !source.isEmpty() && source.equalsIgnoreCase(target)) return false;
+        // Unknown source is eligible for credible post bodies. The provider
+        // receives no source hint instead of an invented language.
+        if (source == null || source.isEmpty()) {
+            if (!recognizedBody && (fromDescription || (!hasPostContainer && bodyScore < 60))) return false;
+        }
 
+        if (!recognizedBody && PostTextHeuristics.isUiLabel(text, null, null)) return false;
         String normalized = text.trim().toLowerCase(Locale.ROOT);
         return !(normalized.startsWith("profile image") ||
                 normalized.startsWith("profile images") ||

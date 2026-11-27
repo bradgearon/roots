@@ -28,7 +28,11 @@ final class PostTextHeuristics {
         return s.contains("tweet_text") || s.contains("tweettext") ||
                 s.contains("tweet_body") || s.contains("tweetbody") ||
                 s.contains("status_text") || s.contains("post_text") ||
-                s.contains("post_body") || s.contains("text_tweet");
+                s.contains("post_body") || s.contains("text_tweet") ||
+                s.contains("tweet_detail_text") || s.contains("tweet_detail_body") ||
+                s.contains("post_detail_text") || s.contains("post_detail_body") ||
+                s.contains("tweet_content_text") || s.contains("reply_context_text") ||
+                s.contains("reply_preview_text");
     }
 
     static boolean isPostContainerId(String id) {
@@ -93,13 +97,18 @@ final class PostTextHeuristics {
 
     static int score(String text, String id, String className, boolean fromDescription,
                      boolean clickable, int width, int height, String languageHint) {
+        return score(text,id,className,fromDescription,clickable,width,height,languageHint,false);
+    }
+
+    static int score(String text, String id, String className, boolean fromDescription,
+                     boolean clickable, int width, int height, String languageHint, boolean bodyContext) {
         if (text == null || isUiLabel(text, id, className)) return -1;
         boolean knownBody = isPostTextId(id);
         boolean foreign = languageHint != null && !languageHint.isEmpty();
-        int minChars = knownBody ? 1 : (foreign ? 2 : 12);
+        int minChars = knownBody ? 1 : (foreign ? 2 : bodyContext && !fromDescription ? 2 : 12);
         if (text.length() < minChars || text.length() > 1100 ||
                 width < 45 || height < 12) return -1;
-        if (clickable && !knownBody && !foreign && text.length() < 65) return -1;
+        if (clickable && !knownBody && !foreign && !bodyContext && text.length() < 65) return -1;
 
         int score = 30 + Math.min(text.length(), 240) / 4;
         if (knownBody) score += 180;

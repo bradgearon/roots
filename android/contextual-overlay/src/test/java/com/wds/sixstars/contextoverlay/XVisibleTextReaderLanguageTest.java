@@ -19,4 +19,9 @@ public class XVisibleTextReaderLanguageTest {
     @Test public void doesNotInventLanguageForEnglish() {
         assertEquals("", XVisibleTextReader.languageHint("The meeting is on Monday."));
     }
+    @Test public void bodyLanguageUsesEnglishHintWithoutGuessingAmbiguousText() {
+        assertEquals("en",XVisibleTextReader.bodyLanguageHint("The meeting is on Monday."));
+        assertEquals("",XVisibleTextReader.bodyLanguageHint("Great!"));
+        assertEquals("fr",XVisibleTextReader.bodyLanguageHint("Bonjour à tous."));
+    }
 }

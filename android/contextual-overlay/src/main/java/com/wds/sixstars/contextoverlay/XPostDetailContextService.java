@@ -22,6 +22,14 @@ final class XPostDetailContextService {
                 || id.contains("status_detail") || id.contains("tweet_permalink");
     }
 
+    static boolean isReplyContextId(String resourceId) {
+        if(resourceId==null)return false;
+        String id=resourceId.toLowerCase(Locale.ROOT);
+        return id.contains("reply_composer") || id.contains("reply_context") ||
+                id.contains("reply_preview") || id.contains("reply_editor") ||
+                id.contains("reply_edit_text") || id.contains("reply_to_tweet");
+    }
+
     static boolean isDetailHeading(String text, String resourceId, String className,
             boolean clickable, boolean editable, int top, int bottom, int screenHeight) {
         if (text == null || screenHeight <= 0 || editable || clickable ||

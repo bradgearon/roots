@@ -94,8 +94,10 @@ public final class XVisibleTextReader {
                 // when the container itself is not considered visible.
                 // Never descend into editable or password controls. The raw
                 // knowledge lane is limited to foreground X, not the keyboard.
-                if(node.isEditable() || node.isPassword())continue;
                 if(node.getPackageName()!=null && !X_PACKAGE.contentEquals(node.getPackageName()))continue;
+                // Observe the reply editor's resource ID only, never its text.
+                if (XPostDetailContextService.isReplyContextId(node.getViewIdResourceName())) detailScreen=true;
+                if(node.isEditable() || node.isPassword())continue;
                 int childCount = Math.min(node.getChildCount(), 45);
                 if(node.getChildCount()>childCount)lastKnowledgeBounded=true;
                 for (int i = 0; i < childCount; i++) {
@@ -153,7 +155,7 @@ public final class XVisibleTextReader {
                 String viewId = node.getViewIdResourceName();
                 String className = node.getClassName() == null
                         ? "" : node.getClassName().toString();
-                String language = languageHint(text);
+                String language = bodyLanguageHint(text);
 
                 Rect bounds = new Rect();
                 node.getBoundsInScreen(bounds);
@@ -167,8 +169,9 @@ public final class XVisibleTextReader {
                 // Keep timeline descriptions conservative to avoid translating
                 // a whole feed or navigation labels.
                 if (description && childCount > 5
-                        && !(detailScreen && !language.isEmpty()
-                            && text.length() <= 600
+                        && !((PostTextHeuristics.isPostTextId(viewId)
+                            || detailScreen && !language.isEmpty())
+                            && text.length() <= 1100
                             && bounds.height() < height / 2)) continue;
 
                 boolean knownAuthor = XAuthorNameHeuristics.isNameId(viewId);
@@ -194,9 +197,12 @@ public final class XVisibleTextReader {
 
                 int score = PostTextHeuristics.score(text, viewId, className, description,
                         node.isClickable(), bounds.width(), bounds.height(), language);
-                if (score < 0) continue;
-
+                if (score < 0 && PostTextHeuristics.isUiLabel(text, viewId, className)) continue;
                 PostCard card = findCard(node, bounds, width, height);
+                if(score < 0)score=PostTextHeuristics.score(text,viewId,className,description,
+                        node.isClickable(),bounds.width(),bounds.height(),language,
+                        card.found || detailScreen && !description && bounds.width() >= width / 2);
+                if (score < 0) continue;
                 // Prefer the body node exposed with a known tweet-text resource ID,
                 // then bounded text within a known tweet card, then fallback text.
                 if (card.found) score += 28;
@@ -243,7 +249,7 @@ public final class XVisibleTextReader {
         for (TextCandidate name : authorNames) work.put(name.fingerprint, name);
         for (TextCandidate body : selected) work.put(body.fingerprint, body);
         for (TextCandidate body : raw) {
-            if (body.languageHint.isEmpty() || body.fromDescription
+            if (body.fromDescription && !body.knownPostTextId
                     || !body.knownPostTextId && overlapsAuthor(body, authorNames))
                 continue;
             boolean duplicateRegion = false;
@@ -373,6 +379,8 @@ public final class XVisibleTextReader {
                     && rect.width() <= width && rect.height() <= height * 2
                     && rect.right > 0 && rect.left < width) {
                 String id = parent.getViewIdResourceName();
+                if (parent.isScrollable() || XPostDetailContextService.isDetailContainerId(id)
+                        || XPostDetailContextService.isReplyContextId(id)) break;
                 if (PostTextHeuristics.isPostContainerId(id))
                     return new PostCard(rect, true);
 
@@ -540,6 +548,11 @@ public final class XVisibleTextReader {
      * Best-effort language hint. Actual translation stays with PLaMo. Native X
      * doesn't necessarily expose the tweet's language or normalized post ID.
      */
+    static String bodyLanguageHint(String text) {
+        String hint=languageHint(text);
+        return hint.isEmpty()?KnowledgeLanguage.englishHint(text):hint;
+    }
+
     public static String languageHint(String text) {
         if (text == null || text.isEmpty()) return "";
         if (text.codePoints().anyMatch(c -> (c >= 0x3040 && c <= 0x30ff))) return "ja";
