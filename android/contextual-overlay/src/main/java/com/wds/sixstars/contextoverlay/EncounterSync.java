@@ -21,10 +21,12 @@ final class EncounterSync {
     private final NavigableMap<String,MeshItem> catalog;
     private final String root;
     private EncounterBindings.Binding binding;
-    private int received;
+    private int received,sent;
+    int received(){return received;}
+    int sent(){return sent;}
 
     EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active)throws Exception{
-        this.channel=channel;this.active=active;bindings=new EncounterBindings(context);
+        this.channel=channel;this.active=active;bindings=EncounterBindings.get(context);
         tree=TreeRuntime.get(context);epoch=tree.captureEpoch();check();
         catalog=new TreeMap<>(MeshPeer.get(context).encounterCatalog());
         root=inventoryRoot(catalog.navigableKeySet());check();
@@ -39,7 +41,7 @@ final class EncounterSync {
         return MeshItem.hex(hash.digest());
     }
     private void check()throws IOException{
-        if(!active.getAsBoolean()||tree.captureEpoch()!=epoch)throw new IOException("Encounter stopped or Tree changed");
+        if(!active.getAsBoolean()||bindings.blocked(channel.peerId)||tree.captureEpoch()!=epoch)throw new IOException("Encounter stopped or Tree changed");
     }
     private void send(JSONObject message)throws Exception{
         check();channel.send(message.toString().getBytes(StandardCharsets.UTF_8));
@@ -90,10 +92,10 @@ final class EncounterSync {
                     JSONObject data=read();expect(data,"data");
                     MeshItem item=MeshItem.parse(data.getJSONObject("item"));
                     if(item.graph()!=null||!item.id().equals(id))throw new IOException("Unexpected publication");
-                    check();item.store(tree,epoch);
+                    check();item.store(tree,epoch);received++;
                     // Do not advertise arbitrary graph records from a stranger.
                     // Verified explicit publications enter the same public Tree catalog.
-                    checkpoint(remoteRoot,id);send(message("ack").put("id",id));received++;transferred++;
+                    checkpoint(remoteRoot,id);send(message("ack").put("id",id));transferred++;
                 }else checkpoint(remoteRoot,id);
                 after=id;processed++;inspected++;
             }
@@ -123,7 +125,7 @@ final class EncounterSync {
                 String id=request.getString("id");
                 if(++items>MAX_ITEMS||!offered.remove(id)||!catalog.containsKey(id))throw new IOException("Invalid or excessive want");
                 send(message("data").put("item",catalog.get(id).json()));
-                JSONObject ack=read();expect(ack,"ack");if(!id.equals(ack.getString("id")))throw new IOException("Invalid receipt");
+                JSONObject ack=read();expect(ack,"ack");if(!id.equals(ack.getString("id")))throw new IOException("Invalid receipt");sent++;
             }else throw new IOException("Unsupported encounter operation");
         }
     }
