@@ -22,15 +22,28 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Explicit peer sharing and receiving. Opening a roots:// link never connects
- * until the user taps Test connection or Receive. No capture permission needed. */
+/** Explicit peer sharing and receiving. A pasted link never connects without
+ * user action. Previously approved, saved Axons get foreground health checks. */
 public final class MeshActivity extends Activity {
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsMeshUi");t.setDaemon(true);return t;});
     private MeshPeer mesh;
     private TextView status,serve,copy,receive,stop,axonStatus;
     private TextView connectionSummary,connectionStatus,connectionDetails,analysisOutput;
     private TextView testConnection,analyzeConnection,copyConnectionReport;
-    private TextView savedAxonStatus;
+    private TextView savedAxonStatus,boundConnectionStatus;
+    private static final long REFRESH_MS=30000;
+    private static final ExecutorService CONNECTION_REFRESH=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsAxonRefresh");t.setDaemon(true);return t;});
+    private final android.os.Handler refreshHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean foreground,refreshing,clearingSavedInvite;
+    private int foregroundGeneration;
+    private String lastBoundHealth="";
+    private final Runnable refreshBoundTick=new Runnable(){
+        @Override public void run(){
+            if(!foreground||isDestroyed())return;
+            refresh();refreshBoundConnections();
+            if(foreground)refreshHandler.postDelayed(this,REFRESH_MS);
+        }
+    };
     private android.widget.CheckBox useAxon;
     private EditText invitations,interests;
     private boolean busy;
@@ -74,10 +87,12 @@ public final class MeshActivity extends Activity {
         inbound.addView(useAxon);
         savedAxonStatus=RootsUi.text(this,"Loading saved Axon…",13,RootsUi.MUTED,false);
         inbound.addView(savedAxonStatus);
+        boundConnectionStatus=RootsUi.text(this,"Bound connection: not checked",13,RootsUi.MUTED,false);
+        inbound.addView(boundConnectionStatus);
         LinearLayout connection=RootsUi.section(this,inbound,"Connection details","Test access to published inventory, then ask your selected intelligence model to explain the result.",true);
         connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
         connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
-        testConnection=RootsUi.action(this,"Test connection",this::testConnection);connection.addView(testConnection);
+        testConnection=RootsUi.action(this,"Refresh / test connection",this::testConnection);connection.addView(testConnection);
         connectionStatus=RootsUi.text(this,"No connection test yet.",14,RootsUi.ACCENT,true);connection.addView(connectionStatus);
         connectionDetails=RootsUi.text(this,"",13,RootsUi.TEXT,false);
         connectionDetails.setTextIsSelectable(true);
@@ -111,10 +126,19 @@ public final class MeshActivity extends Activity {
         shell.addView(RootsUi.action(this,"‹ Home",()->{startActivity(new Intent(this,RootsStreamActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));finish();}));
         invitations.addTextChangedListener(new TextWatcher(){
             @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
-            @Override public void onTextChanged(CharSequence s,int start,int before,int count){invalidateDiagnostics("Invitation changed. Test the current connection.");}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){
+                if(clearingSavedInvite)return;
+                lastBoundHealth="";boundConnectionStatus.setText(s.toString().trim().isEmpty()?"Bound connection: awaiting refresh":"Invitation draft: tap Refresh / test connection to apply it.");
+                invalidateDiagnostics("Invitation changed. Test the current connection.");
+                if(s.toString().trim().isEmpty())scheduleBoundRefresh(500);
+            }
             @Override public void afterTextChanged(Editable s){}
         });
-        useAxon.setOnCheckedChangeListener((button,checked)->invalidateDiagnostics("Subscription selection changed. Test the current connection."));
+        useAxon.setOnCheckedChangeListener((button,checked)->{
+            lastBoundHealth="";boundConnectionStatus.setText(checked?"Bound connection: awaiting refresh":"Bound connection: not selected");
+            invalidateDiagnostics("Subscription selection changed. Test the current connection.");
+            if(checked)scheduleBoundRefresh(500);
+        });
         RootsUi.styleInputs(this,shell);setContentView(shell);readInvitation(getIntent());refresh();
         if(mesh.lastConnectionReport()!=null){
             showConnectionReport(mesh.lastConnectionReport());
@@ -131,7 +155,53 @@ public final class MeshActivity extends Activity {
             status.setText("Invitation ready. Tap Test connection or Receive.");
         }catch(Exception e){status.setText("Invalid Roots Mesh invitation.");}
     }
-    @Override protected void onResume(){super.onResume();refresh();}
+    @Override protected void onResume(){super.onResume();foreground=true;foregroundGeneration++;refresh();scheduleBoundRefresh(0);}
+    @Override protected void onPause(){foreground=false;foregroundGeneration++;refreshHandler.removeCallbacks(refreshBoundTick);super.onPause();}
+    private void scheduleBoundRefresh(long delay){
+        refreshHandler.removeCallbacks(refreshBoundTick);
+        if(foreground)refreshHandler.postDelayed(refreshBoundTick,delay);
+    }
+    private void clearSavedInvitationDraft(){
+        clearingSavedInvite=true;
+        try{invitations.setText("");}finally{clearingSavedInvite=false;}
+    }
+    private boolean savedAccessWasStored(MeshConnectionDiagnostics.Report report){
+        if(report==null)return false;
+        for(MeshConnectionDiagnostics.Check check:report.localChecks())if("Peer access".equals(check.stage())&&
+            MeshConnectionDiagnostics.PASS.equals(check.state())&&check.detail().contains("saved encrypted"))return true;
+        return false;
+    }
+    private void refreshBoundConnections(){
+        if(!foreground||busy||refreshing||!useAxon.isChecked()||!invitations.getText().toString().trim().isEmpty())return;
+        if(!new java.io.File(getNoBackupFilesDir(),"subscription.axon").isFile())return;
+        final int revision=diagnosticRevision,generation=foregroundGeneration;
+        final String network=mesh.connectionStateKey();
+        refreshing=true;boundConnectionStatus.setText("Bound connection: refreshing…");
+        CONNECTION_REFRESH.execute(()->{
+            MeshConnectionDiagnostics.Report report=null;
+            try{report=mesh.refreshBoundConnections();}catch(Exception|LinkageError ignored){}
+            final MeshConnectionDiagnostics.Report result=report;
+            runOnUiThread(()->{
+                refreshing=false;
+                if(isDestroyed()||!foreground||generation!=foregroundGeneration||busy||revision!=diagnosticRevision||
+                    !useAxon.isChecked()||!invitations.getText().toString().trim().isEmpty())return;
+                if(!network.equals(mesh.connectionStateKey())){scheduleBoundRefresh(500);return;}
+                if(result==null){boundConnectionStatus.setText("Bound connection: refresh failed; tap Refresh / test connection.");return;}
+                String health=updateBoundHealth(result);
+                if(connectionReport==null||reportStale||!health.equals(lastBoundHealth))showConnectionReport(result);
+                lastBoundHealth=health;
+            });
+        });
+    }
+    private String updateBoundHealth(MeshConnectionDiagnostics.Report report){
+        int connected=MeshConnectionDiagnostics.connectedPeers(report);
+        int bound=report.peers().size();
+        try{AxonSubscription policy=AxonSubscription.load(this);if(policy!=null)bound=policy.pins.size();}catch(Exception ignored){}
+        String health=connected+"/"+bound+" bound peers connected";
+        if(connected<bound||bound==0)health+=" · "+MeshConnectionDiagnostics.failureSummary(report);
+        boundConnectionStatus.setText(health+"\\nChecked "+java.text.DateFormat.getTimeInstance().format(new java.util.Date(report.checkedAtMillis())));
+        return health;
+    }
     private void refresh(){
         if(isDestroyed()||mesh==null)return;
         boolean listening=!mesh.invitation().isEmpty();
@@ -140,8 +210,10 @@ public final class MeshActivity extends Activity {
         invitations.setEnabled(!busy);interests.setEnabled(!busy);useAxon.setEnabled(!busy);
         String summary=mesh.connectionSummary();
         String state=mesh.connectionStateKey();
-        if(!lastConnectionState.isEmpty()&&!lastConnectionState.equals(state))
+        if(!lastConnectionState.isEmpty()&&!lastConnectionState.equals(state)){
+            lastBoundHealth="";boundConnectionStatus.setText("Bound connection: network changed; awaiting refresh");
             invalidateDiagnostics("Local connection state changed. Test again for current details.");
+        }
         lastConnectionState=state;
         connectionSummary.setText(summary+"\n"+AxonRuntime.status()+"\nAnalysis model: "+IntelligenceModel.selected(this).label+"\nAnalysis runs on: "+intelligenceLocation());
         refreshSavedAxon();
@@ -216,7 +288,13 @@ public final class MeshActivity extends Activity {
                     if(completed!=null)showConnectionReport(completed);
                     invalidateDiagnostics("Setup changed during testing. Run a fresh test.");return;
                 }
-                if(failure==null)showConnectionReport(completed);else connectionStatus.setText(failure);
+                if(failure==null){
+                    if(savedAxon&&completed!=null){
+                        if(!raw.trim().isEmpty()&&savedAccessWasStored(completed))clearSavedInvitationDraft();
+                        lastBoundHealth=updateBoundHealth(completed);refreshSavedAxon();
+                    }
+                    showConnectionReport(completed);
+                }else connectionStatus.setText(failure);
             });
         });
     }
@@ -318,7 +396,8 @@ public final class MeshActivity extends Activity {
                 // Access is authenticated to this exact pin set. A failed policy
                 // write cannot authorize peers outside the previous binding.
                 if(peers!=null)AxonPeerStore.save(this,next,peers);
-                AxonRuntime.revoke();next.save(this);useAxon.setChecked(true);dialog.dismiss();invalidateDiagnostics("Axon binding changed. Test the current connection.");refresh();showAxon();
+                AxonRuntime.revoke();next.save(this);useAxon.setChecked(true);clearSavedInvitationDraft();dialog.dismiss();
+                lastBoundHealth="";invalidateDiagnostics("Axon binding changed. Refreshing the saved connection.");refresh();scheduleBoundRefresh(0);showAxon();
             }catch(Exception e){lines.setError(e.getMessage());}
         }));dialog.show();
     }
@@ -355,6 +434,7 @@ public final class MeshActivity extends Activity {
         try{
             MeshPeerAccess.Resolution access=selectedPeers(useAxon.isChecked());
             peers=access.peers();subscription=access.policy();
+            if(subscription!=null&&!access.fromSaved())clearSavedInvitationDraft();
         }catch(Exception e){status.setText(e.getMessage());return;}
         final String wanted=interests.getText().toString(),lang=new OverlayPreferences(this).targetLanguage();
         busy=true;refresh();status.setText("Reading peer inventories…");
@@ -368,7 +448,10 @@ public final class MeshActivity extends Activity {
             }catch(Exception|LinkageError e){message="Receive failed: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
             String result=message;
             final MeshConnectionDiagnostics.Report report=mesh.lastConnectionReport();
-            runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();status.setText(result);if(revision==diagnosticRevision)showConnectionReport(report);});
+            runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();status.setText(result);if(revision==diagnosticRevision){
+                if(subscription!=null&&report!=null)lastBoundHealth=updateBoundHealth(report);
+                showConnectionReport(report);
+            }});
         });
     }
     /** Explicit publication confirmation; never prefill private original text. */

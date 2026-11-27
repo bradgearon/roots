@@ -109,7 +109,20 @@ final class MeshPeerAccess {
             "Verify the intended peer, then use Bind / edit .axon to approve a changed identity. The saved binding was not changed.",fromSaved);
 
         if(!fromSaved&&policy!=null){
-            try{source.savePeers(policy,Collections.unmodifiableList(new ArrayList<>(peers)));}
+            try{
+                // Replacing an endpoint/token for one bound identity must not
+                // discard access to the other bound identities. The explicit
+                // operation still contacts only the entered peers.
+                List<MeshPeer.Invite> merged=new ArrayList<>(peers);
+                List<MeshPeer.Invite> old;
+                try{old=source.loadPeers(policy);}catch(Exception|LinkageError unreadable){old=Collections.emptyList();}
+                if(old!=null)for(MeshPeer.Invite peer:old){
+                    if(peer!=null&&policy.pins.contains(peer.pin())&&!pins.contains(peer.pin())&&!hosts.contains(peer.host())){
+                        merged.add(peer);pins.add(peer.pin());hosts.add(peer.host());
+                    }
+                }
+                source.savePeers(policy,Collections.unmodifiableList(merged));
+            }
             catch(Exception|LinkageError error){
                 return fail(policy,checks,"Saved peer access","The entered connection details could not be saved securely.",
                     "Check device storage and retry. No network request was sent, and the existing identity binding was kept.",false);
@@ -119,9 +132,9 @@ final class MeshPeerAccess {
             "Using saved connection details for "+peers.size()+" bound peer(s).":
             policy!=null?"Using entered invitations for "+peers.size()+" bound peer(s); connection details saved encrypted on this device.":
                 "Using "+peers.size()+" entered peer invitation(s) for this operation.",""));
-        if(policy!=null&&pins.size()<policy.pins.size())checks.add(check("Peer coverage",WARN,
+        if(policy!=null&&peers.size()<policy.pins.size())checks.add(check("Peer coverage",WARN,
             peers.size()+" of "+policy.pins.size()+" bound peer(s) have connection details selected; other bound peers will not be checked.",
-            "Paste current invitations for all desired bound peers to update the saved connection set."));
+            "Refresh / test with empty invitation input to check all saved bound peers. Paste a current invitation for a peer whose grant is missing or stale."));
         return new Resolution(policy,peers,checks,fromSaved,true);
     }
 

@@ -94,5 +94,19 @@ public class MeshConnectionDiagnosticsTest {
         String summary=failureSummary(new Report(123,Collections.emptyList(),Collections.singletonList(peer)));
         assertTrue(summary.contains("192.168.1.2:8233"));assertTrue(summary.contains("Authentication"));
     }
+    @Test public void tlsCompatibilityRetryNeverRetriesCertificateFailure(){
+        assertTrue(canRetryTls12(new SSLHandshakeException("handshake_failure")));
+        SSLHandshakeException badPin=new SSLHandshakeException("certificate rejected");badPin.initCause(new CertificateException(SECRET));
+        assertFalse(canRetryTls12(badPin));
+        assertFalse(canRetryTls12(new SocketTimeoutException(SECRET)));
+        Check detail=failure("TLS",new SSLHandshakeException("no suitable certificate "+SECRET),0);
+        assertTrue(detail.detail().contains("could not select a server certificate"));
+        assertFalse(detail.toString().contains(SECRET));
+    }
+    @Test public void onlyAuthenticatedInventoryCountsAsLiveConnection(){
+        PeerReport tcpOnly=new PeerReport("a","a",List.of(check("TCP",PASS,"",""),check("TLS",FAIL,"","")));
+        PeerReport connected=new PeerReport("b","b",List.of(check("TLS",PASS,"",""),check("Authentication",PASS,"",""),check("Inventory",PASS,"","")));
+        assertEquals(1,connectedPeers(new Report(1,List.of(),List.of(tcpOnly,connected))));
+    }
     private static Check stage(Trace trace,String stage){return trace.snapshot().checks().stream().filter(c->c.stage().equals(stage)).findFirst().orElseThrow();}
 }

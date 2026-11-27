@@ -81,7 +81,7 @@ final class MeshConnectionDiagnostics {
             detail="Access unconfirmed: the peer closed after TLS without a protocol response.";
             next="An old peer may silently reject an expired invitation; a busy or stopped peer can also close. Copy a fresh invitation and update both devices.";
         }else if(has(error,SSLException.class)){
-            detail=stage.equals("TLS")?"The TLS handshake did not complete; invitation-token authentication has not started.":"The TLS connection ended before the exchange completed.";
+            detail=stage.equals("TLS")?"The TLS handshake did not complete; invitation-token authentication has not started. "+tlsAlert(error):"The TLS connection ended before the exchange completed.";
             next="Update Roots on the listening peer and check its Local TLS identity result. Restart listening, copy its current invitation, and rebind only if the peer identity changed.";
         }else if(stage.equals("Receive")){
             detail="Published content could not be validated or stored locally.";
@@ -92,6 +92,23 @@ final class MeshConnectionDiagnostics {
                 "Keep the intended peer listening on the same Wi-Fi and test a freshly copied invitation.";
         }
         return new Check(stage,FAIL,detail,next,elapsedMs);
+    }
+    // Classify known provider alerts without exposing arbitrary exception text.
+    private static String tlsAlert(Throwable error){
+        for(int depth=0;error!=null&&depth<12;depth++,error=error.getCause()){
+            String value=error.getMessage();if(value==null)continue;value=value.toLowerCase(java.util.Locale.ROOT);
+            if(value.contains("no suitable certificate")||value.contains("no available authentication scheme")||value.contains("no certificate assigned"))return "TLS provider could not select a server certificate.";
+            if(value.contains("signature")||value.contains("private key")||value.contains("keystore"))return "TLS provider reported a certificate-signing or key error.";
+            if(value.contains("unknown ca")||value.contains("unknown_ca")||value.contains("bad certificate")||value.contains("bad_certificate")||value.contains("certificate unknown"))return "TLS peer reported a certificate alert.";
+            if(value.contains("protocol_version")||value.contains("protocol version")||value.contains("no shared cipher")||value.contains("no cipher suites"))return "TLS provider reported a protocol or cipher negotiation error.";
+            if(value.contains("handshake_failure")||value.contains("handshake failure"))return "TLS peer reported a handshake-failure alert.";
+            if(value.contains("closed")||value.contains("eof"))return "The peer closed during TLS negotiation.";
+        }
+        return "No specific provider alert was classified.";
+    }
+    /** Only retry negotiation failures before token transmission. Never retry a rejected certificate. */
+    static boolean canRetryTls12(Throwable error){
+        return has(error,SSLException.class)&&!has(error,CertificateException.class)&&!has(error,SocketTimeoutException.class);
     }
     private static boolean has(Throwable error,Class<? extends Throwable> type){
         for(int depth=0;error!=null&&depth<12;depth++,error=error.getCause())if(type.isInstance(error))return true;
@@ -125,6 +142,19 @@ final class MeshConnectionDiagnostics {
         boolean failed(){for(Check check:checks.values())if(check.state().equals(FAIL))return true;return false;}
         String currentStage(){return current;}
         PeerReport snapshot(){return new PeerReport(endpoint,identity,new ArrayList<>(checks.values()));}
+    }
+    /** A saved binding or an open TCP socket alone is not a live Axon. */
+    static int connectedPeers(Report report){
+        int count=0;
+        for(PeerReport peer:report.peers()){
+            boolean inventory=false,failed=false;
+            for(Check check:peer.checks()){
+                if(FAIL.equals(check.state()))failed=true;
+                if("Inventory".equals(check.stage())&&PASS.equals(check.state()))inventory=true;
+            }
+            if(inventory&&!failed)count++;
+        }
+        return count;
     }
     static String failureSummary(Report report){
         for(Check c:report.localChecks())if(c.state().equals(FAIL))return c.stage()+": "+c.detail();

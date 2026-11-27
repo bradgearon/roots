@@ -143,19 +143,25 @@ final class MeshPeer {
         trace.add(check("Invitation",PASS,"Mesh v1 invitation parsed; access token present and omitted from this report.",""));
         return trace;
     }
-    private Report remember(long checkedAt,List<Check> local,List<Trace> traces){
+    private Report remember(long checkedAt,List<Check> local,List<Trace> traces){return report(checkedAt,local,traces,true);}
+    private Report report(long checkedAt,List<Check> local,List<Trace> traces,boolean remember){
         List<PeerReport> peers=new ArrayList<>();for(Trace trace:traces)peers.add(trace.snapshot());
-        Report report=new Report(checkedAt,local,peers);lastConnectionReport=report;return report;
+        Report report=new Report(checkedAt,local,peers);if(remember)lastConnectionReport=report;return report;
     }
     /** An explicit, bounded inventory-only check. Selected bound invitations
      * refresh encrypted saved access; no item requests, discovery or Tree writes. */
     Report testConnections(String rawInvitations,boolean useSavedAxon,java.util.function.Consumer<String> progress){
+        return testConnections(rawInvitations,useSavedAxon,progress,true);
+    }
+    /** Foreground health checks must not overwrite an explicit receive/test snapshot. */
+    Report refreshBoundConnections(){return testConnections("",true,null,false);}
+    private Report testConnections(String rawInvitations,boolean useSavedAxon,java.util.function.Consumer<String> progress,boolean remember){
         long checkedAt=System.currentTimeMillis(),testDeadline=android.os.SystemClock.elapsedRealtime()+30000L;
         List<Check> local=localChecks();List<Trace> traces=new ArrayList<>();
-        lastConnectionReport=new Report(checkedAt,local,new ArrayList<>());
+        if(remember)lastConnectionReport=new Report(checkedAt,local,new ArrayList<>());
         MeshPeerAccess.Resolution access=MeshPeerAccess.resolve(app,rawInvitations,useSavedAxon);
         local.addAll(access.checks());
-        if(!access.ready())return remember(checkedAt,local,traces);
+        if(!access.ready())return report(checkedAt,local,traces,remember);
         AxonSubscription policy=access.policy();List<Invite> invites=access.peers();
         for(Invite invite:invites){
             Trace trace=trace(invite,progress);
@@ -177,7 +183,7 @@ final class MeshPeer {
             try{inventory(network,invite,"",Math.min(testDeadline,now+8000L),trace);}
             catch(Exception e){/* The shared exchange/inventory stages recorded a safe failure. */}
         }
-        return remember(checkedAt,local,traces);
+        return report(checkedAt,local,traces,remember);
     }
     private Inet4Address address(Network network)throws IOException{
         LinkProperties properties=cm.getLinkProperties(network);
@@ -255,16 +261,28 @@ final class MeshPeer {
         MeshTlsIdentity.Identity identity;
         try{identity=MeshTlsIdentity.loadOrCreate();}
         catch(Exception e){tlsIdentityState=FAIL;tlsIdentityStatus="TLS signing self-check failed; this device's listener has not started.";throw e;}
-        tlsIdentityState=PASS;
-        tlsIdentityStatus="TLS signing self-check passed."+(identity.upgraded()?" TLS identity upgraded. Share the new invitation and update the receiver's Axon binding once.":"");
         incomingTlsFailure=null;
         SSLContext context=SSLContext.getInstance("TLS");
         context.init(new KeyManager[]{new PeerKeyManager(identity)},null,random);
         String pin=MeshItem.hex(MessageDigest.getInstance("SHA-256").digest(identity.certificate().getEncoded()));
+        String[] working;
+        try{
+            SSLContext localClient=SSLContext.getInstance("TLS");
+            localClient.init(null,new javax.net.ssl.TrustManager[]{new MeshTlsPin(pin)},random);
+            working=MeshTlsHandshake.workingProtocols(context,localClient);
+        }catch(Exception error){
+            tlsIdentityState=FAIL;
+            tlsIdentityStatus="Signing succeeded, but the pinned TLS loopback handshake failed; no invitation was advertised. "+failure("TLS",error,0).detail();
+            throw new IOException(tlsIdentityStatus);
+        }
+        tlsIdentityState=PASS;
+        tlsIdentityStatus="Pinned TLS loopback handshake passed: "+String.join(", ",working)+". Identity "+pin.substring(0,12)+"…."+
+            (identity.upgraded()?" TLS identity upgraded. Share the new invitation and update the receiver's Axon binding once.":"");
         byte[] tokenBytes=new byte[32];random.nextBytes(tokenBytes);String token=MeshItem.hex(tokenBytes);
         SSLServerSocket socket=(SSLServerSocket)context.getServerSocketFactory().createServerSocket();
         try{
-            socket.setReuseAddress(true);socket.setEnabledProtocols(protocols(socket.getSupportedProtocols()));
+            socket.setUseClientMode(false);socket.setNeedClientAuth(false);
+            socket.setReuseAddress(true);socket.setEnabledProtocols(working);
             socket.bind(new InetSocketAddress(address,PORT),8);
             Server server=new Server(network,address,token,socket);
             active=server;
@@ -334,7 +352,7 @@ final class MeshPeer {
         boolean handshaken=false;long handshakeStarted=android.os.SystemClock.elapsedRealtime();
         try(SSLSocket client=socket){
             client.setSoTimeout(8000);client.startHandshake();
-            handshaken=true;
+            handshaken=true;if(active==server)incomingTlsFailure=null;
             JSONObject request=read(client);
             if(active!=server)return;
             if(!MessageDigest.isEqual(server.token.getBytes(StandardCharsets.US_ASCII),request.optString("token").getBytes(StandardCharsets.US_ASCII))){reject(server,client,"unauthorized");return;}
@@ -392,10 +410,22 @@ final class MeshPeer {
     private JSONObject exchange(Network network,Invite invite,JSONObject request,long deadline)throws Exception{
         return exchange(network,invite,request,deadline,null);
     }
+    private static final class RetryTls12 extends IOException {
+        final Check first;
+        RetryTls12(Check first){super(first.detail());this.first=first;}
+    }
     private JSONObject exchange(Network network,Invite invite,JSONObject request,long deadline,Trace suppliedTrace)throws Exception{
         Trace trace=suppliedTrace==null?trace(invite,null):suppliedTrace;
-        trace.prepare();trace.begin("Subnet",android.os.SystemClock.elapsedRealtime());
         long stopAt=deadline==0?android.os.SystemClock.elapsedRealtime()+8000L:deadline;
+        try{return exchangeOnce(network,invite,request,stopAt,trace,false);}
+        catch(RetryTls12 retry){
+            trace.add(check("TLS compatibility",WARN,"Initial TLS negotiation failed: "+retry.first.detail()+" Retrying with TLS 1.2 and the same certificate pin.",""));
+            return exchangeOnce(network,invite,request,stopAt,trace,true);
+        }
+    }
+    private JSONObject exchangeOnce(Network network,Invite invite,JSONObject request,long stopAt,Trace trace,boolean tls12Only)throws Exception{
+        trace.prepare();trace.begin("Subnet",android.os.SystemClock.elapsedRealtime());
+        MeshTlsPin pin=null;
         try{
             InetAddress destination=InetAddress.getByName(invite.host());
             if(network==null||!network.equals(wifi()))throw new Failure("Subnet","The active Wi-Fi network changed or is unavailable.","Reconnect to the peer's Wi-Fi and test again.");
@@ -414,11 +444,15 @@ final class MeshPeer {
                     plain.connect(new InetSocketAddress(destination,PORT),Math.min(3500,remaining));plain.setSoTimeout(remaining);
                     trace.pass("TCP","Connected to the invited peer on TCP port "+PORT+".",android.os.SystemClock.elapsedRealtime());
                     trace.begin("TLS",android.os.SystemClock.elapsedRealtime());
-                    DesktopTlsPin pin=new DesktopTlsPin(invite.pin());
+                    pin=new MeshTlsPin(invite.pin());
                     SSLContext tls=SSLContext.getInstance("TLS");tls.init(null,new javax.net.ssl.TrustManager[]{pin},random);
                     try(SSLSocket socket=(SSLSocket)tls.getSocketFactory().createSocket(plain,invite.host(),PORT,true)){
                         remaining=RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime());if(remaining<=0)throw new java.net.SocketTimeoutException();
-                        socket.setEnabledProtocols(protocols(socket.getSupportedProtocols()));socket.setSoTimeout(remaining);socket.startHandshake();
+                        socket.setUseClientMode(true);
+                        socket.setEnabledProtocols(tls12Only?new String[]{"TLSv1.2"}:protocols(socket.getSupportedProtocols()));
+                        socket.setSoTimeout(remaining);socket.startHandshake();
+                        // Verify the negotiated session too, before any invitation token is sent.
+                        pin.verifySession(socket.getSession());trace.add(pin.observation());
                         String protocol=socket.getSession().getProtocol();
                         trace.pass("TLS","Pinned certificate and certificate dates verified; "+(protocol.equals("TLSv1.3")?"TLS 1.3":"TLS 1.2")+" established.",android.os.SystemClock.elapsedRealtime());
                         trace.begin("Authentication",android.os.SystemClock.elapsedRealtime());
@@ -436,6 +470,12 @@ final class MeshPeer {
         }catch(Exception e){
             Exception failure=e;
             if(!(e instanceof Failure)&&RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime())<=0)failure=new java.net.SocketTimeoutException();
+            if("TLS".equals(trace.currentStage())&&pin!=null){
+                trace.add(pin.observation());
+                if(pin.rejected())failure=new Failure("TLS",pin.observation().detail(),pin.observation().nextStep());
+                else if(!tls12Only&&MeshConnectionDiagnostics.canRetryTls12(failure)&&RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime())>=1000)
+                    throw new RetryTls12(MeshConnectionDiagnostics.failure("TLS",failure,0));
+            }
             trace.fail(failure,android.os.SystemClock.elapsedRealtime());
             Check safe=MeshConnectionDiagnostics.failure(trace.currentStage(),failure,0);
             throw failure instanceof Failure?failure:new Failure(safe.stage(),safe.detail(),safe.nextStep());

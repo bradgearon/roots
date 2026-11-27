@@ -56,7 +56,7 @@ public class MeshPeerAccessTest {
         MemorySource source=new MemorySource();
         MeshPeerAccess.Resolution result=MeshPeerAccess.resolve("current-a",true,source);
         assertTrue(result.ready());assertFalse(result.fromSaved());assertEquals(List.of(CURRENT_A),result.peers());
-        assertEquals(List.of(CURRENT_A),source.saved);assertEquals(1,source.saves);assertEquals(0,source.peerReads);
+        assertEquals(List.of(CURRENT_A),source.saved);assertEquals(1,source.saves);assertEquals(1,source.peerReads);
         assertEquals(List.of(CURRENT_A),MeshPeerAccess.resolve("",true,source).peers());
     }
     @Test public void invalidExplicitInputNeverFallsBackToValidSavedAccess(){
@@ -90,7 +90,7 @@ public class MeshPeerAccessTest {
         assertFalse(result.ready());assertEquals(PASS,stage(result,"Saved Axon").state());
         assertTrue(stage(result,"Peer access").detail().contains("could not be opened"));assertFalse(result.checks().toString().contains(SECRET));
         result=MeshPeerAccess.resolve("current-a",true,source);
-        assertTrue(result.ready());assertEquals(List.of(CURRENT_A),source.saved);assertEquals(1,source.peerReads);
+        assertTrue(result.ready());assertEquals(List.of(CURRENT_A),source.saved);assertEquals(2,source.peerReads);
     }
     @Test public void directModeNeverLoadsOrChangesTheSavedBinding(){
         MemorySource source=new MemorySource();
@@ -143,7 +143,9 @@ public class MeshPeerAccessTest {
     @Test public void partialExplicitSelectionDoesNotSilentlyAddPreviouslySavedPeers(){
         MemorySource source=new MemorySource();source.policy=policy(A,B);source.saved=new ArrayList<>(List.of(A,B));
         MeshPeerAccess.Resolution result=MeshPeerAccess.resolve("current-a",true,source);
-        assertTrue(result.ready());assertEquals(List.of(CURRENT_A),result.peers());assertEquals(0,source.peerReads);
+        assertTrue(result.ready());assertEquals(List.of(CURRENT_A),result.peers());assertEquals(1,source.peerReads);
+        assertEquals(List.of(CURRENT_A,B),source.saved);
+        assertEquals(List.of(CURRENT_A,B),MeshPeerAccess.resolve("",true,source).peers());
         assertEquals(WARN,stage(result,"Peer coverage").state());
     }
 }
