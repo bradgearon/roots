@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** User-started, offline BLE encounter engine. Android 12+ avoids location
  * permission on the passing device. GATT advertises only a dynamic CoC PSM;
  * the authenticated application protocol runs on the LE stream, not IP. */
+@android.annotation.TargetApi(31)
 @SuppressLint("MissingPermission")
 public final class EncounterService extends Service {
     static final String PUBLISHER="publisher",PASSERBY="passerby";
@@ -224,6 +225,7 @@ public final class EncounterService extends Service {
             @Override public void onCharacteristicRead(BluetoothGatt gatt,BluetoothGattCharacteristic characteristic,int result){
                 read(characteristic,characteristic.getValue(),result);
             }
+            @android.annotation.TargetApi(33)
             @Override public void onCharacteristicRead(BluetoothGatt gatt,BluetoothGattCharacteristic characteristic,byte[] value,int result){
                 read(characteristic,value,result);
             }

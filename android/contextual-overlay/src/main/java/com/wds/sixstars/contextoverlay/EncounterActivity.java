@@ -55,6 +55,7 @@ public final class EncounterActivity extends Activity {
                 getPreferences(MODE_PRIVATE).edit().putBoolean("open_exchange_v1",true).apply();authorize(role);
             }).show();
     }
+    @android.annotation.TargetApi(31)
     private void authorize(String role){
         requested=role;
         String[] permissions=EncounterService.permissions(role);
