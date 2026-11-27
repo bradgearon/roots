@@ -43,6 +43,7 @@ import java.util.Set;
 final class AutoOverlaySceneController {
     private static final int MAX_STORED_TRANSLATIONS = 512;
     private static final int MAX_VISIBLE = 8;
+    private String renderedTarget="";
 
     private final Context context;
     private final WindowManager windowManager;
@@ -111,6 +112,11 @@ final class AutoOverlaySceneController {
 
     /** Accept immutable post positions. NEVER called by the frame callback. */
     void publishPositions(List<TextCandidate> candidates, boolean scrolling) {
+        String targetLanguage=preferences.targetLanguage();
+        if(!targetLanguage.equals(renderedTarget)){
+            clear();translations.clear();partials.clear();renderedTarget=targetLanguage;
+        }
+
         if (destroyed) return;
         ArrayList<AutoOverlayPositionStore.Observation> observations = new ArrayList<>();
         DisplayMetrics screen = context.getResources().getDisplayMetrics();

@@ -138,11 +138,13 @@ public final class OverlayTranslationCoordinator {
         }
 
         boolean automatic = preferences.autoPreview();
-        changeReactor.observe(current, automatic, this::translateAtTap, scrolling);
         String target = preferences.targetLanguage();
         if(!target.equals(poolTarget)){
             pool.clear();retryAfter.clear();poolTarget=target;
+            manualCandidate=null;manualTarget=null;
+            changeReactor.clear();
         }
+        changeReactor.observe(current, automatic, this::translateAtTap, scrolling);
         demand.snapshot(viewportHeight);
         // A new snapshot may arrive while a gesture is decelerating. Keep a
         // wake armed until the directional prediction expires.

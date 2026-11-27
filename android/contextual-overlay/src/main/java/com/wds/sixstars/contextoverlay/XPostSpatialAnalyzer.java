@@ -38,7 +38,7 @@ public final class XPostSpatialAnalyzer {
 
             // A post group is used only when accessibility exposes a distinct
             // card/list item. Generic text nodes must not merge adjacent tweets.
-            String key = groupKey(candidate);
+            String key = groupKey(candidate,detailScreen);
             TextCandidate previous = best.get(key);
             if (previous == null || betterBody(candidate, previous)) {
                 best.put(key, candidate);
@@ -51,7 +51,7 @@ public final class XPostSpatialAnalyzer {
         // had a verified name. Preserve the semantic author role.
         for (TextCandidate rawCandidate : raw) {
             if (rawCandidate.author == null) continue;
-            String key = groupKey(rawCandidate);
+            String key = groupKey(rawCandidate,detailScreen);
             TextCandidate winner = best.get(key);
             if (winner == null || winner.author != null
                     || !(sameAvatar(winner, rawCandidate)
@@ -101,12 +101,14 @@ public final class XPostSpatialAnalyzer {
             // as a second foreign-language candidate. Prefer its nearby real
             // TextView body, but keep the description when it is the ONLY
             // readable source in that card.
+            if(!candidate.knownPostTextId && shadowedByKnownBody(candidate,selected))continue;
             if (candidate.fromDescription && shadowedByDirectBody(candidate, selected, width))
                 continue;
             boolean overlapping = false;
             for (TextCandidate existing : distinct) {
                 if (sameBodyRegion(existing.bounds, candidate.bounds)
-                        || sameAvatar(existing, candidate)) {
+                        || sameAvatar(existing, candidate)
+                            && !separateBodies(existing,candidate,detailScreen)) {
                     overlapping = true;
                     break;
                 }
@@ -122,10 +124,10 @@ public final class XPostSpatialAnalyzer {
             if (winner.author != null) continue;
             for (TextCandidate source : raw) {
                 if (source.author == null || source == winner) continue;
-                boolean matchingAvatar = sameAvatar(winner, source);
+                boolean matchingAvatar = sameAvatar(winner, source) && !separateBodies(winner,source,detailScreen);
                 boolean matchingCard = winner.hasPostContainer
                         && source.hasPostContainer
-                        && winner.postBounds.equals(source.postBounds);
+                        && winner.postBounds.equals(source.postBounds) && !separateBodies(winner,source,detailScreen);
                 boolean matchingText = winner.fingerprint.equals(source.fingerprint)
                         && sameBodyRegion(winner.bounds, source.bounds);
                 if (!matchingAvatar && !matchingCard && !matchingText) continue;
@@ -140,7 +142,26 @@ public final class XPostSpatialAnalyzer {
         return distinct;
     }
 
-    private static String groupKey(TextCandidate candidate) {
+    private static boolean independentBody(TextCandidate candidate,boolean detailScreen) {
+        return candidate.knownPostTextId ||
+            detailScreen && !candidate.fromDescription && candidate.text.length() >= 12 && candidate.bodyScore >= 60;
+    }
+
+    private static boolean separateBodies(TextCandidate a,TextCandidate b,boolean detailScreen) {
+        return independentBody(a,detailScreen) && independentBody(b,detailScreen)
+                && !a.text.equals(b.text) && (a.bounds.bottom <= b.bounds.top || b.bounds.bottom <= a.bounds.top);
+    }
+
+    private static boolean shadowedByKnownBody(TextCandidate candidate,List<TextCandidate> candidates) {
+        for(TextCandidate other:candidates)if(other.knownPostTextId && !other.fromDescription
+                && sameBodyRegion(candidate.bounds,other.bounds))return true;
+        return false;
+    }
+
+    private static String groupKey(TextCandidate candidate,boolean detailScreen) {
+        // Distinct post bodies may share an outer conversation or reply container.
+        if(independentBody(candidate,detailScreen))
+            return "direct:"+candidate.fingerprint+":"+candidate.bounds.flattenToString();
         if (candidate.hasPostContainer) {
             return "post:" + candidate.postBounds.left + ":"
                     + candidate.postBounds.top + ":" + candidate.postBounds.right
