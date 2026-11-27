@@ -1,6 +1,13 @@
 package com.wds.sixstars.contextoverlay;
 
 import android.accessibilityservice.AccessibilityService;
+import android.app.KeyguardManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
@@ -33,29 +40,108 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private String readerStatus = "Service not scanned yet";
     private boolean scanScheduled;
     private boolean scrollSinceLastScan;
+    // Independent, low-frequency recovery only while foreground X can be verified.
+    // Normal capture remains event-driven; recovery never starts translation work.
+    private static final long CAPTURE_RECOVERY_MS=4000L;
+    private static final int MAX_UNKNOWN_ROOT_RETRIES=3;
+    private boolean captureRecoveryScheduled, screenReceiverRegistered;
+    private int unknownRootChecks;
+    private long lastCaptureScanUptime=-1L;
+    private final Runnable captureRecovery=this::recoverCapture;
+    private final BroadcastReceiver screenReceiver=new BroadcastReceiver(){
+        @Override public void onReceive(Context context,Intent intent){
+            if(Intent.ACTION_SCREEN_OFF.equals(intent.getAction())){
+                stopCaptureRecovery();
+                if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Screen off; capture waiting");
+            }else{
+                unknownRootChecks=0;
+                armCaptureRecovery();
+            }
+        }
+    };
     // X may expose a recycled card before its text nodes are populated.
     // A bounded trailing scan verifies the settled layout, without polling.
     private static final long SETTLED_SCAN_MS=520;
     private final Runnable settledScan=()->{
-        if(destroyed||preferences==null||!preferences.enabled()||!preferences.autoPreview())return;
+        if(destroyed||!needsSettledScan())return;
         if(findXApplicationWindow()==null)return;
-        if(!scanScheduled)refreshWindow();
+        if(!scanScheduled)refreshWindowSafely();
         else scheduleSettledRetry();
     };
     private final Runnable settledScanRetry=()->{
-        if(!destroyed&&preferences!=null&&preferences.enabled()&&preferences.autoPreview()
-                &&!scanScheduled&&findXApplicationWindow()!=null)refreshWindow();
+        if(!destroyed&&needsSettledScan()
+                &&!scanScheduled&&findXApplicationWindow()!=null)refreshWindowSafely();
     };
     private void scheduleSettledRetry(){main.removeCallbacks(settledScanRetry);main.postDelayed(settledScanRetry,SCAN_INTERVAL_MS);}
     private void scheduleSettledScan(){
         main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
-        if(preferences!=null&&preferences.enabled()&&preferences.autoPreview())
-            main.postDelayed(settledScan,SETTLED_SCAN_MS);
+        if(needsSettledScan())main.postDelayed(settledScan,SETTLED_SCAN_MS);
     }
     private final Runnable scan = () -> {
         scanScheduled = false;
-        refreshWindow();
+        refreshWindowSafely();
     };
+
+    private boolean captureEnabled(){
+        return !destroyed&&preferences!=null&&preferences.enabled()&&treeRuntime!=null&&treeRuntime.enabled();
+    }
+    private boolean needsSettledScan(){
+        return preferences!=null&&preferences.enabled()&&(preferences.autoPreview()||captureEnabled());
+    }
+    private boolean screenAllowsCapture(){
+        PowerManager power=getSystemService(PowerManager.class);
+        KeyguardManager keyguard=getSystemService(KeyguardManager.class);
+        return power!=null&&power.isInteractive()&&keyguard!=null&&!keyguard.isKeyguardLocked();
+    }
+    private void armCaptureRecovery(){
+        if(!captureRecoveryScheduled&&captureEnabled()&&screenAllowsCapture())
+            captureRecoveryScheduled=main.postDelayed(captureRecovery,CAPTURE_RECOVERY_MS);
+    }
+    private void stopCaptureRecovery(){
+        main.removeCallbacks(captureRecovery);captureRecoveryScheduled=false;unknownRootChecks=0;
+    }
+    private void recoverCapture(){
+        captureRecoveryScheduled=false;
+        if(!captureEnabled()||!screenAllowsCapture()){unknownRootChecks=0;return;}
+        boolean again=false;
+        try{
+            AccessibilityNodeInfo root=foregroundApplicationRoot();
+            if(isXRoot(root)){
+                unknownRootChecks=0;again=true;
+                long now=SystemClock.uptimeMillis();
+                if(lastCaptureScanUptime<0||now-lastCaptureScanUptime>=CAPTURE_RECOVERY_MS)
+                    captureFresh();
+            }else if(root==null||root.getPackageName()==null){
+                treeRuntime.noteCaptureReaderState("Foreground root unavailable; waiting for X");
+                again=++unknownRootChecks<=MAX_UNKNOWN_ROOT_RETRIES;
+            }else{
+                treeRuntime.noteCaptureReaderState("Outside X; capture waiting");
+                unknownRootChecks=0;
+            }
+        }catch(RuntimeException error){
+            noteCaptureFailure("Recovery",error);
+            again=++unknownRootChecks<=MAX_UNKNOWN_ROOT_RETRIES;
+        }finally{if(again)armCaptureRecovery();}
+    }
+    private void noteCaptureFailure(String stage,RuntimeException error){
+        String reason=stage+" failed: "+error.getClass().getSimpleName();
+        if(treeRuntime!=null)treeRuntime.noteCaptureReaderState(reason);
+        android.util.Log.w("RootsCapture",reason);
+    }
+    private void refreshWindowSafely(){
+        try{refreshWindow();}
+        catch(RuntimeException error){noteCaptureFailure("Window scan",error);armCaptureRecovery();}
+    }
+    private void registerScreenEvents(){
+        if(screenReceiverRegistered)return;
+        IntentFilter filter=new IntentFilter(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_SCREEN_OFF);filter.addAction(Intent.ACTION_USER_PRESENT);
+        try{
+            if(Build.VERSION.SDK_INT>=33)registerReceiver(screenReceiver,filter,Context.RECEIVER_NOT_EXPORTED);
+            else registerReceiver(screenReceiver,filter);
+            screenReceiverRegistered=true;
+        }catch(RuntimeException error){noteCaptureFailure("Screen lifecycle registration",error);}
+    }
 
     @Override
     protected void onServiceConnected() {
@@ -72,6 +158,9 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 0, 0, 0, 0, "");
         treeRuntime=NativeTree.available()?TreeRuntime.get(this):null;
         coordinator.setTree(treeRuntime);
+        if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Accessibility service connected");
+        lastCaptureScanUptime=-1L;stopCaptureRecovery();registerScreenEvents();
+        armCaptureRecovery();
         TranslationRuntime.startCompute(this);
         scheduleScan();scheduleSettledScan();
     }
@@ -80,8 +169,10 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null || destroyed || preferences == null) return;
         if (!preferences.enabled()) {
-                main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
-        scanScheduled = false;
+            stopCaptureRecovery();
+            if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Accessibility consent OFF");
+            main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
+            scanScheduled = false;
             coordinator.clear();
             TranslationRuntime.stopCompute(this);
             TranslationRuntime.disconnect();
@@ -91,9 +182,19 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             return;
         }
 
-        TranslationRuntime.startCompute(this);
         CharSequence pkg = event.getPackageName();
         int kind = event.getEventType();
+        // Window-list changes often have no package name. They can be the only
+        // signal after an app switch, unlock or a temporarily missing X root.
+        if(kind==AccessibilityEvent.TYPE_WINDOWS_CHANGED){
+            if(captureEnabled()){unknownRootChecks=0;armCaptureRecovery();}
+            return;
+        }
+        if(kind==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED||
+                (pkg!=null&&XVisibleTextReader.X_PACKAGE.contentEquals(pkg))){
+            unknownRootChecks=0;armCaptureRecovery();
+        }
+        TranslationRuntime.startCompute(this);
         if (pkg != null && getPackageName().contentEquals(pkg)) {
             // Our own TYPE_ACCESSIBILITY_OVERLAY windows cause window events.
             // Never destroy/recreate translated text merely because an overlay
@@ -154,6 +255,8 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     }
 
     private void hideOutsideX() {
+        stopCaptureRecovery();
+        if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Outside X; capture waiting");
         main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
         scrollSinceLastScan = false;
@@ -203,8 +306,10 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         // Verify the actual foreground X application window BEFORE any
         // translation is placed. Other apps, keyboards and our own overlay
         // windows are never eligible SurfaceControl parents.
-        publishAutoWindowTarget();
+        // Retain the verified snapshot before touching the renderer. A compositor
+        // failure must not prevent Tree intake.
         List<TextCandidate> candidates = captureFresh();
+        publishAutoWindowTarget();
         boolean scrolling = scrollSinceLastScan;
         scrollSinceLastScan = false;
         // Never treat a single empty accessibility snapshot as app exit.
@@ -245,6 +350,14 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     }
 
     private List<TextCandidate> captureFresh() {
+        try{return readVisibleX();}
+        catch(RuntimeException error){
+            readerStatus="Capture scan failed: "+error.getClass().getSimpleName();
+            noteCaptureFailure("Visible scan",error);
+            return Collections.emptyList();
+        }
+    }
+    private List<TextCandidate> readVisibleX() {
         if (destroyed || preferences == null || !preferences.enabled()) {
             readerStatus = "In-app consent OFF";
             return Collections.emptyList();
@@ -252,7 +365,11 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         // Retention requires a positively verified foreground application.
         // Translation can still use its existing active-root fallback.
         AccessibilityNodeInfo foreground=findXApplicationWindow();
-        boolean retain=treeRuntime!=null && treeRuntime.enabled() && isXRoot(foreground);
+        boolean captureRequested=captureEnabled();
+        boolean screenReady=captureRequested&&screenAllowsCapture();
+        boolean retain=screenReady&&isXRoot(foreground);
+        if(captureRequested&&!retain)treeRuntime.noteCaptureReaderState(screenReady?
+            "Waiting for verified foreground X":"Screen locked or off; capture waiting");
         long epoch=retain?treeRuntime.captureEpoch():-1L;
         AccessibilityNodeInfo root = retain?foreground:getRootInActiveWindow();
         if (!isXRoot(root)) {
@@ -272,9 +389,10 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         List<TextCandidate> found = reader.find(root, metrics.widthPixels, metrics.heightPixels, metrics.scaledDensity,retain);
         if(retain){
             // Recheck foreground and consent after traversal; no extra tree walk.
-            boolean stillX=isXRoot(findXApplicationWindow());
+            boolean stillX=screenAllowsCapture()&&isXRoot(findXApplicationWindow());
             treeRuntime.acceptVisibleSnapshot(reader.lastKnowledge(),epoch,stillX,reader.lastKnowledgeBounded());
             if(stillX&&treeRuntime.enabled()&&treeRuntime.captureEpoch()==epoch){
+                lastCaptureScanUptime=SystemClock.uptimeMillis();
                 for(TextCandidate candidate:found)candidate.knowledgeEpoch=epoch;
                 for(TextCandidate candidate:reader.lastDiscovered())candidate.knowledgeEpoch=epoch;
             }
@@ -316,17 +434,23 @@ public final class XTranslationAccessibilityService extends AccessibilityService
 
     @Override
     public void onInterrupt() {
+        stopCaptureRecovery();
+        if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Accessibility interrupted; awaiting recovery");
         main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
         if (coordinator != null) coordinator.clear();
         scrollTracker.reset();
         TranslationRuntime.stopCompute(this);
         TranslationRuntime.disconnect();
+        armCaptureRecovery();
     }
 
     @Override
     public void onDestroy() {
         destroyed = true;
+        stopCaptureRecovery();
+        if(screenReceiverRegistered){unregisterReceiver(screenReceiver);screenReceiverRegistered=false;}
+        if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Accessibility service stopped");
         treeRuntime=null;
         main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
