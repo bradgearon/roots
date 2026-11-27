@@ -219,6 +219,8 @@ final class LocalIntelligenceProvider {
                     else if(remaining>0)references=need.get(remaining,TimeUnit.MILLISECONDS);
                 }catch(java.util.concurrent.ExecutionException|java.util.concurrent.TimeoutException|java.util.concurrent.CancellationException ignored){}
                 finally{if(!need.isDone())need.cancel(true);}
+                if(!references.context().isEmpty()&&(!AxonRuntime.authorized(app,plan)||com.wds.sixstars.contextoverlay.tree.TreeRuntime.get(app).captureEpoch()!=references.treeEpoch()))
+                    references=new AxonRuntime.Result("","Axon or Tree changed · local fallback");
                 String augmented=RuntimeNeed.augment(request,references.context());
                 String answer;
                 try{answer=infer(app,model,"Intelligence sample",augmented,new long[8],result::partial);}

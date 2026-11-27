@@ -39,6 +39,10 @@ jobs:
         run: |
           javac -encoding UTF-8 -d build/tree-jni-checks android/contextual-overlay/src/main/java/com/wds/sixstars/contextoverlay/AxonPlanner.java native/tree-core/tests/AxonPlannerChecks.java
           java -cp build/tree-jni-checks com.wds.sixstars.contextoverlay.AxonPlannerChecks
+      - name: Runtime Need contract checks
+        run: |
+          javac -encoding UTF-8 -d build/tree-jni-checks android/contextual-overlay/src/main/java/com/wds/sixstars/contextoverlay/RuntimeNeed.java native/tree-core/tests/RuntimeNeedChecks.java
+          java -cp build/tree-jni-checks com.wds.sixstars.contextoverlay.RuntimeNeedChecks
   windows:
     runs-on: windows-latest
     steps:

@@ -27,7 +27,9 @@ final class AxonRuntime {
     private static volatile Session session;
     private record Session(AxonSubscription policy,List<MeshPeer.Invite> peers,long expires){}
     record Plan(Session session,List<String> topics){}
-    record Result(String context,String status){}
+    record Result(String context,String status,long treeEpoch){
+        Result(String context,String status){this(context,status,-1);}
+    }
     private record Candidate(RuntimeNeed.Evidence evidence,double rank){}
     private AxonRuntime(){}
     static synchronized void arm(AxonSubscription policy,List<MeshPeer.Invite> peers){
@@ -40,6 +42,7 @@ final class AxonRuntime {
     private static boolean same(AxonSubscription a,AxonSubscription b){
         return b!=null&&a.pins.equals(b.pins)&&a.model.sha.equals(b.model.sha)&&a.operation.equals(b.operation)&&a.lines().equals(b.lines());
     }
+    static boolean authorized(Context context,Plan plan){return plan!=null&&authorized(context,plan.session());}
     private static boolean authorized(Context context,Session s){
         if(!active(s))return false;
         try{return same(s.policy(),AxonSubscription.load(context));}catch(Exception e){return false;}
@@ -98,8 +101,10 @@ final class AxonRuntime {
             Set<String> seen=new HashSet<>();
             // Local reference material stays local. Match only explicit topics and
             // localized text. Peer material is never committed or automatically republished.
-            for(RuntimeNeed.Topic topic:topics){
+            for(int topicIndex=0;topicIndex<topics.size();topicIndex++){
+                RuntimeNeed.Topic topic=topics.get(topicIndex);
                 if(!live(app,s,deadline))break;
+                int laneEnd=RuntimeNeed.MAX_ITEMS-(topics.size()-topicIndex-1);
                 List<Candidate> candidates=new ArrayList<>();
                 for(NativeTree.Master record:records){
                     if(Thread.currentThread().isInterrupted()||RuntimeNeed.remaining(deadline,SystemClock.elapsedRealtime())<=0)break;
@@ -116,20 +121,21 @@ final class AxonRuntime {
                 candidates.sort(Comparator.comparingDouble(Candidate::rank).reversed().thenComparing(v->v.evidence().id()));
                 int covered=0;
                 for(Candidate c:candidates)if(seen.add(c.evidence().id())){
-                    if(covered==0&&evidence.size()<RuntimeNeed.MAX_ITEMS){evidence.add(c.evidence());local++;}
+                    if(covered==0&&evidence.size()<laneEnd){evidence.add(c.evidence());local++;}
                     covered++;if(covered>=2)break;
                 }
                 // Two distinct local matches are only a coverage heuristic, not a
                 // correctness claim. Otherwise ask up to two bound live peers.
-                if(covered>=2||evidence.size()>=RuntimeNeed.MAX_ITEMS)continue;
+                if(covered>=2||evidence.size()>=laneEnd)continue;
                 int tried=0;
                 for(MeshPeer.Invite peer:s.peers()){
                     if(tried++>=2||!live(app,s,deadline)||epoch!=tree.captureEpoch())break;
                     try{
-                        List<MeshItem> items=MeshPeer.get(app).need(peer,topic.name(),language,Math.min(3,RuntimeNeed.MAX_ITEMS-evidence.size()),deadline);
+                        long peerDeadline=Math.min(deadline,SystemClock.elapsedRealtime()+2000L);
+                        List<MeshItem> items=MeshPeer.get(app).need(peer,topic.name(),language,laneEnd-evidence.size(),peerDeadline);
                         if(!live(app,s,deadline)||epoch!=tree.captureEpoch())break;
                         for(MeshItem item:items){
-                            if(evidence.size()>=RuntimeNeed.MAX_ITEMS)break;
+                            if(evidence.size()>=laneEnd)break;
                             if(!seen.add(item.id()))continue;
                             evidence.add(new RuntimeNeed.Evidence(item.id(),item.topic(),item.text(),"peer "+item.language()));remote++;
                         }
@@ -143,7 +149,7 @@ final class AxonRuntime {
             String context=RuntimeNeed.context(evidence);
             String status="Axon references: "+local+" local · "+remote+" peer · "+failures+" failed exchanges"+(context.isEmpty()?" · local fallback":"");
             attempt.finish(!context.isEmpty(),status);
-            return new Result(context,status);
+            return new Result(context,status,epoch);
         }catch(Exception|LinkageError e){
             attempt.finish(false,"Runtime resolution unavailable");
             return new Result("","Axon unavailable · local fallback");
