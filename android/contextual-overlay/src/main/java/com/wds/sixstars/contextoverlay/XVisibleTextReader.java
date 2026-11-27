@@ -18,6 +18,7 @@ import java.util.Map;
  * viewport geometry. No screenshot, persistence or non-X application reading.
  */
 public final class XVisibleTextReader {
+    private record ScanNode(AccessibilityNodeInfo node, boolean sourceAllowed){}
     public static final String X_PACKAGE = "com.twitter.android";
     private static final int MAX_VISITED_NODES = 850;
     private static final int MAX_DETAIL_NODES = 1400;
@@ -81,13 +82,14 @@ public final class XVisibleTextReader {
         if (root == null || root.getPackageName() == null
                 || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
 
-        ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
-        queue.add(root);
+        ArrayDeque<ScanNode> queue = new ArrayDeque<>();
+        queue.add(new ScanNode(root,true));
         boolean detailScreen = false;
 
         while (!queue.isEmpty()
                 && lastVisited < (detailScreen ? MAX_DETAIL_NODES : MAX_VISITED_NODES)) {
-            AccessibilityNodeInfo node = queue.removeFirst();
+            ScanNode entry=queue.removeFirst();
+            AccessibilityNodeInfo node=entry.node();
             final int order = ++lastVisited;
             try {
                 // Descendants of custom X containers can still be readable even
@@ -98,11 +100,12 @@ public final class XVisibleTextReader {
                 // Observe the reply editor's resource ID only, never its text.
                 if (XPostDetailContextService.isReplyContextId(node.getViewIdResourceName())) detailScreen=true;
                 if(node.isEditable() || node.isPassword())continue;
+                boolean sourceAllowed=entry.sourceAllowed()&&!XKnowledgeRecords.secondarySourceRole(node.getViewIdResourceName());
                 int childCount = Math.min(node.getChildCount(), 45);
                 if(node.getChildCount()>childCount)lastKnowledgeBounded=true;
                 for (int i = 0; i < childCount; i++) {
                     AccessibilityNodeInfo child = node.getChild(i);
-                    if (child != null) queue.add(child);
+                    if (child != null) queue.add(new ScanNode(child,sourceAllowed));
                 }
                 if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
                 if (node.getPackageName() != null && !X_PACKAGE.contentEquals(node.getPackageName()))
@@ -117,10 +120,10 @@ public final class XVisibleTextReader {
                     if(XPostSpatialAnalyzer.onScreen(observedBounds,width,height)){
                         retain(observations,node.getText(),observedAt);
                         retain(observations,node.getContentDescription(),observedAt);
-                        XKnowledgeRecords.sample(knowledgeSamples,node.getText(),node.getViewIdResourceName(),observedBounds,false);
-                        XKnowledgeRecords.sample(knowledgeSamples,node.getContentDescription(),node.getViewIdResourceName(),observedBounds,true);
+                        XKnowledgeRecords.sample(knowledgeSamples,node.getText(),node.getViewIdResourceName(),observedBounds,false,sourceAllowed);
+                        XKnowledgeRecords.sample(knowledgeSamples,node.getContentDescription(),node.getViewIdResourceName(),observedBounds,true,sourceAllowed);
                         String metadataRole=node.getViewIdResourceName();
-                        if(XKnowledgeRecords.hasPostMetadataRole(metadataRole)){
+                        if(sourceAllowed&&XKnowledgeRecords.hasPostMetadataRole(metadataRole)){
                             try{XKnowledgeRecords.sampleMetadata(knowledgeSamples,node.getExtras(),metadataRole,observedBounds);}
                             catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
                         }
