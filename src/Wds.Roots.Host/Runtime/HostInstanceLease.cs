@@ -11,7 +11,7 @@ internal sealed class HostInstanceLease : IDisposable
 
     private HostInstanceLease(FileStream stream) => _stream = stream;
 
-    public static HostInstanceLease Acquire(string lockPath)
+    public static HostInstanceLease Acquire(string lockPath, string role = "Roots desktop host", string ports = "8081, 8223 and 8224")
     {
         string path = Path.GetFullPath(lockPath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -20,8 +20,8 @@ internal sealed class HostInstanceLease : IDisposable
         catch (IOException error)
         {
             throw new InvalidOperationException(
-                "Could not acquire the Roots desktop host lease. Another Roots launcher may already be running. " +
-                "Check its console and the listeners on ports 8081, 8223 and 8224 before launching again. " +
+                $"Could not acquire the {role} lease. Another Roots launcher may already be running. " +
+                $"Check its console and the listeners on ports {ports} before launching again. " +
                 $"Lease file: {path}. System error: {error.Message}", error);
         }
 

@@ -12,6 +12,8 @@ public final class OverlayPreferences {
     private static final String INLINE_THEME = "auto_inline_theme";
     private static final String DESKTOP_TRANSLATION = "desktop_translation_consent";
     private static final String BRIDGE_URL = "translation_bridge_url";
+    private static final String DESKTOP_INTELLIGENCE = "desktop_intelligence_enabled";
+    private static final String INTELLIGENCE_URL = "desktop_intelligence_url";
     
     private final SharedPreferences prefs;
     private final Context prefsContext;
@@ -29,6 +31,17 @@ public final class OverlayPreferences {
     }
     public void setDesktopTranslationEnabled(boolean value) {
         prefs.edit().putBoolean(DESKTOP_TRANSLATION, value).apply();
+    }
+    public boolean desktopIntelligenceEnabled() { return prefs.getBoolean(DESKTOP_INTELLIGENCE,false); }
+    public void setDesktopIntelligenceEnabled(boolean enabled) {
+        DesktopIntelligenceProvider.disconnect();
+        prefs.edit().putBoolean(DESKTOP_INTELLIGENCE,enabled).apply();
+    }
+    public String desktopIntelligenceUrl() { return prefs.getString(INTELLIGENCE_URL,""); }
+    public void setDesktopIntelligenceUrl(String value) {
+        String normalized=DesktopIntelligenceProtocol.baseUrl(value);
+        DesktopIntelligenceProvider.disconnect();
+        prefs.edit().putString(INTELLIGENCE_URL,normalized).apply();
     }
     public String bridgeUrl() {
         String saved = prefs.getString(BRIDGE_URL, "");

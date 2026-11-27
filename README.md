@@ -81,6 +81,43 @@ The Roots Host Checks workflow runs the build and checks on Windows and Linux.
 The Windows suite includes listener-PID diagnostics and forced-launcher-exit job
 cleanup. Host checks do not replace testing the real Windows GPU and model.
 
+### Desktop intelligence on port 8221
+
+General intelligence has a separate launcher and pairing key:
+
+```bat
+launch-intelligence.cmd
+get-intelligence-key.cmd
+```
+
+This starts the pinned **Qwen3.5 0.8B Q4_0** model and an authenticated HTTPS
+listener at `https://YOUR-PC:8221`. The first launch downloads the model if needed.
+The launcher configures a private-local-subnet firewall rule for TCP 8221 and
+uses its own host lease. `launch-intelligence.cmd --local-only` binds the listener
+to loopback. Existing translation continues to use `launch.cmd`.
+
+On Android, open **Intelligence model settings**, select **Qwen3.5 0.8B**, save
+the desktop intelligence HTTPS address and the key from
+`get-intelligence-key.cmd`, then test that connection and enable desktop
+intelligence. General intelligence, Axon-assisted requests, and Mesh connection
+analysis use the selected route. The default remains the on-device model.
+Poetic movement and element-flow measurements still run on the phone.
+
+| Port | Service |
+| --- | --- |
+| **8221** | Paired desktop general intelligence, HTTPS |
+| 8223 | Paired desktop PLaMo translation, HTTPS |
+| 8224 | Local/Chrome translation gateway, loopback |
+| 8233 | Android Mesh knowledge sharing, pinned TLS |
+| 8081 / 8082 | Internal loopback model backends: translation / intelligence |
+
+The intelligence key is separate from the translation key. Requests validate
+the selected model and exact model hash; the initial desktop profile serves
+Qwen3.5 0.8B only and reports other selections as a mismatch. A failed desktop
+request does not silently change inference route. The API accepts bounded
+plain-text requests, disables model thinking for the small response budget,
+and cancels backend work when the request expires or disconnects.
+
 ## Chrome
 
 Open chrome://extensions, enable developer mode, and load unpacked chrome-extension/roots-translate. Enter the Roots desktop token in the popup. Existing automatic translation of nearby foreign posts, original text, inline results, cancellation, caching and manual translation are retained.

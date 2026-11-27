@@ -6,7 +6,13 @@ on:
       - 'src/Wds.Roots.Api/**'
       - 'tests/Roots.HostChecks/**'
       - 'tests/Roots.ContractChecks/**'
+      - 'tests/Roots.IntelligenceChecks/**'
       - 'config/runtime.json'
+      - 'config/intelligence.runtime.json'
+      - 'launch-intelligence.cmd'
+      - 'get-intelligence-key.cmd'
+      - 'scripts/Ensure-LanFirewall.ps1'
+      - 'scripts/Get-IntelligenceKey.ps1'
       - '.github/workflows/roots-host.yml'
   push:
     branches: ['feature/native-tree-core']
@@ -15,7 +21,13 @@ on:
       - 'src/Wds.Roots.Api/**'
       - 'tests/Roots.HostChecks/**'
       - 'tests/Roots.ContractChecks/**'
+      - 'tests/Roots.IntelligenceChecks/**'
       - 'config/runtime.json'
+      - 'config/intelligence.runtime.json'
+      - 'launch-intelligence.cmd'
+      - 'get-intelligence-key.cmd'
+      - 'scripts/Ensure-LanFirewall.ps1'
+      - 'scripts/Get-IntelligenceKey.ps1'
       - '.github/workflows/roots-host.yml'
   workflow_dispatch:
 permissions:
@@ -36,3 +48,4 @@ jobs:
       - run: dotnet build src/Wds.Roots.Host -c Release
       - run: dotnet run --project tests/Roots.ContractChecks -c Release
       - run: dotnet run --project tests/Roots.HostChecks -c Release
+      - run: dotnet run --project tests/Roots.IntelligenceChecks -c Release

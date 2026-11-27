@@ -1,16 +1,16 @@
 # Only the explicitly requested LAN bridge is opened. Never elevate the host.
 [CmdletBinding()]
-param([switch]$Apply)
+param([switch]$Apply, [ValidateSet(8221, 8223)][int]$Port = 8223)
 
 $ErrorActionPreference = 'Stop'
-$ruleName = 'Wds.Roots.DesktopLan.Tcp8223'
-$displayName = 'Roots Desktop LAN (TCP 8223)'
+$ruleName = "Wds.Roots.DesktopLan.Tcp$Port"
+$displayName = "Roots Desktop LAN (TCP $Port)"
 
 function Test-RootsRule {
     param([string]$PolicyStore = 'ActiveStore')
     $rule = Get-NetFirewallRule -PolicyStore $PolicyStore -Name $ruleName -ErrorAction SilentlyContinue
     if (-not $rule) { return $false }
-    $port = $rule | Get-NetFirewallPortFilter
+    $portFilter = $rule | Get-NetFirewallPortFilter
     $address = $rule | Get-NetFirewallAddressFilter
     $program = $rule | Get-NetFirewallApplicationFilter
     $service = $rule | Get-NetFirewallServiceFilter
@@ -20,9 +20,9 @@ function Test-RootsRule {
         [string]$rule.Action -eq 'Allow' -and
         [string]$rule.Profile -eq 'Private' -and
         [string]$rule.EdgeTraversalPolicy -eq 'Block' -and
-        [string]$port.Protocol -in @('TCP', '6') -and
-        @($port.LocalPort).Count -eq 1 -and
-        [string]$port.LocalPort -eq '8223' -and
+        [string]$portFilter.Protocol -in @('TCP', '6') -and
+        @($portFilter.LocalPort).Count -eq 1 -and
+        [string]$portFilter.LocalPort -eq [string]$Port -and
         @($address.RemoteAddress).Count -eq 1 -and
         [string]$address.RemoteAddress -eq 'LocalSubnet' -and
         [string]$address.LocalAddress -eq 'Any' -and
@@ -43,7 +43,7 @@ try {
             if ($existing) {
                 Remove-NetFirewallRule -PolicyStore PersistentStore -Name $ruleName
             }
-            New-NetFirewallRule -PolicyStore PersistentStore -Name $ruleName -DisplayName $displayName -Description 'Roots desktop TLS WebSocket bridge. Private profile and local subnet only.' -Enabled True -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8223 -Profile Private -RemoteAddress LocalSubnet -EdgeTraversalPolicy Block | Out-Null
+            New-NetFirewallRule -PolicyStore PersistentStore -Name $ruleName -DisplayName $displayName -Description 'Roots desktop TLS bridge. Private profile and local subnet only.' -Enabled True -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Profile Private -RemoteAddress LocalSubnet -EdgeTraversalPolicy Block | Out-Null
             if (-not (Test-RootsRule)) {
                 throw 'The rule was created but is not effective in ActiveStore. Check Windows Firewall or managed policy.'
             }
@@ -52,11 +52,11 @@ try {
     }
 
     if (Test-RootsRule) {
-        Write-Host 'Roots LAN firewall rule is already configured (private local subnet, TCP 8223).'
+        Write-Host "Roots LAN firewall rule is already configured (private local subnet, TCP $Port)."
     } else {
         Write-Host ''
-        Write-Host 'Roots LAN mode accepts TLS WebSocket connections from your phone on TCP 8223.'
-        Write-Host 'Allow inbound TCP 8223 from the local subnet on Private networks only?'
+        Write-Host "Roots LAN mode accepts TLS connections from your phone on TCP $Port."
+        Write-Host "Allow inbound TCP $Port from the local subnet on Private networks only?"
         Write-Host 'Windows may prompt for administrator approval. No public-network rule will be added.'
         $answer = Read-Host 'Add Windows Firewall rule [y/N]'
         if ($answer -notmatch '^(y|yes)$') {
@@ -66,12 +66,12 @@ try {
         $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
         if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
             # Run in a child process so that the apply branch can return an exit code.
-            $child = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-Apply') -Wait -PassThru
+            $child = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-Apply', '-Port', [string]$Port) -Wait -PassThru
         } else {
-            $child = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-Apply') -Verb RunAs -Wait -PassThru
+            $child = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $PSCommandPath + '"'), '-Apply', '-Port', [string]$Port) -Verb RunAs -Wait -PassThru
         }
         if ($child.ExitCode -ne 0) { throw 'Firewall rule installation failed.' }
-        Write-Host 'Roots LAN firewall rule installed (private local subnet, TCP 8223).'
+        Write-Host "Roots LAN firewall rule installed (private local subnet, TCP $Port)."
     }
 
     # Report the profile without changing it. Public Wi-Fi remains blocked.

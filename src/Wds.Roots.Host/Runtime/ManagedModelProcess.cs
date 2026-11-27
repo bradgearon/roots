@@ -11,15 +11,16 @@ internal sealed class ManagedModelProcess : IAsyncDisposable
     private readonly Process _process;
     private readonly ChildProcessJob _job;
     private readonly Action<string>? _log;
+    private readonly string _name;
     private readonly Queue<string> _tail = new();
     private readonly object _tailLock = new();
     private readonly Task _output;
     private readonly Task _exit;
     private int _disposed;
 
-    private ManagedModelProcess(Process process, ChildProcessJob job, Action<string>? log)
+    private ManagedModelProcess(Process process, ChildProcessJob job, Action<string>? log, string name)
     {
-        _process = process; _job = job; _log = log;
+        _process = process; _job = job; _log = log; _name = name;
         _output = Task.WhenAll(ReadOutputAsync(process.StandardOutput, "stdout"), ReadOutputAsync(process.StandardError, "stderr"));
         _exit = process.WaitForExitAsync();
     }
@@ -28,7 +29,7 @@ internal sealed class ManagedModelProcess : IAsyncDisposable
     public bool HasExited => _process.HasExited;
     public Task ExitTask => _exit;
 
-    public static ManagedModelProcess Start(ProcessStartInfo start, Action<string>? log = null)
+    public static ManagedModelProcess Start(ProcessStartInfo start, Action<string>? log = null, string name = "PLaMo")
     {
         ArgumentNullException.ThrowIfNull(start);
         start.UseShellExecute = false;
@@ -41,9 +42,9 @@ internal sealed class ManagedModelProcess : IAsyncDisposable
         try
         {
             started = process.Start();
-            if (!started) throw new InvalidOperationException("Could not start the PLaMo process.");
+            if (!started) throw new InvalidOperationException($"Could not start the {name} process.");
             job.Attach(process);
-            return new ManagedModelProcess(process, job, log);
+            return new ManagedModelProcess(process, job, log, name);
         }
         catch
         {
@@ -89,7 +90,7 @@ internal sealed class ManagedModelProcess : IAsyncDisposable
     private string Tail()
     {
         lock (_tailLock)
-            return _tail.Count == 0 ? "No PLaMo stdout/stderr was captured." : string.Join(Environment.NewLine, _tail);
+            return _tail.Count == 0 ? $"No {_name} stdout/stderr was captured." : string.Join(Environment.NewLine, _tail);
     }
 
     public async Task ThrowIfExitedAsync()
@@ -100,7 +101,7 @@ internal sealed class ManagedModelProcess : IAsyncDisposable
         await DrainOutputAsync().ConfigureAwait(false);
         int code = _process.ExitCode;
         throw new InvalidOperationException(
-            $"PLaMo process {ProcessId} exited with code {code} (0x{unchecked((uint)code):X8})." + Environment.NewLine +
+            $"{_name} process {ProcessId} exited with code {code} (0x{unchecked((uint)code):X8})." + Environment.NewLine +
             $"Executable: {_process.StartInfo.FileName}" + Environment.NewLine + Tail());
     }
 
@@ -127,7 +128,7 @@ internal sealed class ManagedModelProcess : IAsyncDisposable
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         {
             await ThrowIfExitedAsync().ConfigureAwait(false);
-            throw new TimeoutException($"PLaMo process {ProcessId} did not become ready within {timeout.TotalSeconds:0} seconds." +
+            throw new TimeoutException($"{_name} process {ProcessId} did not become ready within {timeout.TotalSeconds:0} seconds." +
                 Environment.NewLine + Tail());
         }
     }

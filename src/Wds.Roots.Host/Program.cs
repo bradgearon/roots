@@ -3,6 +3,8 @@ using System.Text.Json;
 using Wds.Roots.Host;
 using Wds.Roots.Host.Runtime;
 
+if (args.Contains("--intelligence")) return await IntelligenceHost.RunAsync(args);
+
 var root = Directory.GetCurrentDirectory();
 using var quit = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; quit.Cancel(); };

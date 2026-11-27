@@ -359,13 +359,66 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 });
         });
 
-        content=RootsUi.section(this,sections,"Intelligence","General reasoning · selectable local tiers",true);
-        content.addView(text("Qwen3.5 0.8B is the default. Models load on request, release idle context after 30 seconds and unload weights after two minutes. Translation remains independent.",13,0xFFAAC8D4));
+        content=RootsUi.section(this,sections,"Intelligence","General reasoning · phone or paired desktop",true);
+        content.addView(text("Qwen3.5 0.8B is the default. Phone models load on request, release idle context after 30 seconds and unload weights after two minutes. Translation remains independent.",13,0xFFAAC8D4));
         Spinner intelligence=new Spinner(this);
         RootsUi.styleSpinner(this,intelligence,IntelligenceModel.labels());
         intelligence.setSelection(IntelligenceModel.selected(this).ordinal());
         content.addView(intelligence);
         TextView intelligenceStatus=text(LocalIntelligenceProvider.status(this,IntelligenceModel.selected(this)),14,0xFFE5EFF4);
+        content.addView(text("Desktop intelligence uses its own listener on port 8221. Run launch-intelligence.cmd and get-intelligence-key.cmd on the PC. When enabled, your general intelligence requests, Mesh diagnosis reports and approved Axon reference notes are sent to that paired PC. Poetic Movement and element-flow profiling continue on the phone.",13,0xFFAAC8D4));
+        CheckBox desktopIntelligence=new CheckBox(this);
+        desktopIntelligence.setText("Use desktop intelligence");desktopIntelligence.setTextColor(0xFFE5EFF4);
+        desktopIntelligence.setChecked(prefs.desktopIntelligenceEnabled());content.addView(desktopIntelligence);
+        EditText intelligenceAddress=new EditText(this);intelligenceAddress.setSingleLine(true);
+        intelligenceAddress.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
+        intelligenceAddress.setHint("https://192.168.1.100:8221");intelligenceAddress.setText(prefs.desktopIntelligenceUrl());content.addView(intelligenceAddress);
+        EditText intelligenceKey=new EditText(this);intelligenceKey.setSingleLine(true);intelligenceKey.setSaveEnabled(false);
+        intelligenceKey.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        if(android.os.Build.VERSION.SDK_INT>=26)intelligenceKey.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        intelligenceKey.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(129)});
+        intelligenceKey.setHint(DesktopIntelligenceKeyStore.configured(this)?"Intelligence key saved — leave blank to keep":"Paste key from get-intelligence-key.cmd");content.addView(intelligenceKey);
+        desktopIntelligence.setOnCheckedChangeListener((button,checked)->{
+            if(checked&&(prefs.desktopIntelligenceUrl().isEmpty()||!DesktopIntelligenceKeyStore.configured(this))){
+                desktopIntelligence.setChecked(false);intelligenceStatus.setText("Save the PC intelligence address and its connection key first.");return;
+            }
+            prefs.setDesktopIntelligenceEnabled(checked);
+            intelligenceStatus.setText(LocalIntelligenceProvider.status(this,IntelligenceModel.selected(this)));
+        });
+        Button saveIntelligence=button("Save intelligence connection");content.addView(saveIntelligence);
+        saveIntelligence.setOnClickListener(v->{
+            try{
+                String base=DesktopIntelligenceProtocol.baseUrl(intelligenceAddress.getText().toString());
+                String typed=intelligenceKey.getText().toString().trim();
+                if(!typed.isEmpty())DesktopIntelligenceProtocol.pairedKey(typed);
+                DesktopIntelligenceProvider.disconnect();
+                if(!typed.isEmpty())DesktopIntelligenceKeyStore.save(this,typed);
+                prefs.setDesktopIntelligenceUrl(base);intelligenceAddress.setText(base);intelligenceKey.setText("");
+                intelligenceKey.setHint(DesktopIntelligenceKeyStore.configured(this)?"Intelligence key saved — leave blank to keep":"Paste key from get-intelligence-key.cmd");
+                intelligenceStatus.setText("Intelligence connection saved. Test it, then enable Use desktop intelligence.");
+            }catch(Exception error){intelligenceStatus.setText(error.getMessage());}
+        });
+        Button testIntelligenceConnection=button("Test desktop intelligence connection");content.addView(testIntelligenceConnection);
+        testIntelligenceConnection.setOnClickListener(v->{
+            try{
+                if(!DesktopIntelligenceProtocol.baseUrl(intelligenceAddress.getText().toString()).equals(prefs.desktopIntelligenceUrl())||
+                    !intelligenceKey.getText().toString().trim().isEmpty()){
+                    intelligenceStatus.setText("Save intelligence connection first, then test the saved address.");return;
+                }
+            }catch(IllegalArgumentException error){intelligenceStatus.setText(error.getMessage());return;}
+            testIntelligenceConnection.setEnabled(false);intelligenceStatus.setText("Checking the intelligence listener on port 8221…");
+            DesktopIntelligenceProvider.testConnection(this,IntelligenceModel.selected(this),(message,error)->runOnUiThread(()->{
+                if(isDestroyed())return;testIntelligenceConnection.setEnabled(true);intelligenceStatus.setText(error==null?message:error);
+            }));
+        });
+        Button clearIntelligence=button("Clear intelligence connection key");content.addView(clearIntelligence);
+        clearIntelligence.setOnClickListener(v->{
+            prefs.setDesktopIntelligenceEnabled(false);desktopIntelligence.setChecked(false);
+            try{
+                DesktopIntelligenceKeyStore.clear(this);intelligenceKey.setText("");intelligenceKey.setHint("Paste key from get-intelligence-key.cmd");
+                intelligenceStatus.setText("Desktop intelligence key removed. Intelligence now runs on the phone.");
+            }catch(Exception error){intelligenceStatus.setText(error.getMessage());}
+        });
         intelligence.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){
             public void onItemSelected(AdapterView<?> parent,View view,int position,long id){
                 IntelligenceModel model=IntelligenceModel.values()[position];model.select(OverlayTranslationSettingsActivity.this);
@@ -378,7 +431,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         intelligenceDownload.setOnClickListener(v->{
             IntelligenceModel model=IntelligenceModel.values()[intelligence.getSelectedItemPosition()];
             new AlertDialog.Builder(this).setTitle(model.label)
-                .setMessage("Download verified GGUF weights over unmetered network. Model terms: "+model.terms()+". Inference stays on-device.")
+                .setMessage("Download verified GGUF weights for on-device intelligence over unmetered network. Model terms: "+model.terms()+". The desktop uses its own model installation.")
                 .setNeutralButton("Review terms",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(model.terms()))))
                 .setNegativeButton("Cancel",null).setPositiveButton("Agree and download",(d,w)->
                     LocalIntelligenceProvider.download(this,model,(message,error)->runOnUiThread(()->{
@@ -408,7 +461,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             String request=intelligenceInput.getText().toString();
             if(request.trim().isEmpty()||request.length()>1500||request.indexOf('<')>=0){intelligenceStatus.setText("Enter plain text (up to 1500 characters).");return;}
             AxonRuntime.choose(this,request,plan->{
-                runtimeNeed.setEnabled(false);intelligenceTest.setEnabled(false);intelligenceStatus.setText("Preparing local model and Axon references…");
+                runtimeNeed.setEnabled(false);intelligenceTest.setEnabled(false);intelligenceStatus.setText("Preparing intelligence and Axon references…");
                 LocalIntelligenceProvider.generateWithAxon(this,model,request,plan,new LocalIntelligenceProvider.Result(){
                     @Override public void partial(String prefix){runOnUiThread(()->{if(!isDestroyed())StreamText.reveal(intelligenceStatus,prefix);});}
                     @Override public void completed(String message,String error){runOnUiThread(()->{

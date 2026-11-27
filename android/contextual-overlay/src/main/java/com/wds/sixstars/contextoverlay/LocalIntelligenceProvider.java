@@ -43,10 +43,14 @@ final class LocalIntelligenceProvider {
         void completed(String message,String error);
     }
     static String status(Context c,IntelligenceModel model){
+        if(new OverlayPreferences(c).desktopIntelligenceEnabled())return DesktopIntelligenceProvider.status(c,model);
+        return localStatus(c,model);
+    }
+    static String localStatus(Context c,IntelligenceModel model){
         String state=resident==model?(contextWarm?"Warm · model and context loaded":"Weights loaded · context released"):
             resident==null?"Unloaded":"Another intelligence tier loaded";
         File f=file(c,model);
-        return model.label+"\n"+(f.isFile()?"Model file present; SHA-256 checked on use":"Download required")+"\n"+state;
+        return "Phone intelligence · "+model.label+"\n"+(f.isFile()?"Model file present; SHA-256 checked on use":"Download required")+"\n"+state;
     }
     private static File file(Context c,IntelligenceModel model){
         File dir=c.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
@@ -190,6 +194,9 @@ final class LocalIntelligenceProvider {
         if(request==null||request.trim().isEmpty()||request.length()>3000||request.indexOf('<')>=0){
             result.completed(null,"Enter plain text (up to 3000 characters).");return;
         }
+        if(new OverlayPreferences(app).desktopIntelligenceEnabled()){
+            DesktopIntelligenceProvider.generate(app,model,request,result);return;
+        }
         submit(()->{
             try{
                 ensure(app,model,result::partial);
@@ -209,6 +216,24 @@ final class LocalIntelligenceProvider {
         long deadline=SystemClock.elapsedRealtime()+RuntimeNeed.BUDGET_MS;
         String language=new OverlayPreferences(app).targetLanguage();
         java.util.concurrent.Future<AxonRuntime.Result> need=AxonRuntime.start(app,plan,request,language,deadline);
+        if(new OverlayPreferences(app).desktopIntelligenceEnabled()){
+            DesktopIntelligenceProvider.submit(()->{
+                try{
+                    AxonRuntime.Result references=awaitReferences(app,plan,need,deadline);
+                    String augmented=RuntimeNeed.augment(request,references.context());
+                    if(augmented.length()>DesktopIntelligenceProtocol.MAX_PROMPT){
+                        references=new AxonRuntime.Result("","Axon context exceeded the desktop request budget; sent the original request to the desktop.");
+                        augmented=request;
+                    }
+                    String answer=DesktopIntelligenceProvider.generateBlocking(app,model,augmented);
+                    result.completed(answer+"\n\n"+references.status(),null);
+                }catch(Exception error){result.completed(null,DesktopIntelligenceProvider.reason(error));}
+                finally{need.cancel(true);}
+            },new Result(){
+                @Override public void completed(String message,String error){need.cancel(true);result.completed(message,error);}
+            });
+            return;
+        }
         submit(()->{
             try{
                 ensure(app,model,result::partial);
@@ -233,6 +258,18 @@ final class LocalIntelligenceProvider {
             }catch(Exception|LinkageError e){result.completed(null,e.getClass().getSimpleName()+": "+e.getMessage());}
             finally{need.cancel(true);scheduleIdle();}
         },()->{need.cancel(true);result.completed(null,"Local inference queue is busy.");});
+    }
+    private static AxonRuntime.Result awaitReferences(Context app,AxonRuntime.Plan plan,java.util.concurrent.Future<AxonRuntime.Result> need,long deadline)throws Exception{
+        AxonRuntime.Result references=new AxonRuntime.Result("","Axon deadline · no peer context");
+        try{
+            int remaining=RuntimeNeed.remaining(deadline,SystemClock.elapsedRealtime());
+            if(need.isDone())references=need.get();
+            else if(remaining>0)references=need.get(remaining,TimeUnit.MILLISECONDS);
+        }catch(java.util.concurrent.ExecutionException|java.util.concurrent.TimeoutException|java.util.concurrent.CancellationException ignored){}
+        finally{if(!need.isDone())need.cancel(true);}
+        if(!references.context().isEmpty()&&(!AxonRuntime.authorized(app,plan)||com.wds.sixstars.contextoverlay.tree.TreeRuntime.get(app).captureEpoch()!=references.treeEpoch()))
+            references=new AxonRuntime.Result("","Axon or Tree changed · no peer context");
+        return references;
     }
     static void testMovement(Context context,IntelligenceModel model,PoeticMovement.Input input,LocalFunctionGemmaProvider.MovementResult result){
         Context app=context.getApplicationContext();long submitted=SystemClock.elapsedRealtime();

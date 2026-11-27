@@ -143,7 +143,7 @@ public final class MeshActivity extends Activity {
         if(!lastConnectionState.isEmpty()&&!lastConnectionState.equals(state))
             invalidateDiagnostics("Local connection state changed. Test again for current details.");
         lastConnectionState=state;
-        connectionSummary.setText(summary+"\n"+AxonRuntime.status()+"\nAnalysis model: "+IntelligenceModel.selected(this).label);
+        connectionSummary.setText(summary+"\n"+AxonRuntime.status()+"\nAnalysis model: "+IntelligenceModel.selected(this).label+"\nAnalysis runs on: "+intelligenceLocation());
         refreshSavedAxon();
         updateDiagnosticActions();
         // Keep completed receive/start errors visible when returning to this screen.
@@ -160,6 +160,10 @@ public final class MeshActivity extends Activity {
                     count+" encrypted peer connection(s) saved. "+(useAxon.isChecked()?"Leave the invitation box empty to use them.":"Select Use saved .axon subscription to use them.")));
             }catch(Exception e){savedAxonStatus.setText(binding+"\nSaved access could not be opened. Paste a current invitation and Test connection to replace it.");}
         }catch(Exception e){savedAxonStatus.setText("Saved Axon could not be loaded. Use Bind / edit .axon with a current invitation to repair it.");}
+    }
+    private String intelligenceLocation(){
+        OverlayPreferences preferences=new OverlayPreferences(this);
+        return preferences.desktopIntelligenceEnabled()?"paired desktop · "+preferences.desktopIntelligenceUrl():"this device";
     }
     private void updateDiagnosticActions(){
         if(testConnection==null)return;
@@ -183,7 +187,7 @@ public final class MeshActivity extends Activity {
             renderedReport=MeshDiagnosticTemplates.report(this,report);
             connectionDetails.setText(renderedReport);
             connectionStatus.setText("Connection report ready.");
-            analysisOutput.setText("Ready to analyze with "+IntelligenceModel.selected(this).label+". The model receives connection checks; invitation credentials and published content are excluded.");
+            analysisOutput.setText("Ready to analyze with "+IntelligenceModel.selected(this).label+" on "+intelligenceLocation()+". The model receives connection checks; invitation credentials and published content are excluded.");
         }catch(Exception e){
             renderedReport="";connectionDetails.setText("");
             connectionStatus.setText("Could not render the connection report ("+e.getClass().getSimpleName()+").");
@@ -235,7 +239,7 @@ public final class MeshActivity extends Activity {
                 if(isDestroyed())return;busy=false;refresh();
                 if(revision!=diagnosticRevision){analysisOutput.setText("Setup changed during analysis. Run a fresh connection test.");return;}
                 analysisOutput.setText(error==null?"Intelligence interpretation\n"+message:
-                    "Intelligence unavailable: "+error+"\nThe measured connection report remains above. Download or select a model in Intelligence model settings.");
+                    "Intelligence unavailable: "+error+"\nThe measured connection report remains above. Check the selected model and connection in Intelligence model settings.");
             });}
         });
     }

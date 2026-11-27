@@ -37,7 +37,7 @@ public final class PoeticMovementActivity extends Activity {
         modelSelector.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
             public void onItemSelected(android.widget.AdapterView<?> parent,android.view.View view,int position,long id){
                 IntelligenceModel.values()[position].select(PoeticMovementActivity.this);
-                if(!busy&&status!=null)status.setText(LocalIntelligenceProvider.status(PoeticMovementActivity.this,IntelligenceModel.values()[position]));
+                if(!busy&&status!=null)status.setText(LocalIntelligenceProvider.localStatus(PoeticMovementActivity.this,IntelligenceModel.values()[position]));
             }
             public void onNothingSelected(android.widget.AdapterView<?> parent){}
         });
@@ -81,7 +81,7 @@ public final class PoeticMovementActivity extends Activity {
         if(busy)return;
         words=CryptoWordGenerator.generate();
         candidates.setText("Nouns: "+String.join(", ",words.nouns())+"\n\nVerbs: "+String.join(", ",words.verbs()));
-        selected.setText("Not run");resolved.setText("Not run");status.setText(LocalIntelligenceProvider.status(this,model()));
+        selected.setText("Not run");resolved.setText("Not run");status.setText(LocalIntelligenceProvider.localStatus(this,model()));
     }
     private void showCandidates(PoeticMovement.Input in){
         candidates.setText("Nouns: "+String.join(", ",in.nouns())+"\n\nVerbs: "+String.join(", ",in.verbs()));

@@ -80,9 +80,10 @@ are excluded from Android saved view state and autofill.
 ### Intelligence request templates
 
 **Analyze connection with intelligence** renders a compact diagnosis request and
-runs the selected downloaded local model through `LocalIntelligenceProvider`.
-The normal connection checks work without a model. The action uses ordinary local
-generation and does not depend on runtime Axon retrieval. The screen keeps the
+uses the selected inference route through `LocalIntelligenceProvider`: the
+downloaded local model by default, or the explicitly paired desktop intelligence
+listener on HTTPS 8221 when enabled in settings. The normal connection checks
+work without a model. The action does not depend on runtime Axon retrieval. The screen keeps the
 model's interpretation separate from the measured report, and shows model setup
 or queue errors without discarding the evidence.
 
@@ -92,7 +93,7 @@ shared `TextTemplates` loader:
 - `android/contextual-overlay/src/main/assets/templates/mesh_connection_report.mustache`
   renders the detailed on-screen and copyable report.
 - `android/contextual-overlay/src/main/assets/templates/mesh_connection_analysis.mustache`
-  renders the small request to the local model.
+  renders the small request to the selected intelligence model.
 
 Templates receive plain maps built from typed diagnostic records. The diagnosis
 request stays within the existing plain-text inference limit, preserves failures
