@@ -16,5 +16,8 @@ if errorlevel 1 (
 )
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-LanguageDetectorModel.ps1
 if errorlevel 1 exit /b %ERRORLEVEL%
-dotnet run --project src\Wds.Roots.Host -c Release -p:RunWorkingDirectory="%CD%" -- %ROOTS_LAN% %*
+dotnet build src\Wds.Roots.Host -c Release
+if errorlevel 1 exit /b %ERRORLEVEL%
+rem Run the actual host directly; do not leave dotnet run supervising it.
+dotnet "%CD%\src\Wds.Roots.Host\bin\Release\net9.0\Wds.Roots.Host.dll" %ROOTS_LAN% %*
 exit /b %ERRORLEVEL%
