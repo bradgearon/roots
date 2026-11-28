@@ -101,15 +101,22 @@ final class EncounterSync {
         stage="Binding handshake";
         if(client){
             send(capabilities("bind"));JSONObject reply=read();expect(reply,"bound");
-            binding=bindings.bind(channel.peerId);negotiate(reply,true);pull();serve();
+            binding=bindings.bind(channel.peerId);retainFootprints(reply);negotiate(reply,true);pull();serve();
         }else{
             JSONObject request=read();expect(request,"bind");binding=bindings.bind(channel.peerId);
-            send(capabilities("bound"));negotiate(request,false);serve();pull();
+            retainFootprints(request);send(capabilities("bound"));negotiate(request,false);serve();pull();
         }
         return received;
     }
     private JSONObject capabilities(String op)throws JSONException{
-        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_archives_v1",true).put("archive_channel_v2",true).put("lan_tls_v1",!directLan);
+        JSONObject hello=message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_archives_v1",true).put("archive_channel_v2",true).put("lan_tls_v1",!directLan);
+        try{hello.put("footprints_v1",PublicFootprints.get(context).offer(identity,channel.peerId));}
+        catch(Exception failure){android.util.Log.w("RootsMesh","Public footprint offer unavailable");}
+        return hello;
+    }
+    private void retainFootprints(JSONObject hello){
+        try{check();PublicFootprints.get(context).receive(hello.optJSONArray("footprints_v1"),channel.peerId,identity);}
+        catch(Exception failure){android.util.Log.w("RootsMesh","Public footprint retention unavailable");}
     }
     private void negotiate(JSONObject hello,boolean client)throws Exception{
         peerGraph=hello.optBoolean("root_graph",false);
