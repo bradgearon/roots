@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../Wds.Roots.Tree/Wds.Roots.Tree.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Wds.Roots.Tree/Wds.Roots.Tree.csproj" />
+    <Compile Include="../Wds.Roots.Host/Runtime/ChildProcessJob.cs" Link="Runtime/ChildProcessJob.cs" />
+    <Compile Include="../Wds.Roots.Host/Runtime/ConsoleShutdown.cs" Link="Runtime/ConsoleShutdown.cs" />
+  </ItemGroup>
 </Project>
