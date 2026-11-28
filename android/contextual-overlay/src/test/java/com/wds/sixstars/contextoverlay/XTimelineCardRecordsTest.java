@@ -60,7 +60,7 @@ public class XTimelineCardRecordsTest {
         var result=XTimelineCardRecords.assemble(nodes);
         assertTrue(result.posts().isEmpty()); // no fabricated identity
         assertEquals(question,result.primaryBodies().get("0/1").text());
-        assertEquals("ja",PostLanguage.hint(question,"en"));
+        assertEquals("ja",PostLanguage.resolve(question,"en","ja",.98,true));
     }
 
     @Test public void genericComposeQuestionSpanWorksWithoutVisibleHeader(){
@@ -70,6 +70,30 @@ public class XTimelineCardRecordsTest {
         var result=XTimelineCardRecords.assemble(List.of(card,body));
         assertEquals(2,result.primaryBodies().get("0/1").order());
         assertTrue(result.posts().isEmpty());
+    }
+
+    @Test public void selectsOuterAndNestedQuotesWithoutMergingTheirBodies(){
+        String outer="気をつけます!! 忘れずつけます!!";
+        String quote="生成AIテキストにも自動でつかないので注意が必要ですよ←";
+        String inner="Crap, I haven't mastered how to add AI-generated labels.";
+        List<XTimelineCardRecords.Node> nodes=new ArrayList<>();
+        nodes.add(node(1,"0/1","","",true,false,false,List.of()));
+        nodes.add(node(2,"0/1/1","","",false,true,false,List.of()));
+        nodes.add(node(3,"0/1/1/0","Shachi","",false,false,false,List.of()));
+        nodes.add(node(4,"0/1/1/1","@shachi","",false,false,false,List.of()));
+        nodes.add(node(5,"0/1/4",outer,"",false,false,true,List.of()));
+        nodes.add(node(6,"0/1/5/0","","",false,true,false,List.of()));
+        nodes.add(node(7,"0/1/5/0/0","AkiWeb","",false,false,false,List.of()));
+        nodes.add(node(8,"0/1/5/1",quote,"",false,false,true,List.of()));
+        nodes.add(node(9,"0/1/5/2/0","","",false,true,false,List.of()));
+        nodes.add(node(10,"0/1/5/2/0/0","Shachi","",false,false,false,List.of()));
+        nodes.add(node(11,"0/1/5/2/1",inner,"",false,false,true,List.of()));
+        var result=XTimelineCardRecords.assemble(nodes);
+        assertEquals(outer,result.primaryBodies().get("0/1").text());
+        assertEquals(quote,result.quotedBodies().get("0/1/5/1").text());
+        assertEquals(inner,result.quotedBodies().get("0/1/5/2/1").text());
+        assertEquals(1,result.posts().size());
+        assertEquals(outer,result.posts().get(0).body());
     }
 
     @Test public void quotedPostDoesNotSupplyParentPermalink(){
