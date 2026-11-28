@@ -47,6 +47,7 @@ Working names (Doxa, Gardens, Resonance, Poetic Field, Kairos and Tendrils) are 
 ## Decentralized cognitive web and optional economy
 
 - [root:// protocol](root-protocol.md): stable knowledge addresses, local/peer resolution and browser experience.
+- [External Mesh Network Explorer](network-explorer.md): compact signed public footprints, sequential directory browsing, replicated directory pages and Internet resolution roadmap.
 - [Whirlwind exchange](whirlwind-exchange.md): the BitTorrent-inspired distribution and reciprocal development network; not a separate Torrent concept.
 - [Developing neural intelligence](developing-neural-intelligence.md): selective Engram AI reuse, teacher/student learning, micro-fragment research and poetic styles.
 - [Economy and bounties](economy-bounties.md): creator/friend payments, shared income, work contracts, optional attestations and settlement. Financial participation is independent from knowledge, Doxa and fellowship.
