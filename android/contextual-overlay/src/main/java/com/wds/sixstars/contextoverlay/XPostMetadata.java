@@ -54,8 +54,11 @@ final class XPostMetadata {
         Bundle read(AccessibilityNodeInfo node,boolean diagnostic){
             Bundle result=new Bundle();
             if(remaining<=0)return result;
-            List<String> keys=node.getAvailableExtraData();
-            if(keys==null)return result;
+            List<String> advertised=node.getAvailableExtraData();
+            if(advertised==null)return result;
+            List<String> keys=new java.util.ArrayList<>(advertised);
+            // Real post metadata has priority over framework-only identifiers.
+            keys.sort(java.util.Comparator.comparingInt(key->remoteKey(key)?0:TEST_TAG.equals(key)?1:2));
             for(String key:keys){
                 if(remaining<=0)break;
                 if(!remoteKey(key)&&!TEST_TAG.equals(key)&&!(diagnostic&&SEMANTICS_ID.equals(key)))continue;
