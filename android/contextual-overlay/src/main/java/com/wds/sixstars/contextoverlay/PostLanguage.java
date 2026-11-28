@@ -1,8 +1,7 @@
 package com.wds.sixstars.contextoverlay;
 
 import java.text.Normalizer;
-import java.util.Locale;
-import java.util.regex.Pattern;
+ import java.util.regex.Pattern;
 
 /** The model determines language. An explicit source attribute is a hint,
  * never a replacement for a classifier result. Normalize stylized letters
@@ -16,9 +15,7 @@ final class PostLanguage {
             .replaceFirst("(?i)(?:…|\\.\\.\\.)?\\s*show more\\s*$","").trim();
     }
     static String code(String value){
-        if(value==null)return "";
-        String code=value.trim().toLowerCase(Locale.ROOT).replace('_','-').split("-",2)[0];
-        return code.matches("[a-z]{2,3}")&&!code.equals("und")?code:"";
+        return TranslationLanguages.detectedCode(value);
     }
     static int letters(String text){return (int)clean(text).codePoints().filter(Character::isLetter).count();}
     static String hint(String text,String reported){return code(reported);}

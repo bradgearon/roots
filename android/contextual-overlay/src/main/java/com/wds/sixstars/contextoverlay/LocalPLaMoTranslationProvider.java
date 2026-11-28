@@ -123,7 +123,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
     @Override public void translate(String text,String source,String target,Result callback) {
         if(callback==null)return;
         if(!new OverlayPreferences(app).enabled()){callback.completed(null,"Grant X text processing consent first.");return;}
-        if(text==null || text.trim().isEmpty() || text.length()>1200 || target==null || !target.matches("[a-z]{2,3}") || text.contains("<|plamo:")){callback.completed(null,"Invalid translation request.");return;}
+        if(text==null || text.trim().isEmpty() || text.length()>1200 || !TranslationLanguages.isModelLanguage(target) || text.contains("<|plamo:")){callback.completed(null,"Invalid translation request.");return;}
         long submitted=SystemClock.elapsedRealtime();
         try{WORK.execute(()->{
             long started=SystemClock.elapsedRealtime();
@@ -155,8 +155,9 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                     loadedAcceleration=Native.accelerationInfo();
                     trace(app,stage,"ok",loadStart,"runtime="+revision+" "+loadedAcceleration);
                 }
+                String sourceCode=TranslationLanguages.sourceCode(source);
                 String prompt="<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input"+
-                    (source!=null&&source.matches("[a-z]{2,3}")?"<|plamo:key|>lang<|plamo:val|>"+source:"")+
+                    (!sourceCode.isEmpty()?"<|plamo:key|>lang<|plamo:val|>"+sourceCode:"")+
                     "<|plamo:msg|>"+text+"<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>"+target+"<|plamo:msg|>";
                 stage="inference";
                 callback.started();

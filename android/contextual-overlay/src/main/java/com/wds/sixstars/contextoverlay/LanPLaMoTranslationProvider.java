@@ -57,7 +57,7 @@ public final class LanPLaMoTranslationProvider implements TranslationProvider {
             callback.completed(null, "Text is empty or too long.");
             return;
         }
-        if (!targetLanguage.matches("(?i)[a-z]{2,3}")) {
+        if (targetLanguage == null || !TranslationLanguages.isModelLanguage(targetLanguage.toLowerCase(java.util.Locale.ROOT))) {
             callback.completed(null, "Invalid target language.");
             return;
         }
@@ -94,9 +94,9 @@ public final class LanPLaMoTranslationProvider implements TranslationProvider {
                 JSONObject payload = new JSONObject();
                 payload.put("text", content);
                 payload.put("targetLang", targetLanguage.toLowerCase(java.util.Locale.ROOT));
-                if (sourceLanguageHint != null &&
-                        sourceLanguageHint.matches("(?i)[a-z]{2,3}")) {
-                    payload.put("sourceLang", sourceLanguageHint.toLowerCase(java.util.Locale.ROOT));
+                String sourceCode = TranslationLanguages.sourceCode(sourceLanguageHint);
+                if (!sourceCode.isEmpty()) {
+                    payload.put("sourceLang", sourceCode);
                 }
                 payload.put("maxTokens", 768);
 

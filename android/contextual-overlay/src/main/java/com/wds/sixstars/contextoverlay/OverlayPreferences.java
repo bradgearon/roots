@@ -114,10 +114,12 @@ public final class OverlayPreferences {
     public void setShowTranslationActivity(boolean value) { prefs.edit().putBoolean("show_translation_activity",value).apply(); }
     public boolean autoPreview() { return prefs.getBoolean(AUTO_PREVIEW, false); }
     public void setAutoPreview(boolean value) { prefs.edit().putBoolean(AUTO_PREVIEW, value).apply(); }
-    public String targetLanguage() { return prefs.getString(TARGET, "en"); }
+    public String targetLanguage() {
+        String saved = prefs.getString(TARGET, "en");
+        return TranslationLanguages.isTarget(saved) ? saved : "en";
+    }
     public void setTargetLanguage(String language) {
-        if (!"en".equals(language) && !"es".equals(language) && !"fr".equals(language)
-                && !"de".equals(language) && !"ja".equals(language)) {
+        if (!TranslationLanguages.isTarget(language)) {
             throw new IllegalArgumentException("Unsupported target language");
         }
         prefs.edit().putString(TARGET, language).apply();

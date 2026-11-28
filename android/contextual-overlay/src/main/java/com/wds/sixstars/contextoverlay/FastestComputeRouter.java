@@ -154,7 +154,7 @@ final class FastestComputeRouter implements TranslationProvider {
     @Override public void translateChecked(String text,String source,String target,boolean name,boolean automatic,Result callback){
         if(callback==null)return;
         if(!prefs.enabled()){callback.completed(null,"Translation permission is off.");return;}
-        if(text==null||text.trim().isEmpty()||text.length()>1200||target==null||!target.matches("[a-z]{2,3}")||text.contains("<|plamo:")){
+        if(text==null||text.trim().isEmpty()||text.length()>1200||!TranslationLanguages.isModelLanguage(target)||text.contains("<|plamo:")){
             callback.completed(null,"Invalid translation request.");return;
         }
         AtomicBoolean finished=new AtomicBoolean();
@@ -196,7 +196,7 @@ final class FastestComputeRouter implements TranslationProvider {
                 return;
             }
             // A manual request can still ask PLaMo to infer an uncertain language.
-            final String effectiveSource=language;
+            final String effectiveSource=TranslationLanguages.sourceCode(language);
             // Scheduling decides which post is next, never where to run it.
             // A paired desktop is primary for all text sizes and both visible
             // and retained/off-screen work. Only an actual failed/busy request
@@ -232,7 +232,8 @@ final class FastestComputeRouter implements TranslationProvider {
         InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin("Desktop","PLaMo","Translation","Paired desktop route");
         try{
             JSONObject input=new JSONObject().put("text",text).put("targetLang",target).put("maxTokens",768);
-            if(source!=null&&source.matches("[a-z]{2,3}"))input.put("sourceLang",source);
+            String sourceCode=TranslationLanguages.sourceCode(source);
+            if(!sourceCode.isEmpty())input.put("sourceLang",sourceCode);
             status="Paired desktop PLaMo · TLS";
             JSONObject reply=socket.translate(network,base,key,new JSONObject().put("kind","translate").put("request",input),()->{
                 attempt.running("Sent");callback.started();
