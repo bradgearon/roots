@@ -4,9 +4,59 @@ const status=value=>{el("message").textContent=value;};
 let latest=null,beforeMs=0,beforeSequence=0,loading=false,refreshing=false,generation=0,query="",mode="records";
 let selectedSource="knowledge",selectedAgent=0,pages=0,viewRevision=null,viewRefreshing=false,viewEpoch=0;
 let invitations=[],inviteSignature="",peerSignature="",branchSignature="";
+// This code runs only in the trusted extension Tree page. A previously
+// loaded MV3 worker may not recognize newly added view commands. On that
+// explicit rejection, use the same token-authenticated loopback routes.
+// Never fall back after an ambiguous timeout or failed write.
+async function localViewCommand(operation,args){
+  if(location.href.split(/[?#]/)[0]!==chrome.runtime.getURL("tree.html"))return {ok:false,error:"untrusted_sender"};
+  const source=args.source;
+  if(source!=="experience"&&source!=="knowledge")return {ok:false,error:"invalid_source"};
+  let path="/view/"+source,method="GET",body,timeout=10000;
+  const positive=v=>Number.isSafeInteger(v)&&v>0?v:0;
+  switch(operation){
+    case "viewStatus":path+="/status";break;
+    case "viewRecords":case "viewFeed":{
+      const params=new URLSearchParams({term:String(args.term||"").slice(0,512),
+        beforeMs:String(positive(args.beforeMs)),beforeSequence:String(positive(args.beforeSequence)),
+        agent:String(positive(args.agent)),limit:"30"});
+      path+=(operation==="viewRecords"?"/records":"/feed")+"?"+params;break;
+    }
+    case "viewWeights":
+      if(!positive(args.sequence))return {ok:false,error:"invalid_sequence"};
+      path+="/weights/"+args.sequence;break;
+    case "viewBranches":path+="/branches";break;
+    case "viewAddBranch":
+      path+="/branches";method="POST";body={name:String(args.name||"").slice(0,160),term:String(args.term||"").slice(0,512)};break;
+    case "viewRemoveBranch":
+      if(!positive(args.id))return {ok:false,error:"invalid_branch"};
+      path+="/branches/"+args.id;method="DELETE";break;
+    case "viewCompile":
+      path+="/compile";method="POST";body={language:String(args.language||"en").slice(0,3)};timeout=60000;break;
+    default:return {ok:false,error:"invalid_operation"};
+  }
+  const settings=await chrome.storage.local.get(["token"]);
+  if(typeof settings.token!=="string"||!/^[0-9a-f]{64}$/i.test(settings.token))return {ok:false,error:"configure_token"};
+  try{
+    const response=await fetch("http://127.0.0.1:8224/api/tree/v1"+path,{
+      method,headers:{"Content-Type":"application/json","X-SixStars-Token":settings.token},
+      credentials:"omit",redirect:"error",cache:"no-store",body:body===undefined?undefined:JSON.stringify(body),
+      signal:AbortSignal.timeout(timeout)
+    });
+    const data=await response.json().catch(()=>({}));
+    return {...data,ok:response.ok&&data.ok!==false,error:response.ok?data.error:(data.error||"HTTP "+response.status)};
+  }catch{return {ok:false,error:"tree_service_unavailable"};}
+}
 async function command(operation,args={}){
-  const result=await chrome.runtime.sendMessage({type:"rootsTreeCommand",operation,...args});
-  if(!result?.ok)throw new Error(result?.error||"Desktop Tree unavailable");
+  let result=await chrome.runtime.sendMessage({type:"rootsTreeCommand",operation,...args});
+  if(result?.error==="invalid_operation"&&operation.startsWith("view"))
+    result=await localViewCommand(operation,args);
+  if(!result?.ok){
+    const error=result?.error||"Desktop Tree unavailable";
+    if(error==="invalid_operation")throw new Error("Extension worker is out of date. Reload Roots at chrome://extensions and reopen Tree.");
+    if(error==="HTTP 404"&&operation.startsWith("view"))throw new Error("Restart the updated Roots desktop host (launch.cmd). The source-view API is missing.");
+    throw new Error(error);
+  }
   return result;
 }
 function node(tag,value,cls){
