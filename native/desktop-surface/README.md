@@ -8,26 +8,34 @@ From the repository root:
 
 ```cmd
 build-surface.cmd
-launch-surface.cmd --capture MyGame.exe --ocr
+launch-surface.cmd
 launch-surface.cmd --status
 launch-surface.cmd --search "gate"
 ```
 
-Replace MyGame.exe with an executable you explicitly authorize. Without --ocr,
-the native worker reads only visible static UI Automation text. --ocr enables
-the WGC/OCR fallback for windows with no usable semantic text, provided the
-accessibility traversal completes and does not expose editable, password or
+Start the watcher once and confirm the visible consent prompt. It automatically
+follows the currently focused eligible application; it never launches, injects
+into, or controls that application. No executable name is required. Switch
+between already-running programs normally. The foreground window is the initial
+capture scope, not every monitor, occluded/background window or entire desktop.
+
+Optional controls: `launch-surface.cmd --capture --exclude private-app.exe`
+adds an exclusion; repeat --exclude for multiple executables.
+`launch-surface.cmd --capture --no-ocr` uses UI Automation only.
+By default the native worker reads visible static UI Automation text and enables
+WGC/OCR fallback when built with OCR support, for windows with no usable semantic
+text whose accessibility traversal completes without editable, password or
 document controls. It uses the Windows OCR engine from installed profile
-languages, not a new LLM. If an OCR language pack, GPU or capture permission is
-missing, the window can remain uncovered. Windows OCR coordinates are capture
-pixels; UIA coordinates are desktop pixels. Neither is yet used to paint.
+languages, not a new LLM. Missing language packs, unsupported GPU/capture
+or inaccessible windows may leave coverage gaps. Windows OCR coordinates
+are capture pixels; UIA coordinates are desktop pixels. Neither is yet used to paint.
 
 This milestone is experimental, not a broad desktop capture release. Keep the
-visible console open and press Ctrl+C to stop. The allowed executable names are
-explicit on every start. Avoid private or confidential content in selected
-applications, especially when testing OCR; a pixel OCR engine cannot reliably
+visible console open and press Ctrl+C to stop. Pause or stop capture before opening private content; OCR cannot reliably
 recognize every sensitive surface. Common browsers, terminals, password managers,
-credential UI and Roots processes are excluded from the native lane. The later
+credential UI, messaging/email clients, remote desktops and Roots processes
+are excluded from the native lane. These exclusions are best-effort, not a
+guarantee of detecting every confidential application. The later
 browser lane will use the existing extension and authorized DOM rather than
 duplicating native collection. No key/clipboard/microphone collection, no injection
 or protected capture bypass. Use an ordinary desktop/borderless game.
@@ -36,8 +44,9 @@ The native agent monitors foreground transitions, verifies process creation time
 and window identity, checks lock/input desktop, records bounded focused/idle
 spans, and samples static text at approximately 1 Hz. It revalidates the source
 before forwarding any observation. UIA traversal and WGC frame pool are bounded,
-and OCR uses temporary memory only. The initial implementation does not capture
-while the input idle threshold is exceeded; active time is not work/billable time.
+and OCR uses temporary memory only. Input idle status is recorded independently of text observation: an unlocked
+screen may still be presenting a cutscene or movie. Secure desktop and lock
+boundaries still suspend capture. Active time is not work/billable time.
 No screenshot, recording, raw PCM or image archive is created. Repeated visible
 text at the same coordinates is suppressed until it changes/disappears or the
 source changes.
