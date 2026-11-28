@@ -16,7 +16,7 @@ public final class NetworkExplorerActivity extends Activity {
     private EditText query;
     private TextView status,policy,searchButton;
     private LinearLayout nearby,remote;
-    private boolean busy,closed;
+    private boolean busy,closed,initialBrowse;
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
         LinearLayout shell=RootsUi.shell(this);shell.addView(RootsUi.header(this,"Network Explorer","External Mesh · shared brain"));
@@ -37,7 +37,7 @@ public final class NetworkExplorerActivity extends Activity {
         remote=RootsUi.column(this);internet.addView(remote);
         shell.addView(RootsUi.action(this,"‹ Roots Mesh",this::finish));
         RootsUi.styleInputs(this,shell);setContentView(shell);
-        if(!ExternalDirectory.seeds(this).isEmpty())search();
+        if(!ExternalDirectory.seeds(this).isEmpty())initialBrowse=true;
         else status.setText("Configure an external bootstrap node to browse the Internet directory. Nearby bindings work without Internet.");
     }
     @Override protected void onResume(){
@@ -47,6 +47,7 @@ public final class NetworkExplorerActivity extends Activity {
             var snapshot=EncounterBindings.get(this).snapshot();
             runOnUiThread(()->{if(!closed)renderNearby(snapshot);});
         });
+        if(initialBrowse){initialBrowse=false;search();}
     }
     private void configure(){
         EditText field=new EditText(this);field.setText(ExternalDirectory.seeds(this));field.setHint("/ip4/…/tcp/8240/p2p/…");field.setMinLines(3);

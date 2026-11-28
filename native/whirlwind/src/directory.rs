@@ -229,14 +229,14 @@ mod tests{
     #[test]fn signed_card_checks_identity_and_expiry(){
         let key=p2p_key(&[2;32],true).unwrap();
         let (card,data)=sign(&key,&Publication{name:"Music".into(),topics:vec!["MUSIC".into(),"music".into()]},1000).unwrap();
-        assert_eq!(card.topics,vec!["music"]);
+        assert_eq!(card.topics,vec!["music".to_owned()]);
         assert_eq!(verify(&data,key.public().to_peer_id(),1001).unwrap(),card);
         assert!(verify(&data,p2p_key(&[3;32],true).unwrap().public().to_peer_id(),1001).is_err());
         assert!(verify(&data,key.public().to_peer_id(),1000+TTL).is_err());
         let mut envelope:SignedCard=serde_json::from_slice(&data).unwrap();
         let first=if envelope.signature.starts_with("00"){"01"}else{"00"};envelope.signature.replace_range(..2,first);
         let changed=serde_json::to_vec(&envelope).unwrap();
-        if changed!=data{assert!(verify(&changed,key.public().to_peer_id(),1001).is_err());}
+        assert_ne!(changed,data);assert!(verify(&changed,key.public().to_peer_id(),1001).is_err());
     }
     #[test]fn index_tags_are_bounded(){assert!(topic("Private prompt text").is_err());assert_eq!(topic("MUSIC").unwrap(),"music");}
 }

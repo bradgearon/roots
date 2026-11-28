@@ -55,7 +55,7 @@ pub extern "system" fn Java_com_wds_sixstars_contextoverlay_DesktopWhirlwind_nat
 
 #[no_mangle]
 pub extern "system" fn Java_com_wds_sixstars_contextoverlay_ExternalDirectory_nativeSearch(mut env:JNIEnv,_:JClass,context:JObject,bytes:JByteArray,seeds:JString,query:JString)->jstring{
-    let result=(||{
+    let result:Result<String>=(||{
         init(&env,&context)?;
         let seeds:String=env.get_string(&seeds)?.into();
         let query:String=env.get_string(&query)?.into();

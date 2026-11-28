@@ -63,14 +63,14 @@ final class ExternalDirectory {
                 long expires=row.getLong("expires");if(expires<=System.currentTimeMillis()/1000L)continue;
                 cards.add(new Card(peer,name,strings(row.getJSONArray("topics"),12),row.getLong("revision"),expires,strings(row.getJSONArray("capabilities"),8)));
             }
-            return new Result(List.copyOf(cards),json.getBoolean("partial"));
+            return new Result(Collections.unmodifiableList(cards),json.getBoolean("partial"));
         }finally{Arrays.fill(key,(byte)0);}
     }
     private static List<String> strings(JSONArray array,int max)throws Exception{
         if(array.length()>max)throw new IOException("Directory field too large");
         List<String> result=new ArrayList<>();
         for(int i=0;i<array.length();i++){String value=array.getString(i);if(value.length()>48)throw new IOException("Directory tag too large");result.add(value);}
-        return List.copyOf(result);
+        return Collections.unmodifiableList(result);
     }
     private static native String nativeSearch(Context c,byte[] seed,String seeds,String query)throws IOException;
 }
