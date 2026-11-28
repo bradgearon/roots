@@ -7,7 +7,7 @@
   const MAX_LINES=80, MAX_CHARS=16000, MAX_NODES=3000;
   const excluded="input,textarea,select,option,button,form,script,style,noscript,template,[contenteditable]:not([contenteditable='false']),[role='textbox'],[role='combobox'],[aria-hidden='true'],[hidden],[inert],[data-roots-private]";
   let lastSignature="",lastSent=0,busy=false;
-  const documentKey=crypto.randomUUID();
+  const documentKey=crypto.randomUUID?.()??Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,"0")).join("").replace(/^(........)(....)(....)(....)(............)$/,"$1-$2-$3-$4-$5");
   function eligible(el){
     if(!el||el.closest(excluded)||el.isContentEditable)return false;
     for(let p=el;p;p=p.parentElement){
