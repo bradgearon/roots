@@ -24,6 +24,7 @@ public final class EncounterService extends Service {
     static final UUID SERVICE=UUID.fromString("7d6f6f74-732d-4c45-9a01-000000000001");
     static final UUID PSM=UUID.fromString("7d6f6f74-732d-4c45-9a01-000000000002");
     static final UUID COORD=UUID.fromString("7d6f6f74-732d-4c45-9a01-000000000003");
+    static final UUID LAN_ROUTE=UUID.fromString("7d6f6f74-732d-4c45-9a01-000000000004");
     private static final String CHANNEL="roots_encounter",KEY_ALIAS="roots.encounter.sign.v1";
     private static final int NOTIFICATION=8234;
     private static volatile String status="Waiting to start",lastResult="No encounter yet",activePeer="";
@@ -31,6 +32,8 @@ public final class EncounterService extends Service {
     private static volatile boolean started;
     private final Handler main=new Handler(Looper.getMainLooper());
     private volatile Radio radio;
+    private volatile EncounterLanEndpoint lanEndpoint;
+    private final AtomicBoolean transferGate=new AtomicBoolean();
     private volatile boolean running;
     private boolean receiverRegistered;
     private int retrySeconds=5;
@@ -45,6 +48,9 @@ public final class EncounterService extends Service {
     static String status(){return status;}
     static String lastResult(){return lastResult;}
     static String activePeer(){return activePeer;}
+    static void lanActive(String peer){activePeer=peer;status="Wi-Fi Axon exchange";}
+    static void lanProgress(String message){status=message;}
+    static void lanFinished(String peer,String message){if(peer.equals(activePeer))activePeer="";lastResult=message;status="On · discovering Axons";}
     static void noteStartDeferred(){if(!started)status="Start deferred by Android · resumes when Roots opens";}
     static boolean available(Context c){return Build.VERSION.SDK_INT>=31&&c.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE);}
     static String requestReceive(Context context){
@@ -65,6 +71,7 @@ public final class EncounterService extends Service {
     static void disconnectPeer(String id){
         EncounterService service=instance;Radio r=service==null?null:service.radio;
         if(r!=null&&id.equals(activePeer))r.interruptSession(id);
+        if(service!=null&&service.lanEndpoint!=null)service.lanEndpoint.disconnect(id);
     }
     @Override public IBinder onBind(Intent intent){return null;}
     @Override public int onStartCommand(Intent intent,int flags,int startId){
@@ -88,6 +95,8 @@ public final class EncounterService extends Service {
             else registerReceiver(bluetoothState,filter);
             receiverRegistered=true;
             ExternalTreeImport.schedule(this);
+            try{lanEndpoint=new EncounterLanEndpoint(this,identity(),transferGate,()->running&&EncounterSettings.eligible(this));lanEndpoint.start();}
+            catch(Exception failure){android.util.Log.w("RootsEncounter","Public LAN endpoint unavailable",failure);}
             ensureRadio();
             return START_STICKY;
         }catch(Exception failure){status="Could not start nearby exchange";stopSelf();return START_NOT_STICKY;}
@@ -141,7 +150,8 @@ public final class EncounterService extends Service {
         private final BluetoothAdapter adapter;
         private final ExecutorService outbound=Executors.newSingleThreadExecutor(),inbound=Executors.newSingleThreadExecutor();
         private final ScheduledExecutorService timer=Executors.newSingleThreadScheduledExecutor();
-        private final AtomicBoolean busy=new AtomicBoolean(),sessionGate=new AtomicBoolean();
+        private final AtomicBoolean busy=new AtomicBoolean();
+        private final AtomicBoolean sessionGate=transferGate;
         private final Map<String,Long> cooldown=new LinkedHashMap<>();
         private final byte[] rank=new byte[8];
         private final Random jitter=new SecureRandom();
@@ -209,7 +219,7 @@ public final class EncounterService extends Service {
                     BluetoothGattServer current=gattServer;if(!active()||current==null)return;
                     try{
                         UUID id=characteristic.getUuid();
-                        byte[] value=PSM.equals(id)?new byte[]{(byte)(psm>>>8),(byte)psm}:COORD.equals(id)&&scanning?rank:null;
+                        byte[] value=PSM.equals(id)?new byte[]{(byte)(psm>>>8),(byte)psm}:COORD.equals(id)&&scanning?rank:LAN_ROUTE.equals(id)&&lanEndpoint!=null?lanEndpoint.hint():null;
                         if(value==null){current.sendResponse(device,requestId,BluetoothGatt.GATT_FAILURE,offset,null);return;}
                         if(offset<0||offset>value.length){current.sendResponse(device,requestId,BluetoothGatt.GATT_INVALID_OFFSET,offset,null);return;}
                         current.sendResponse(device,requestId,BluetoothGatt.GATT_SUCCESS,offset,Arrays.copyOfRange(value,offset,value.length));
@@ -222,6 +232,7 @@ public final class EncounterService extends Service {
             BluetoothGattService service=new BluetoothGattService(SERVICE,BluetoothGattService.SERVICE_TYPE_PRIMARY);
             service.addCharacteristic(new BluetoothGattCharacteristic(PSM,BluetoothGattCharacteristic.PROPERTY_READ,BluetoothGattCharacteristic.PERMISSION_READ));
             service.addCharacteristic(new BluetoothGattCharacteristic(COORD,BluetoothGattCharacteristic.PROPERTY_READ,BluetoothGattCharacteristic.PERMISSION_READ));
+            service.addCharacteristic(new BluetoothGattCharacteristic(LAN_ROUTE,BluetoothGattCharacteristic.PROPERTY_READ,BluetoothGattCharacteristic.PERMISSION_READ));
             if(!gatt.addService(service))throw new IOException("GATT registration failed");
             while(active()){
                 BluetoothSocket incoming=server.accept();incomingSocket=incoming;
@@ -373,7 +384,7 @@ public final class EncounterService extends Service {
     private static void closeGattServer(BluetoothGattServer value){if(value!=null)try{value.close();}catch(Exception ignored){}}
     @Override public void onDestroy(){
         running=false;started=false;activePeer="";if(instance==this)instance=null;
-        main.removeCallbacks(retry);closeRadio();
+        main.removeCallbacks(retry);EncounterLanEndpoint endpoint=lanEndpoint;lanEndpoint=null;if(endpoint!=null)endpoint.close();closeRadio();
         if(receiverRegistered)try{unregisterReceiver(bluetoothState);}catch(Exception ignored){}
         stopForeground(STOP_FOREGROUND_REMOVE);
         status=EncounterSettings.enabled(this)?"On · waiting for Android to resume service":"Off";

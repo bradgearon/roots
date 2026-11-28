@@ -15,6 +15,7 @@ final class EncounterSync {
     static final int PAGE=32,MAX_ITEMS=8,MAX_IDS=64;
     private EncounterChannel channel;
     private final java.security.KeyPair identity;
+    private final boolean directLan;
     private EncounterLanUpgrade.Upgrade upgrade;
     private final java.util.function.Consumer<String> progress;
     private final java.util.function.Consumer<java.io.Closeable> trackTransport;
@@ -56,8 +57,13 @@ final class EncounterSync {
 
     EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active,java.security.KeyPair identity,
                   java.util.function.Consumer<String> progress,java.util.function.Consumer<java.io.Closeable> trackTransport)throws Exception{
+        this(context,channel,active,identity,progress,trackTransport,false);
+    }
+    EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active,java.security.KeyPair identity,
+                  java.util.function.Consumer<String> progress,java.util.function.Consumer<java.io.Closeable> trackTransport,boolean directLan)throws Exception{
         this.context=context.getApplicationContext();this.channel=channel;this.active=active;bindings=EncounterBindings.get(context);
-        this.identity=identity;this.progress=progress;this.trackTransport=trackTransport;
+        this.identity=identity;this.progress=progress;this.trackTransport=trackTransport;this.directLan=directLan;
+        if(directLan)transport="Wi-Fi";
         automaticScope=EncounterSettings.automaticPublication(context);fullScope=EncounterSettings.fullRootGraph(context);
         tree=TreeRuntime.get(context);epoch=tree.captureEpoch();check();
         external=ExternalKnowledgeStore.get(context);
@@ -99,14 +105,15 @@ final class EncounterSync {
         return received;
     }
     private JSONObject capabilities(String op)throws JSONException{
-        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("lan_upgrade_v1",true);
+        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("lan_upgrade_v1",!directLan);
     }
     private void negotiate(JSONObject hello,boolean client)throws Exception{
         peerGraph=hello.optBoolean("root_graph",false);
         peerBulk=peerGraph&&hello.optBoolean("bulk_receive_v1",false);
         if(peerGraph){maxItems=32;maxIds=256;maxPages=9;}
         if(peerBulk){maxItems=128;maxIds=2048;maxPages=65;}
-        if(peerBulk&&hello.optBoolean("lan_upgrade_v1",false)){
+        if(peerBulk&&directLan){maxItems=4096;maxIds=65536;maxPages=2049;}
+        if(peerBulk&&!directLan&&hello.optBoolean("lan_upgrade_v1",false)){
             stage="Negotiating local bulk connection";
             progress.accept("Axon bound · negotiating Wi-Fi transfer");
             upgrade=EncounterLanUpgrade.negotiate(context,channel,identity,client,active);
