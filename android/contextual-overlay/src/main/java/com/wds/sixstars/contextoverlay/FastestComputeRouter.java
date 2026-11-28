@@ -189,7 +189,7 @@ final class FastestComputeRouter implements TranslationProvider {
                     try{
                         JSONObject detected=socket.detect(network,base,key,PostLanguage.clean(text));
                         if(authorized(base,key)&&network.equals(wifi()))
-                            language=detected.optBoolean("reliable",false)&&detected.optDouble("confidence",0)>=(name?.90:.70)
+                            language=detected.optBoolean("reliable",false)&&detected.optDouble("confidence",0)>=.70
                                 ?PostLanguage.code(detected.optString("language")):"";
                     }catch(Exception unavailable){
                         detectorRetryAfter=SystemClock.elapsedRealtime()+15000;
