@@ -33,13 +33,13 @@ public final class MeshActivity extends Activity {
     private TextView savedAxonStatus,boundConnectionStatus,nearbyStatus,subscriptionStatus;
     private LinearLayout subscriptionRows;
     private String shownSubscriptions="";
-    private final Runnable subscriptionObserver=()->runOnUiThread(()->{
-        if(foreground&&!isDestroyed()){refreshNearbyStatus();refreshSavedAxon();}
-    });
     private static final long REFRESH_MS=30000;
     private static final ExecutorService CONNECTION_REFRESH=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsAxonRefresh");t.setDaemon(true);return t;});
     private final android.os.Handler refreshHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     private volatile boolean foreground;
+    private final Runnable subscriptionObserver=()->runOnUiThread(()->{
+        if(foreground&&!isDestroyed()){refreshNearbyStatus();refreshSavedAxon();}
+    });
     private final Runnable servingObserver=()->runOnUiThread(()->{if(foreground&&!isDestroyed())refresh();});
     private boolean refreshing,clearingSavedInvite;
     private volatile int foregroundGeneration;
