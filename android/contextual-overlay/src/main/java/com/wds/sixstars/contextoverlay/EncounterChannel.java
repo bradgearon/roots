@@ -9,57 +9,74 @@ import java.util.Arrays;
 import javax.crypto.*;
 import javax.crypto.spec.*;
 
-/** REP/1 public Axon channel. Retain the original encrypted bind negotiation
- * for old peers; mutually capable peers switch to authenticated plaintext
- * public messages and whole compressed archives. No confidentiality is
- * promised for public knowledge. Private Mesh and GPU transports are separate. */
+/** Public Axon messages over a single protected connection.
+ * REP/1 is the existing authenticated BLE connection; REP/2 is application
+ * framing and identity proof over standard TLS. Archives are not separately
+ * encrypted. The TLS path has no additional cipher or MAC. */
 final class EncounterChannel {
-    static final int MAX_FRAME=65536; // Legacy REP message limit only.
-    private static final int PUBLIC_CONTROL_MAX=1024*1024;
-    private static final byte[] PUBLIC_LABEL="Roots public plaintext v1".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] PUBLIC_KEY_LABEL="Roots REP public integrity key v1".getBytes(StandardCharsets.US_ASCII);
-    private static final int MAGIC=0x52455031;
+    static final int MAX_FRAME=65536; // Legacy BLE control messages only.
+    private static final int TLS_CONTROL_MAX=1024*1024;
+    private static final int MAGIC=0x52455031,TLS_MAGIC=0x52455032;
     private static final byte[] LABEL="Roots REP/1 handshake".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] TLS_LABEL="Roots REP/2 TLS identity".getBytes(StandardCharsets.US_ASCII);
     private final DataInputStream in;
     private final DataOutputStream out;
     private final SecretKeySpec sendKey,receiveKey;
+    private final boolean tlsTransport;
     final String peerId;
     private long sent,received;
-    private byte[] publicSend,publicReceive;
-    boolean publicPlaintext(){return publicSend!=null;}
-    void enablePublicPlaintext()throws GeneralSecurityException{
-        if(publicPlaintext())return;
-        publicSend=hmac(sendKey.getEncoded(),PUBLIC_KEY_LABEL);
-        publicReceive=hmac(receiveKey.getEncoded(),PUBLIC_KEY_LABEL);
-    }
-    private static Mac publicMac(byte[] key,long sequence,int length)throws GeneralSecurityException{
-        if(sequence<0||sequence==Long.MAX_VALUE)throw new GeneralSecurityException("REP sequence exhausted");
-        Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(key,"HmacSHA256"));
-        mac.update(PUBLIC_LABEL);mac.update(ByteBuffer.allocate(12).putLong(sequence).putInt(length).array());
-        return mac;
-    }
-    private void sendPlain(byte[] data,int limit)throws Exception{
-        if(!publicPlaintext()||data.length<1||data.length>limit)throw new IOException("Invalid public payload length");
-        Mac mac=publicMac(publicSend,sent,data.length);
-        mac.update(data);
-        // One length, one unencrypted payload, one integrity tag. The stream
-        // and network stack handle segmentation; there is no frame splitting.
-        out.writeInt(data.length);out.write(data);out.write(mac.doFinal());out.flush();sent++;
-    }
-    private byte[] readPlain(int limit,int expected)throws Exception{
-        if(!publicPlaintext())throw new IOException("Public plaintext not negotiated");
-        int length=in.readInt();
-        if(length<1||length>limit||(expected>=0&&length!=expected))throw new IOException("Invalid public payload length");
-        byte[] bytes=new byte[length],tag=new byte[32];in.readFully(bytes);in.readFully(tag);
-        Mac mac=publicMac(publicReceive,received,length);
-        if(!MessageDigest.isEqual(mac.doFinal(bytes),tag))throw new GeneralSecurityException("Public payload integrity failure");
-        received++;return bytes;
-    }
-    void sendPublicBytes(byte[] bytes,int limit)throws Exception{sendPlain(bytes,limit);}
-    byte[] receivePublicBytes(int expected,int limit)throws Exception{return readPlain(limit,expected);}
 
     private EncounterChannel(DataInputStream in,DataOutputStream out,byte[] send,byte[] receive,String peerId){
-        this.in=in;this.out=out;sendKey=new SecretKeySpec(send,"AES");receiveKey=new SecretKeySpec(receive,"AES");this.peerId=peerId;
+        this.in=in;this.out=out;sendKey=new SecretKeySpec(send,"AES");receiveKey=new SecretKeySpec(receive,"AES");this.peerId=peerId;tlsTransport=false;
+    }
+    private EncounterChannel(DataInputStream in,DataOutputStream out,String peerId){
+        this.in=in;this.out=out;sendKey=null;receiveKey=null;this.peerId=peerId;tlsTransport=true;
+    }
+    boolean overTls(){return tlsTransport;}
+
+    private static byte[] tlsHello(KeyPair identity)throws IOException{
+        ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+        DataOutputStream out=new DataOutputStream(bytes);
+        out.writeInt(TLS_MAGIC);blob(out,identity.getPublic().getEncoded());
+        byte[] nonce=new byte[32];new SecureRandom().nextBytes(nonce);out.write(nonce);
+        return bytes.toByteArray();
+    }
+    private static PublicKey parseTlsHello(byte[] encoded)throws Exception{
+        DataInputStream in=new DataInputStream(new ByteArrayInputStream(encoded));
+        if(in.readInt()!=TLS_MAGIC)throw new IOException("Unsupported TLS Axon protocol");
+        PublicKey key=decode(blob(in,256));byte[] nonce=new byte[32];in.readFully(nonce);
+        if(in.read()!=-1)throw new IOException("Trailing TLS Axon hello");
+        return key;
+    }
+    /** Preserve the Axon signing identity independently of the TLS certificate.
+     * Sign the ordered nonces and TLS server certificate hash. The expected
+     * Axon key is verified before any inventory, credentials or data is sent.
+     * This proof prevents relay across TLS endpoints with different certificates. */
+    static EncounterChannel openOverTls(InputStream input,OutputStream output,KeyPair identity,
+                                         boolean client,String expectedPeer,byte[] serverCertificateHash)throws Exception{
+        if(serverCertificateHash.length!=32)throw new GeneralSecurityException("Invalid TLS certificate binding");
+        DataInputStream in=new DataInputStream(input);DataOutputStream out=new DataOutputStream(output);
+        byte[] local=tlsHello(identity),remote;
+        if(client){blob(out,local);out.flush();remote=blob(in,1024);}
+        else{remote=blob(in,1024);blob(out,local);out.flush();}
+        PublicKey peer=parseTlsHello(remote);String id=identityId(peer);
+        if(id.equals(identityId(identity.getPublic()))||(!expectedPeer.isEmpty()&&!expectedPeer.equals(id)))
+            throw new GeneralSecurityException("TLS Axon identity mismatch");
+        ByteArrayOutputStream bytes=new ByteArrayOutputStream();DataOutputStream transcriptOut=new DataOutputStream(bytes);
+        transcriptOut.write(TLS_LABEL);transcriptOut.write(serverCertificateHash);
+        blob(transcriptOut,client?local:remote);blob(transcriptOut,client?remote:local);
+        byte[] transcript=MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray());
+        byte[] sig=proof(transcript,client,identity.getPrivate()).sign(),other;
+        // Server proves the binding before the client supplies its proof.
+        if(client){
+            other=blob(in,256);
+            if(!proof(transcript,false,peer).verify(other))throw new GeneralSecurityException("Invalid TLS Axon server proof");
+            blob(out,sig);out.flush();
+        }else{
+            blob(out,sig);out.flush();other=blob(in,256);
+            if(!proof(transcript,true,peer).verify(other))throw new GeneralSecurityException("Invalid TLS Axon client proof");
+        }
+        return new EncounterChannel(in,out,id);
     }
 
     static KeyPair newEcKey()throws GeneralSecurityException{
@@ -150,16 +167,27 @@ final class EncounterChannel {
         Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(mode,key,new GCMParameterSpec(128,nonce));cipher.updateAAD(LABEL);cipher.updateAAD(nonce);return cipher;
     }
-    void send(byte[] data)throws Exception{
-        if(publicPlaintext()){sendPlain(data,PUBLIC_CONTROL_MAX);return;}
-        if(data.length<1||data.length>MAX_FRAME)throw new IOException("Invalid REP payload size");
-        byte[] encrypted=cipher(Cipher.ENCRYPT_MODE,sendKey,sent).doFinal(data);
-        blob(out,encrypted);out.flush();sent++;
+    private void sendRecord(byte[] data,int limit)throws Exception{
+        if(data.length<1||data.length>limit)throw new IOException("Invalid Axon payload size");
+        // TLS already protects these exact serialized/compressed bytes.
+        // BLE retains its existing single connection-protection layer.
+        if(tlsTransport)blob(out,data);
+        else{blob(out,cipher(Cipher.ENCRYPT_MODE,sendKey,sent).doFinal(data));sent++;}
+        out.flush();
     }
-    byte[] receive()throws Exception{
-        if(publicPlaintext())return readPlain(PUBLIC_CONTROL_MAX,-1);
-        byte[] encrypted=blob(in,MAX_FRAME+16);
-        if(encrypted.length<17)throw new IOException("Invalid encrypted REP frame");
-        byte[] result=cipher(Cipher.DECRYPT_MODE,receiveKey,received).doFinal(encrypted);received++;return result;
+    private byte[] receiveRecord(int limit,int expected)throws Exception{
+        byte[] data;
+        if(tlsTransport)data=blob(in,limit);
+        else{
+            byte[] encrypted=blob(in,limit+16);
+            if(encrypted.length<17)throw new IOException("Invalid protected BLE record");
+            data=cipher(Cipher.DECRYPT_MODE,receiveKey,received).doFinal(encrypted);received++;
+        }
+        if(data.length<1||data.length>limit||(expected>=0&&data.length!=expected))throw new IOException("Invalid Axon payload length");
+        return data;
     }
+    void send(byte[] data)throws Exception{sendRecord(data,tlsTransport?TLS_CONTROL_MAX:MAX_FRAME);}
+    byte[] receive()throws Exception{return receiveRecord(tlsTransport?TLS_CONTROL_MAX:MAX_FRAME,-1);}
+    void sendPublicBytes(byte[] data,int limit)throws Exception{sendRecord(data,limit);}
+    byte[] receivePublicBytes(int expected,int limit)throws Exception{return receiveRecord(limit,expected);}
 }

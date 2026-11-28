@@ -284,7 +284,7 @@ final class MeshPeer {
         String uri(){return new Uri.Builder().scheme("roots").authority("mesh").path("/v1").appendQueryParameter("host",host)
             .appendQueryParameter("port",Integer.toString(PORT)).appendQueryParameter("pin",pin).appendQueryParameter("token",token).build().toString();}
     }
-    private static final class PeerKeyManager extends X509ExtendedKeyManager {
+    static final class PeerKeyManager extends X509ExtendedKeyManager {
         private final MeshTlsIdentity.Identity identity;
         PeerKeyManager(MeshTlsIdentity.Identity identity){this.identity=identity;}
         private String alias(String keyType){return keyType!=null&&(keyType.startsWith("EC")||keyType.equalsIgnoreCase("ECDSA"))?identity.alias():null;}

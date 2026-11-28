@@ -109,16 +109,16 @@ final class EncounterSync {
         return received;
     }
     private JSONObject capabilities(String op)throws JSONException{
-        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_archives_v1",true).put("public_plaintext_v1",true).put("lan_upgrade_v1",!directLan);
+        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_archives_v1",true).put("archive_channel_v2",true).put("lan_tls_v1",!directLan);
     }
     private void negotiate(JSONObject hello,boolean client)throws Exception{
         peerGraph=hello.optBoolean("root_graph",false);
         peerBulk=peerGraph&&hello.optBoolean("bulk_receive_v1",false);
-        peerChunks=peerBulk&&hello.optBoolean("knowledge_archives_v1",false)&&hello.optBoolean("public_plaintext_v1",false);
+        peerChunks=peerBulk&&hello.optBoolean("knowledge_archives_v1",false)&&hello.optBoolean("archive_channel_v2",false);
         if(peerGraph){maxItems=32;maxIds=256;maxPages=9;}
         if(peerBulk){maxItems=128;maxIds=2048;maxPages=65;}
         if(peerBulk&&directLan){maxItems=4096;maxIds=65536;maxPages=2049;}
-        if(peerBulk&&!directLan&&hello.optBoolean("lan_upgrade_v1",false)){
+        if(peerBulk&&!directLan&&hello.optBoolean("lan_tls_v1",false)){
             stage="Negotiating local bulk connection";
             progress.accept("Axon bound · negotiating Wi-Fi transfer");
             upgrade=EncounterLanUpgrade.negotiate(context,channel,identity,client,active);
@@ -127,7 +127,7 @@ final class EncounterSync {
                 maxItems=4096;maxIds=65536;maxPages=2049;
             }
         }
-        if(peerChunks)channel.enablePublicPlaintext();
+        // The selected connection already protects the archive. No payload cipher.
         stage="Preparing Root inventory";
         catalog.putAll(external.catalog());pendingReceipts=external.pendingSet();
         catalog.putAll(MeshPeer.get(context).encounterCatalog());

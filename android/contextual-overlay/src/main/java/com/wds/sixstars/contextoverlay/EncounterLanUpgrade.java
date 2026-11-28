@@ -67,7 +67,7 @@ final class EncounterLanUpgrade {
     private static void close(Closeable c){if(c!=null)try{c.close();}catch(IOException ignored){}}
     static Upgrade negotiate(Context context,EncounterChannel control,KeyPair key,boolean client,BooleanSupplier active)throws Exception{
         Route route=wifi(context);
-        return client?client(route,control,key,active):server(route,control,key,active);
+        return client?client(route,control,key,active):server(context,route,control,key,active);
     }
     private static Upgrade client(Route route,EncounterChannel control,KeyPair key,BooleanSupplier active)throws Exception{
         Socket socket=null;EncounterChannel channel=null;boolean accepted=false;
@@ -80,7 +80,8 @@ final class EncounterLanUpgrade {
                     socket=route.network().getSocketFactory().createSocket();
                     socket.connect(new InetSocketAddress(host,port),2500);
                     socket.setSoTimeout(3500);socket.setTcpNoDelay(true);
-                    channel=EncounterChannel.open(socket.getInputStream(),socket.getOutputStream(),key,true);
+                    socket=EncounterTls.client(socket);socket.setSoTimeout(8000);
+                    channel=EncounterTls.authenticate((javax.net.ssl.SSLSocket)socket,key,true,control.peerId);
                     if(!control.peerId.equals(channel.peerId))throw new IOException("Route identity mismatch");
                 }catch(Exception failure){close(socket);socket=null;channel=null;}
             }
@@ -91,12 +92,12 @@ final class EncounterLanUpgrade {
             socket.setSoTimeout(45000);accepted=true;return new Upgrade(socket,channel);
         }finally{if(!accepted)close(socket);}
     }
-    private static Upgrade server(Route route,EncounterChannel control,KeyPair key,BooleanSupplier active)throws Exception{
+    private static Upgrade server(Context context,Route route,EncounterChannel control,KeyPair key,BooleanSupplier active)throws Exception{
         ServerSocket listener=null;Socket socket=null;EncounterChannel channel=null;boolean accepted=false;
         try{
             if(active.getAsBoolean()&&route!=null){
                 try{
-                    listener=new ServerSocket();
+                    listener=EncounterTls.listener(context);
                     listener.bind(new InetSocketAddress(route.local(),0),1);listener.setSoTimeout(4000);
                 }catch(Exception unavailable){close(listener);listener=null;}
             }
@@ -108,7 +109,8 @@ final class EncounterLanUpgrade {
                     socket=listener.accept();
                     if(!sameSubnet(route.local().getAddress(),socket.getInetAddress().getAddress(),route.prefix()))throw new IOException("Invalid local peer");
                     socket.setSoTimeout(3500);socket.setTcpNoDelay(true);
-                    channel=EncounterChannel.open(socket.getInputStream(),socket.getOutputStream(),key,false);
+                    socket.setSoTimeout(8000);
+                    channel=EncounterTls.authenticate((javax.net.ssl.SSLSocket)socket,key,false,control.peerId);
                     if(!control.peerId.equals(channel.peerId))throw new IOException("Route identity mismatch");
                 }catch(Exception failure){close(socket);socket=null;channel=null;}
             }

@@ -55,7 +55,7 @@ final class EncounterLanEndpoint implements Closeable {
         if(route==null)return;
         ServerSocket tcp=null;DatagramSocket udp=null;
         try{
-            tcp=new ServerSocket();tcp.setReuseAddress(true);tcp.bind(new InetSocketAddress(route.local(),PORT),4);
+            tcp=EncounterTls.listener(app);tcp.setReuseAddress(true);tcp.bind(new InetSocketAddress(route.local(),PORT),4);
             udp=new DatagramSocket(null);udp.setReuseAddress(true);udp.setBroadcast(true);
             route.network().bindSocket(udp);udp.bind(new InetSocketAddress(PORT));
             RouteState next=new RouteState(route,tcp,udp);state=next;
@@ -111,7 +111,7 @@ final class EncounterLanEndpoint implements Closeable {
             deadline=timer.schedule(()->closeQuiet(socket),120,TimeUnit.SECONDS);
             android.os.PowerManager power=app.getSystemService(android.os.PowerManager.class);
             if(power!=null)try{wake=power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK,"Roots:AxonLan");wake.acquire(125000L);}catch(SecurityException unavailable){wake=null;}
-            EncounterChannel channel=EncounterChannel.open(socket.getInputStream(),socket.getOutputStream(),key,false);
+            EncounterChannel channel=EncounterTls.authenticate((javax.net.ssl.SSLSocket)socket,key,false,"");
             peer=channel.peerId;sessionPeer=peer;socket.setSoTimeout(45000);
             if(!valid(s,socket.getInetAddress())||EncounterBindings.get(app).blocked(peer)){result="Blocked or stopped";return;}
             final String authenticated=peer;
@@ -119,7 +119,7 @@ final class EncounterLanEndpoint implements Closeable {
             sync=new EncounterSync(app,channel,()->valid(s,socket.getInetAddress()),key,
                 message->{EncounterService.lanProgress(message);AxonReceiveCoordinator.progress(authenticated,message);},ignored->{},true);
             sync.exchange(false);
-            result="Wi-Fi · "+sync.summary();
+            result="Wi-Fi TLS · "+sync.summary();
         }catch(Exception|LinkageError failure){
             result="LAN interrupted · "+(sync==null?"authentication":sync.stage())+" ("+failure.getClass().getSimpleName()+")";
         }finally{
