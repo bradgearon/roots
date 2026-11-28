@@ -303,6 +303,41 @@ roots_tree_result roots_tree_records_time(roots_tree *t,const char *term,int64_t
         }
     });
 }
+roots_tree_result roots_tree_screens_time(roots_tree *t,const char *term,int64_t agent_id,
+        int64_t before_ms,int64_t before_seq,uint32_t limit,roots_record_member_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&agent_id>=0&&before_ms>=0&&before_seq>=0&&limit>0&&limit<=100);
+        require(before_seq!=0||before_ms==0);bounded(term,512);
+        std::vector<std::pair<int64_t,row>> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,
+                "WITH events AS (SELECT b.seq AS event_seq,b.external_id,b.observed_ms,"
+                "COALESCE((SELECT e.body FROM fragments e WHERE e.external_id=b.external_id AND e.source='record.experience.screen' ORDER BY e.seq LIMIT 1),"
+                "(SELECT p.body||':legacy-screen:'||b.observed_ms FROM fragments p WHERE p.external_id=b.external_id AND p.source='record.experience.parent' ORDER BY p.seq LIMIT 1),"
+                "b.external_id) AS screen_key,"
+                "CASE WHEN EXISTS(SELECT 1 FROM fragments f WHERE f.external_id=b.external_id AND f.source GLOB 'record.experience.*' "
+                "AND instr(lower(f.body),lower(?))>0 AND (?=0 OR EXISTS(SELECT 1 FROM branch_members m WHERE m.fragment_seq=f.seq AND m.agent_id=?))) "
+                "THEN 1 ELSE 0 END AS matched "
+                "FROM fragments b WHERE b.source='record.experience.body' AND b.external_id GLOB 'local:experience:*' "
+                "AND EXISTS(SELECT 1 FROM fragments k WHERE k.external_id=b.external_id AND k.source='record.experience.kind' AND k.body='observation')), "
+                "screens AS (SELECT screen_key,min(event_seq) AS screen_seq,max(observed_ms) AS observed FROM events GROUP BY screen_key "
+                "HAVING max(matched)=1 AND (?=0 OR max(observed_ms)<? OR (max(observed_ms)=? AND min(event_seq)<?)) "
+                "ORDER BY observed DESC,screen_seq DESC LIMIT ?) "
+                "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms,g.screen_seq "
+                "FROM screens g JOIN events e ON e.screen_key=g.screen_key JOIN fragments f ON f.external_id=e.external_id "
+                "WHERE f.source GLOB 'record.experience.*' "
+                "ORDER BY g.observed DESC,g.screen_seq DESC,e.event_seq,f.seq");
+            s.text(1,term);s.number(2,agent_id);s.number(3,agent_id);
+            s.number(4,before_seq);s.number(5,before_ms);s.number(6,before_ms);s.number(7,before_seq);s.number(8,limit);
+            while(s.next())rows.emplace_back(s.integer(6),read_row(s));
+        }
+        for(const auto &entry:rows){const auto &r=entry.second;
+            roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};
+            if(cb(user,entry.first,&f))break;
+        }
+    });
+}
 roots_tree_result roots_tree_fragment_weights(roots_tree *t,int64_t sequence,float *weights,size_t count){
     return guard([&]{
         require(t&&sequence>0&&weights&&count==dim);
