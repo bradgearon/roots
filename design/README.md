@@ -26,6 +26,7 @@ Roots is both an intended open specification for portable, searchable, developab
 - Use an actual writing process for system-authored expression, never direct prompt-to-prose generation as a substitute.
 - Preserve established sound relations while evaluating and authorizing Honeycomb reweaving. Judge Whirlwind by demonstrated outcomes, not activity alone.
 - Keep private information local by default. Remote inference, sync and sharing require scoped authorization.
+- [Transport security](transport-security.md): retain normal TLS and platform connection security; never add a second application-level encryption layer to knowledge, messages or archives.
 - Preserve existing translation and Forge capabilities; new functionality is additive.
 
 Working names (Doxa, Gardens, Resonance, Poetic Field, Kairos and Tendrils) are proposals. Maintain decisions, assumptions, open questions and acceptance criteria here; mark behavior implemented only after code and verification exist.

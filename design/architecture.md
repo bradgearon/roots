@@ -2,6 +2,10 @@
 
 Status: proposal; not implemented. See [design index](README.md).
 
+## Transport security requirement
+
+Follow [transport security](transport-security.md): preserve normal secure connections and Axon authentication. Send ordinary serialized/compressed knowledge through the connection without additional application-level encryption. Do not remove TLS or normal platform security.
+
 ## Existing foundation
 
 Roots is a local-first translation and social integration platform. The repository README documents the Android accessibility overlay and on-device PLaMo 0.8B model, Chrome extension and Windows desktop host (.NET 9, llama.cpp, PLaMo 2B by default). The existing translation API and transport-neutral Wds.Roots.Api Forge contracts (ForgeActorReference, ForgeServiceRequest, ForgeServicePacket, IForgeService.InvokeAsync, correlation IDs and state update notices) are the starting point. Do not replace the existing viewport or translation implementations to introduce social intelligence.
