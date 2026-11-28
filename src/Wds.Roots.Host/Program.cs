@@ -7,16 +7,7 @@ if (args.Contains("--intelligence")) return await IntelligenceHost.RunAsync(args
 
 var root = Directory.GetCurrentDirectory();
 using var quit = new CancellationTokenSource();
-ConsoleCancelEventHandler cancel = (_, e) =>
-{
-    e.Cancel = true;
-    if (!quit.IsCancellationRequested)
-    {
-        Console.WriteLine("Stopping Roots…");
-        _ = quit.CancelAsync();
-    }
-};
-Console.CancelKeyPress += cancel;
+using var shutdownControl = new ConsoleShutdown(quit, "Roots host", TimeSpan.FromSeconds(22));
 using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
 using var readiness = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false })
 {
@@ -138,7 +129,6 @@ finally
     }
     finally
     {
-        Console.CancelKeyPress -= cancel;
         lease?.Dispose();
     }
     Console.WriteLine("Roots stopped.");
