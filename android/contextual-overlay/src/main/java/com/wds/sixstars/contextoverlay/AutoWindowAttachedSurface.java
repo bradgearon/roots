@@ -179,8 +179,9 @@ final class AutoWindowAttachedSurface {
     private void onRendered(Slot slot, RenderResult result,long frameEpoch) {
         drawing = false;
         android.hardware.SyncFence ready = result.getFence();
-        if (closed) {
-            // The GPU may still be writing this never-presented buffer.
+        if (closed || frameEpoch!=visibilityEpoch) {
+            // Never submit a frame for an invalidated geometry epoch. The
+            // GPU may still be writing this never-presented buffer.
             // Await its render fence away from the main/UI thread before
             // disposing it, even if the X window was closed in the meantime.
             fenceWorker.execute(() -> {
@@ -189,10 +190,12 @@ final class AutoWindowAttachedSurface {
                 }
                 main.post(() -> {
                     slot.busy = false;
-                    slot.dispose();
-                    shutdownWhenDone();
+                    if(closed){slot.dispose();shutdownWhenDone();}
+                    else pump();
                 });
             });
+            // The other slot may already be free for the current geometry.
+            if(!closed)pump();
             return;
         }
         if (result.getStatus() != RenderResult.SUCCESS) {
