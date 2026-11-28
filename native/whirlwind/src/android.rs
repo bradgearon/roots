@@ -52,3 +52,20 @@ pub extern "system" fn Java_com_wds_sixstars_contextoverlay_DesktopWhirlwind_nat
 pub extern "system" fn Java_com_wds_sixstars_contextoverlay_DesktopWhirlwind_nativeClose(_env:JNIEnv,_:JClass){
     if let Ok(mut active)=ACTIVE.lock(){if let Some(t)=active.take(){t.task.abort();}}
 }
+
+#[no_mangle]
+pub extern "system" fn Java_com_wds_sixstars_contextoverlay_ExternalDirectory_nativeSearch(mut env:JNIEnv,_:JClass,context:JObject,bytes:JByteArray,seeds:JString,query:JString)->jstring{
+    let result=(||{
+        init(&env,&context)?;
+        let seeds:String=env.get_string(&seeds)?.into();
+        let query:String=env.get_string(&query)?.into();
+        let routes=seeds.lines().filter(|s|!s.trim().is_empty()).map(|s|s.trim().parse()).collect::<Result<Vec<Multiaddr>,_>>()?;
+        let mut s=seed(&env,&bytes)?;
+        let result=runtime().block_on(directory::search(&s,routes,&query));s.zeroize();
+        Ok(serde_json::to_string(&result?)?)
+    })();
+    match result{
+        Ok(s)=>env.new_string(s).map(|s|s.into_raw()).unwrap_or(std::ptr::null_mut()),
+        Err(_)=>{let _=env.throw_new("java/io/IOException","External directory search failed; check bootstrap address, query tag and connectivity");std::ptr::null_mut()}
+    }
+}

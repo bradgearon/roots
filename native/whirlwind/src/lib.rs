@@ -250,31 +250,10 @@ pub async fn tunnel(seed:&[u8;32],target:&str,relay:&str,fallback:&str)->Result<
     Ok(Tunnel{port,transport,task})
 }
 
-// Separate external routing instance, never used for the private compute path.
-// This establishes a namespace and identity for later signed member routing.
+pub mod directory;
 pub async fn external_dht(seed:&[u8;32],seeds:Vec<Multiaddr>)->Result<()>{
-    let key=p2p_key(seed,true)?;
-    let mut swarm=SwarmBuilder::with_existing_identity(key).with_tokio()
-        .with_tcp(libp2p::tcp::Config::default(),libp2p::noise::Config::new,libp2p::yamux::Config::default)?
-        .with_quic().with_dns()?.with_behaviour(|key|{
-            let peer=key.public().to_peer_id();
-            libp2p::kad::Behaviour::with_config(peer,libp2p::kad::store::MemoryStore::new(peer),libp2p::kad::Config::new(EXTERNAL_KAD_PROTOCOL))
-        })?.build();
-    swarm.behaviour_mut().set_mode(Some(libp2p::kad::Mode::Server));
-    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
-    let _=swarm.listen_on("/ip6/::/tcp/0".parse()?);
-    for addr in seeds{
-        let Some(Protocol::P2p(id))=addr.iter().last() else{bail!("external seed requires peer id")};
-        swarm.behaviour_mut().add_address(&id,addr.clone());let _=swarm.dial(addr);
-    }
-    if swarm.behaviour_mut().bootstrap().is_err(){eprintln!("External DHT has no bootstrap peers yet");}
-    println!("External routing peer: {}",swarm.local_peer_id());
-    loop{tokio::select!{
-        event=swarm.select_next_some()=>if let SwarmEvent::NewListenAddr{address,..}=event{println!("External DHT route: {address}/p2p/{}",swarm.local_peer_id());},
-        _=tokio::signal::ctrl_c()=>return Ok(()),
-    }}
+    directory::serve(seed,seeds,None).await
 }
-
 #[cfg(target_os="android")]
 mod android;
 
