@@ -1,6 +1,8 @@
 #include "tesseract.h"
 #include <algorithm>
 #include <cstring>
+#include <cwctype>
+#include <utility>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -52,7 +54,7 @@ struct TesseractOcr::Impl {
     using Page=const void* (__cdecl*)(const void*);
     using Box=int (__cdecl*)(const void*,int,int*,int*,int*,int*);
     Create create{};Delete destroy{},clear{},deleteIterator{};Init init{};Version version{};
-    SetMode mode{};SetImage image{};SetVariable variable{};Recognize run{};
+    SetMode mode{},resolution{};SetImage image{};SetVariable variable{};Recognize run{};
     Iterator iterator{};IteratorNext next{};Text text{};DeleteText deleteText{};Page page{};Box box{};
     template<class T> bool symbol(T& fn,const char* name) {
         fn=reinterpret_cast<T>(GetProcAddress(library,name));return fn!=nullptr;
@@ -61,7 +63,7 @@ struct TesseractOcr::Impl {
         return symbol(create,"TessBaseAPICreate")&&symbol(destroy,"TessBaseAPIDelete")&&
             symbol(clear,"TessBaseAPIClear")&&symbol(init,"TessBaseAPIInit3")&&
             symbol(version,"TessVersion")&&symbol(mode,"TessBaseAPISetPageSegMode")&&
-            symbol(image,"TessBaseAPISetImage")&&symbol(variable,"TessBaseAPISetVariable")&&
+            symbol(resolution,"TessBaseAPISetSourceResolution")&&symbol(image,"TessBaseAPISetImage")&&symbol(variable,"TessBaseAPISetVariable")&&
             symbol(run,"TessBaseAPIRecognize")&&symbol(iterator,"TessBaseAPIGetIterator")&&
             symbol(deleteIterator,"TessResultIteratorDelete")&&symbol(next,"TessResultIteratorNext")&&
             symbol(text,"TessResultIteratorGetUTF8Text")&&symbol(deleteText,"TessDeleteText")&&
@@ -117,7 +119,7 @@ struct TesseractOcr::Impl {
     }
     bool recognize(const uint8_t* pixels,int w,int h,int stride,std::vector<SurfaceText>& rows){
         if(!api||!pixels||w<=0||h<=0||stride<w)return false;
-        image(api,pixels,w,h,1,stride);
+        image(api,pixels,w,h,1,stride);resolution(api,144);
         struct Cleanup{Impl* owner;void* it{};~Cleanup(){if(it)owner->deleteIterator(it);owner->clear(owner->api);}} cleanup{this};
         if(run(api,nullptr)!=0)return false;
         cleanup.it=iterator(api);
