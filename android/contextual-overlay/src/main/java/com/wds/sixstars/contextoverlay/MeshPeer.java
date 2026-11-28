@@ -38,6 +38,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import javax.crypto.SecretKey;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
@@ -58,6 +59,13 @@ final class MeshPeer {
     private final TreeRuntime tree;
     private final ConnectivityManager cm;
     private final SecureRandom random=new SecureRandom();
+    // Only an authenticated enrollment response may replace a saved grant.
+    // This also avoids redeeming the same in-memory bootstrap during a sync.
+    private static final class DerivedGrant {
+        final String original,derived;
+        DerivedGrant(String original,String derived){this.original=original;this.derived=derived;}
+    }
+    private final Map<String,DerivedGrant> derivedGrants=new ConcurrentHashMap<>();
     private final Map<String,Integer> requested=new ConcurrentHashMap<>();
     private volatile Map<String,Integer> observedReplicas=java.util.Collections.emptyMap(), observedDemand=java.util.Collections.emptyMap();
     private final Object catalogLock=new Object();
@@ -291,12 +299,12 @@ final class MeshPeer {
     }
     private final class Server {
         final Network network;final Inet4Address address;final String token;final SSLServerSocket socket;
-        final SSLContext context;final String pin;
+        final SSLContext context;final String pin;final SecretKey networkRoot;
         final Set<Socket> clients=ConcurrentHashMap.newKeySet();
         final ThreadPoolExecutor workers=new ThreadPoolExecutor(2,2,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(4));
         ConnectivityManager.NetworkCallback callback;
-        Server(Network n,Inet4Address a,String t,SSLServerSocket s,SSLContext context,String pin){
-            network=n;address=a;token=t;socket=s;this.context=context;this.pin=pin;
+        Server(Network n,Inet4Address a,String t,SSLServerSocket s,SSLContext context,String pin,SecretKey networkRoot){
+            network=n;address=a;token=t;socket=s;this.context=context;this.pin=pin;this.networkRoot=networkRoot;
         }
     }
     synchronized String start()throws Exception{
@@ -305,12 +313,12 @@ final class MeshPeer {
         Network network=wifi();if(network==null)throw new IOException("Connect to Wi-Fi without VPN first.");
         Inet4Address address=address(network);
         MeshTlsIdentity.Identity identity;
-        try{identity=MeshTlsIdentity.loadOrCreate();}
-        catch(Exception e){tlsIdentityState=FAIL;tlsIdentityStatus="TLS signing self-check failed; this device's listener has not started.";throw e;}
+        try{identity=MeshTlsIdentity.loadOrCreate(app);}
+        catch(Exception e){tlsIdentityState=FAIL;tlsIdentityStatus="Saved TLS identity could not be loaded or verified; the listener has not started.";throw e;}
         incomingTlsFailure=null;incomingTlsLast=null;
         SSLContext context=SSLContext.getInstance("TLS");
         context.init(new KeyManager[]{new PeerKeyManager(identity)},null,random);
-        String pin=MeshItem.hex(MessageDigest.getInstance("SHA-256").digest(identity.certificate().getEncoded()));
+        String pin=MeshTlsIdentity.fingerprint(identity);
         String[] working;
         try{
             SSLContext localClient=SSLContext.getInstance("TLS");
@@ -324,13 +332,14 @@ final class MeshPeer {
         tlsIdentityState=PASS;
         tlsIdentityStatus="Pinned TLS loopback handshake passed: "+String.join(", ",working)+". Identity "+pin.substring(0,12)+"…."+
             (identity.upgraded()?" TLS identity upgraded. Share the new invitation and update the receiver's Axon binding once.":"");
-        byte[] tokenBytes=new byte[32];random.nextBytes(tokenBytes);String token=MeshItem.hex(tokenBytes);
+        SecretKey networkRoot=MeshNetworkAccess.loadOrCreate(app);
+        String token=MeshNetworkAccess.enrollment(networkRoot,pin);
         SSLServerSocket socket=(SSLServerSocket)context.getServerSocketFactory().createServerSocket();
         try{
             socket.setUseClientMode(false);socket.setNeedClientAuth(false);
             socket.setReuseAddress(true);socket.setEnabledProtocols(working);
             socket.bind(new InetSocketAddress(address,PORT),8);
-            Server server=new Server(network,address,token,socket,context,pin);
+            Server server=new Server(network,address,token,socket,context,pin,networkRoot);
             active=server;
             invitation=new Invite(address.getHostAddress(),pin,token).uri();
             status="Sharing Tree graph on Wi-Fi";
@@ -462,8 +471,23 @@ final class MeshPeer {
                 android.os.SystemClock.elapsedRealtime()-handshakeStarted);
             JSONObject request=read(client);
             if(active!=server)return;
-            if(!MessageDigest.isEqual(server.token.getBytes(StandardCharsets.US_ASCII),request.optString("token").getBytes(StandardCharsets.US_ASCII))){reject(server,client,"unauthorized");return;}
             if(request.optInt("version")!=1){reject(server,client,"unsupported_version");return;}
+            String member=request.optString("member");
+            if(!MeshNetworkAccess.validHex(member)){reject(server,client,"member_required");return;}
+            String grant=MeshNetworkAccess.member(server.networkRoot,server.pin,member);
+            String offered=request.optString("token");
+            boolean enroll=MeshNetworkAccess.equal(server.token,offered);
+            if(!enroll&&!MeshNetworkAccess.equal(grant,offered)){reject(server,client,"unauthorized");return;}
+            // Prove possession of the member's identity over the already
+            // pinned TLS channel. Never send the network root itself.
+            String nonce=MeshNetworkAccess.nonce(random);
+            write(client,new JSONObject().put("version",1).put("op","member_challenge").put("nonce",nonce));
+            JSONObject proof=read(client);
+            if(active!=server)return;
+            if(proof.optInt("version")!=1||!"member_proof".equals(proof.optString("op"))||
+                !MeshNetworkAccess.verifyProof(proof.optString("certificate"),proof.optString("proof"),server.pin,member,nonce)){
+                reject(server,client,"member_proof_failed");return;
+            }
             String op=request.optString("op");
             if(!op.equals("inventory")&&!op.equals("want")&&!op.equals("want_batch")&&!op.equals("need")){reject(server,client,"unsupported_operation");return;}
             boolean graph=request.optBoolean("graph",false);
@@ -471,6 +495,7 @@ final class MeshPeer {
             long epoch=tree.captureEpoch();
             Map<String,MeshItem> catalog=graph?graphCatalog():legacyCatalog();
             JSONObject response=new JSONObject().put("version",1);
+            if(enroll)response.put("member_token",grant);
             if(op.equals("inventory")){
                 String after=request.optString("after");if(!after.isEmpty()&&!after.matches("[0-9a-f]{64}")){reject(server,client,"invalid_request");return;}
                 JSONArray entries=new JSONArray();String next="";
@@ -588,13 +613,41 @@ final class MeshPeer {
                         String protocol=socket.getSession().getProtocol();
                         trace.pass("TLS","Pinned certificate and certificate dates verified; "+(protocol.equals("TLSv1.3")?"TLS 1.3":"TLS 1.2")+" established.",android.os.SystemClock.elapsedRealtime());
                         trace.begin("Authentication",android.os.SystemClock.elapsedRealtime());
-                        request.put("version",1).put("token",invite.token()).put("graph",true);write(socket,request);
+                        MeshTlsIdentity.Identity own=MeshTlsIdentity.loadOrCreate(app);
+                        String member=MeshTlsIdentity.fingerprint(own);
+                        DerivedGrant cached=derivedGrants.get(invite.pin());
+                        String offered=cached!=null&&MeshNetworkAccess.equal(cached.original,invite.token())?cached.derived:invite.token();
+                        request.put("version",1).put("token",offered).put("member",member).put("graph",true);write(socket,request);
                         JSONObject response=read(socket);
+                        boolean memberVerified=false;
+                        if(response.optInt("version")==1&&"member_challenge".equals(response.optString("op"))){
+                            String nonce=response.getString("nonce");
+                            if(!MeshNetworkAccess.validHex(nonce))throw new Failure("Authentication","The peer sent an invalid member challenge.","Update both Roots installations.");
+                            String signature=MeshNetworkAccess.proof(own.key(),invite.pin(),member,nonce);
+                            String certificate=java.util.Base64.getEncoder().encodeToString(own.certificate().getEncoded());
+                            write(socket,new JSONObject().put("version",1).put("op","member_proof")
+                                .put("certificate",certificate).put("proof",signature));
+                            response=read(socket);memberVerified=true;
+                        }
                         if(response.optInt("version")!=1)throw new Failure("Protocol","The peer returned an unsupported Mesh protocol version.","Update both Roots installations to compatible versions.");
                         trace.pass("Protocol","Mesh protocol version 1 accepted.",android.os.SystemClock.elapsedRealtime());
                         if(response.has("error"))throw protocolFailure(response.optString("error"));
+                        if(response.has("member_token")){
+                            String grant=response.getString("member_token");
+                            if(!memberVerified||!MeshNetworkAccess.validHex(grant))
+                                throw new Failure("Authentication","The peer returned an invalid member grant.","Update both Roots installations.");
+                            if(derivedGrants.size()>=64)derivedGrants.clear();
+                            derivedGrants.put(invite.pin(),new DerivedGrant(invite.token(),grant));
+                            try{
+                                if(AxonPeerStore.refreshDerivedGrant(app,invite,grant))
+                                    trace.add(check("Member grant",PASS,"Stable member-specific access saved.",""));
+                            }catch(IOException e){
+                                trace.add(check("Member grant",WARN,"Member access received but could not be saved.","Retry the connection check."));
+                            }
+                            response.remove("member_token");
+                        }
                         if(RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime())<=0)throw new java.net.SocketTimeoutException();
-                        trace.pass("Authentication","The peer accepted the invitation and returned a response.",android.os.SystemClock.elapsedRealtime());
+                        trace.pass("Authentication",memberVerified?"Member identity and derived network access accepted.":"The peer accepted the invitation and returned a response.",android.os.SystemClock.elapsedRealtime());
                         return response;
                     }
                 }finally{expiry.cancel(false);}
