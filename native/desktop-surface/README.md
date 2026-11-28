@@ -22,10 +22,11 @@ capture scope, not every monitor, occluded/background window or entire desktop.
 Optional controls: `launch-surface.cmd --capture --exclude private-app.exe`
 adds an exclusion; repeat --exclude for multiple executables.
 `launch-surface.cmd --capture --no-ocr` uses UI Automation only.
-By default the native worker reads visible static UI Automation text and enables
-WGC/OCR fallback when built with OCR support, for windows with no usable semantic
-text whose accessibility traversal completes without editable, password or
-document controls. It uses the Windows OCR engine from installed profile
+By default the native worker reads visible UI Automation text and control labels,
+including static text under read-only documents. It skips editable and password
+subtrees individually. OCR supplements structured reading when the accessibility
+scan completes without visible sensitive controls. Duplicate text is merged across
+lanes only when the capture-to-screen geometry is verified. It uses the Windows OCR engine from installed profile
 languages, not a new LLM. Missing language packs, unsupported GPU/capture
 or inaccessible windows may leave coverage gaps. Windows OCR coordinates
 are capture pixels; UIA coordinates are desktop pixels. Neither is yet used to paint.
@@ -57,11 +58,21 @@ body/process/parent/interval/evidence roles into atomic NativeTree batches.
 The private database is %LOCALAPPDATA%/Roots/Experience/experience.db, not the
 existing social Tree. No LAN endpoint, automatic network transfer or Mesh
 registration is added. The console search command is an explicit local display
-of committed text. This separate receiver is a staging boundary before integration
-into the existing managed Roots host; it avoids touching launcher/TLS logic.
+of committed text. Start the regular Roots host with launch.cmd as well, reload
+the Chrome extension, and open its existing Tree page. The Knowledge source
+selector switches between social/received knowledge and private desktop
+Experience. Both grouped and raw views are ordered by observed time descending
+with a stable sequence tie-breaker. Live refresh, search, scoped branches,
+and native 128-component lexical weight inspection work across both sources.
+Experience branch membership uses the same literal-matching native agents;
+new observations join matching branches automatically. Compile private Experience
+GGUF writes only %LOCALAPPDATA%/Roots/Experience/experience.weights.gguf,
+with a recorded revision and no exchange integration. These are lexical feature
+weights, not learned semantic relationship strengths. The watcher remains
+independent of the existing PLaMo launch and TLS configuration.
 It does not yet materialize full section/scene graphs or reconcile all unobserved
 intervals, has a visible console rather than a tray, and has no retention UI.
-Stop capture before inspecting or removing private data. OS-managed paging/crash
+The view can read during capture. Stop the watcher and host before removing private data. OS-managed paging/crash
 behavior is outside the collector's guarantees.
 
 ## Audio: Inworld realtime adapter
@@ -111,7 +122,7 @@ python -m unittest -v test_inworld_worker.py
 The Windows CI workflow compiles the native/managed components and runs these
 fixtures, but live UIA/OCR, GPU throughput, real model streaming, audio routing
 and privacy edge cases still require target-device testing. The initial console
-watcher is not a finished compositor, full Experience UI, or automatic
+watcher is not a finished compositor, full scene-understanding system, or automatic
 translation of live desktop speech.
 
 References: [Surface plan](../../design/desktop-surface-experience.md),
