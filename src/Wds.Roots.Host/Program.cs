@@ -7,7 +7,16 @@ if (args.Contains("--intelligence")) return await IntelligenceHost.RunAsync(args
 
 var root = Directory.GetCurrentDirectory();
 using var quit = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; quit.Cancel(); };
+ConsoleCancelEventHandler cancel = (_, e) =>
+{
+    e.Cancel = true;
+    if (!quit.IsCancellationRequested)
+    {
+        Console.WriteLine("Stopping Roots…");
+        _ = quit.CancelAsync();
+    }
+};
+Console.CancelKeyPress += cancel;
 using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
 using var readiness = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false })
 {
@@ -18,6 +27,8 @@ bool lan = args.Contains("--lan") && !args.Contains("--local-only");
 string aiRoot = AiRuntimeRoot.Resolve();
 using var supervisor = new ServiceSupervisor(root, aiRoot, http);
 ManagedModelProcess? engine = null;
+DesktopRootsHost? roots = null;
+LocalTranslationGateway? gateway = null;
 HostInstanceLease? lease = null;
 int exitCode = 0;
 
@@ -85,8 +96,8 @@ try
     }
 
     Console.WriteLine(external ? "PLaMo ready; model alias verified." : "PLaMo ready.");
-    await using var roots = DesktopRootsHost.TryOpen(root,lan);
-    await using var gateway = new LocalTranslationGateway(8223, PLaMoReadiness.BaseUrl + "/v1/completions", lan, roots);
+    roots = DesktopRootsHost.TryOpen(root,lan);
+    gateway = new LocalTranslationGateway(8223, PLaMoReadiness.BaseUrl + "/v1/completions", lan, roots);
     await gateway.StartAsync(quit.Token);
     Task shutdown = Task.Delay(Timeout.Infinite, quit.Token);
     if (engine != null)
@@ -108,7 +119,28 @@ catch (Exception error)
 }
 finally
 {
-    try { if (engine != null) await engine.DisposeAsync(); }
-    finally { lease?.Dispose(); }
+    try
+    {
+        // Close the owned model immediately, not AFTER a persistent client or
+        // blocked inference request finishes draining the gateway.
+        var stopping = quit.CancelAsync();
+        var modelStop = engine == null ? Task.CompletedTask : engine.DisposeAsync().AsTask();
+        var gatewayStop = gateway == null ? Task.CompletedTask : Task.Run(async () => await gateway.DisposeAsync());
+        try { await Task.WhenAll(stopping, modelStop, gatewayStop).WaitAsync(TimeSpan.FromSeconds(12)); }
+        catch (Exception e) { Console.Error.WriteLine("Roots compute shutdown: " + e.GetType().Name); }
+        // The gateway must stop accepting Tree operations before releasing
+        // the database. A host-owned receive has its own cancellation token.
+        if (roots != null)
+        {
+            try { await Task.Run(async () => await roots.DisposeAsync()).WaitAsync(TimeSpan.FromSeconds(8)); }
+            catch (Exception e) { Console.Error.WriteLine("Roots Tree shutdown: " + e.GetType().Name); }
+        }
+    }
+    finally
+    {
+        Console.CancelKeyPress -= cancel;
+        lease?.Dispose();
+    }
+    Console.WriteLine("Roots stopped.");
 }
 return exitCode;
