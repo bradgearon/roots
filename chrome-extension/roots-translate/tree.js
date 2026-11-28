@@ -102,13 +102,13 @@ function field(members,role){
 }
 // Native details/summary is accessible via mouse, touch and keyboard.
 // Captured text remains plain text; never interpret it as HTML.
-function expandableText(value,caption="Read full text"){
+function expandableText(value,caption="Read full text",open=false){
   const details=node("details",undefined,"text-reader");
   const summary=node("summary",undefined,"text-reader-summary");
   summary.append(node("span",value||"","text-reader-preview"),node("span",caption,"reader-hint"));
   const full=node("div",undefined,"full-text");
   full.append(node("p",value||""),action("Copy text",async()=>{await navigator.clipboard.writeText(value||"");status("Text copied.");}));
-  details.append(summary,full);
+  details.append(summary,full);details.open=open;
   return details;
 }
 function weightDetails(sequence,source){
@@ -193,7 +193,7 @@ function pageReader(parent){
       for(const item of result.items||[]){
         if(seen.has(item.sequence))continue;seen.add(item.sequence);
         texts.push(item.body);
-        list.append(expandableText(item.body,"Read full line"));
+        list.append(expandableText(item.body,"Read full line",true));
       }
       started=true;
       complete=!result.hasMore||!result.nextSequence||(result.nextSequence===seq&&result.nextOrder===cursor);
@@ -236,7 +236,7 @@ function renderScreen(item){
     }));
     for(const row of rows){
       const observation=node("div",undefined,"screen-observation");
-      observation.append(node("small",row.origin),expandableText(row.body.body),weightDetails(row.body.sequence,"experience"));
+      observation.append(node("small",row.origin),expandableText(row.body.body,"Read full line",true),weightDetails(row.body.sequence,"experience"));
       const metadata=node("details");metadata.append(node("summary","Source and coordinates"));
       for(const f of row.members)if(f!==row.body)metadata.append(node("small",f.source),node("p",f.body));
       observation.append(metadata);contents.append(observation);
