@@ -1,0 +1,32 @@
+name: Desktop Surface checks
+on:
+  pull_request:
+    paths:
+      - 'native/desktop-surface/**'
+      - 'src/Wds.Roots.Experience/**'
+      - 'scripts/Build-DesktopSurface.ps1'
+      - 'build-surface.cmd'
+      - 'launch-surface.cmd'
+      - '.github/workflows/desktop-surface.yml'
+  workflow_dispatch:
+jobs:
+  windows-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Build native Surface including OCR
+        run: |
+          cmake -S native/desktop-surface -B build/desktop-surface -G "Visual Studio 17 2022" -A x64 -DROOTS_SURFACE_OCR=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build/desktop-surface --config Release --parallel
+      - name: Build managed private Tree receiver
+        run: dotnet build src/Wds.Roots.Experience -c Release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Model-free streaming protocol tests
+        working-directory: native/desktop-surface/audio
+        run: python -m unittest -v test_inworld_worker.py
