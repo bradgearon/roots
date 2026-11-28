@@ -11,7 +11,7 @@ target_link_libraries(roots-surface PRIVATE ole32 oleaut32 uiautomationcore user
 if(ROOTS_SURFACE_OCR)
   target_sources(roots-surface PRIVATE acquisition/ocr.cpp)
   target_compile_definitions(roots-surface PRIVATE ROOTS_SURFACE_OCR=1)
-  target_link_libraries(roots-surface PRIVATE d3d11 dxgi windowsapp)
+  target_link_libraries(roots-surface PRIVATE d3d11 dxgi runtimeobject windowsapp)
 endif()
 if(MSVC)
   target_compile_options(roots-surface PRIVATE /W4 /EHsc /utf-8)
