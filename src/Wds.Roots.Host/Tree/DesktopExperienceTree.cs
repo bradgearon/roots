@@ -30,25 +30,38 @@ internal static class DesktopExperienceTree
         =>Read<IReadOnlyList<RecordMember>>(t=>t.ScreensByTime(term,agent,beforeMs,beforeSequence,limit),Array.Empty<RecordMember>());
     public static IReadOnlyList<BranchAgent> Branches()
         =>Read<IReadOnlyList<BranchAgent>>(t=>t.Agents(),Array.Empty<BranchAgent>());
-    public static float[] Weights(long sequence)
-        =>Read(t=>t.FragmentWeights(sequence),Array.Empty<float>());
+    public static (float[] Weights,long Occurrences) Weights(long sequence)
+        =>Read(t=>(t.FragmentWeights(sequence),t.TextOccurrences(sequence)),(Array.Empty<float>(),0L));
     private static readonly object CompileGate=new();
-    public static (bool Available,long Revision) Compile()
+    public static (bool Available,long Revision,string Path,string? ContentPath) Compile()
     {
         lock(CompileGate)
         {
-            string database=Database();if(!File.Exists(database))return (false,0);
-            using var tree=new NativeTree(database);if(tree.Count()==0)return (false,tree.Revision());
-            string directory=Path.GetDirectoryName(database)!;
+            string database=Database(),directory=Path.GetDirectoryName(database)!;
             string output=Path.Combine(directory,"experience.weights.gguf");
-            string temporary=Path.Combine(directory,"experience.weights."+Guid.NewGuid().ToString("N")+".tmp");
+            string content=Path.Combine(directory,"experience.content.gguf");
+            if(!File.Exists(database))return (false,0,output,null);
+            using var tree=new NativeTree(database);if(tree.Count()==0)return (false,tree.Revision(),output,null);
+            string temporary=output+"."+Guid.NewGuid().ToString("N")+".tmp";
+            string contentTemp=content+"."+Guid.NewGuid().ToString("N")+".tmp";
             try
             {
+                // Native compile is an internally consistent read transaction.
+                // Publish its own revision, not an impossible requirement that
+                // the live watcher stop writing while compilation runs.
                 long revision=tree.Compile(temporary);
-                if(tree.Revision()!=revision)return (false,revision);
-                File.Move(temporary,output,true);return (true,revision);
+                File.Move(temporary,output,true);
+                long contentRevision=tree.CompileExperience(contentTemp);
+                if(File.Exists(contentTemp))File.Move(contentTemp,content,true);
+                else if(File.Exists(content))File.Delete(content);
+                // Each GGUF has its own actual snapshot revision; they need not
+                // be identical during live capture.
+                return (true,revision,output,File.Exists(content)?content:null);
             }
-            finally{if(File.Exists(temporary))File.Delete(temporary);}
+            finally{
+                if(File.Exists(temporary))File.Delete(temporary);
+                if(File.Exists(contentTemp))File.Delete(contentTemp);
+            }
         }
     }
     public static long AddBranch(string name,string term)
