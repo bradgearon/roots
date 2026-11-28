@@ -171,6 +171,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         if (event == null || destroyed || preferences == null) return;
         if (!preferences.enabled()) {
             stopCaptureRecovery();
+            XAccessibilityInspector.cancel();
             if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Accessibility consent OFF");
             main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
             scanScheduled = false;
@@ -216,6 +217,18 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             return;
         }
 
+        // Sample only ordinary foreground X events; never inspect keyboard
+        // or editable/password sources, or retain the event itself.
+        if(XAccessibilityInspector.eventDue(captureEnabled(),kind)&&screenAllowsCapture()&&!event.isPassword()){
+            try{
+                AccessibilityNodeInfo foreground=findXApplicationWindow();
+                if(isXRoot(foreground)){
+                    AccessibilityNodeInfo source=event.getSource();
+                    if(source==null||(!source.isEditable()&&!source.isPassword()))
+                        XAccessibilityInspector.noteEvent(event);
+                }
+            }catch(RuntimeException ignored){}
+        }
         if (kind == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             lastTimelineScrollAt=SystemClock.uptimeMillis();
             if(!scrollSinceLastScan && scanScheduled){
