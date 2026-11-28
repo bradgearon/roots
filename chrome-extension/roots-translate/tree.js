@@ -2,7 +2,7 @@
 const el=id=>document.getElementById(id);
 const status=value=>{el("message").textContent=value;};
 let latest=null,beforeMs=0,beforeSequence=0,loading=false,refreshing=false,generation=0,query="",mode="records";
-let timelineDay="",screenPageSize=12;
+let timelineDay="",screenPageSize=12,timelineSection=null;
 let selectedSource="knowledge",selectedAgent=0,pages=0,viewRevision=null,viewRefreshing=false,viewEpoch=0;
 let invitations=[],inviteSignature="",peerSignature="",branchSignature="";
 // This code runs only in the trusted extension Tree page. A previously
@@ -175,20 +175,38 @@ function appendTimelineItem(item,source,view){
   if(Number.isFinite(observed)){
     const date=new Date(observed);
     const day=date.toLocaleDateString(undefined,{weekday:"long",year:"numeric",month:"long",day:"numeric"});
-    if(day!==timelineDay){timelineDay=day;el("items").append(node("h3",day,"timeline-day"));}
+    if(day!==timelineDay){
+      timelineDay=day;timelineSection=null;el("items").append(node("h3",day,"timeline-day"));
+    }
   }
-  el("items").append(view==="screens"?renderScreen(item):view==="records"?renderRecord(item,source):renderFragment(item,source));
+  if(view!=="screens"){
+    el("items").append(view==="records"?renderRecord(item,source):renderFragment(item,source));return;
+  }
+  const key=item.process+"\u001f"+item.session;
+  const joins=timelineSection&&item.session&&timelineSection.key===key&&
+    timelineSection.last-observed>=0&&timelineSection.last-observed<=60000;
+  if(!joins){
+    const wrapper=node("div",undefined,"experience-section");
+    const heading=node("h4",undefined,"muted");
+    wrapper.append(heading);el("items").append(wrapper);
+    timelineSection={wrapper,heading,key,newest:observed,last:observed,count:0,process:item.process||"Desktop"};
+  }
+  const group=timelineSection;
+  group.last=observed;group.count++;
+  const fmt=ms=>new Date(ms).toLocaleTimeString();
+  group.heading.textContent=group.process+" · "+fmt(group.newest)+(group.count>1?" – "+fmt(group.last):"")+" · "+group.count+" screen"+(group.count===1?"":"s");
+  group.wrapper.append(renderScreen(item));
 }
 function renderFragment(f,source){
   const a=node("article");a.append(node("small",f.source+(f.language?" · "+f.language:"")),
     node("div",new Date(f.observedMs).toLocaleString(),"muted"),node("p",f.body),weightDetails(f.sequence,source));return a;
 }
 async function load(reset=false,live=false){
-  const saved=live?{beforeMs,beforeSequence,pages,timelineDay}:null;
+  const saved=live?{beforeMs,beforeSequence,pages,timelineDay,timelineSection}:null;
   if(reset){
     generation++;
     if(!live){query=el("term").value;mode=el("view").value;selectedAgent=Number(el("branchFilter").value)||0;}
-    beforeMs=0;beforeSequence=0;pages=0;timelineDay="";loading=false;
+    beforeMs=0;beforeSequence=0;pages=0;timelineDay="";timelineSection=null;loading=false;
   }
   if(loading)return;
   const gen=generation,previous=beforeSequence,source=selectedSource,view=mode;
@@ -197,14 +215,14 @@ async function load(reset=false,live=false){
     const data=await command(view==="screens"?"viewScreens":view==="records"?"viewRecords":"viewFeed",{source,term:query,beforeMs,beforeSequence,agent:selectedAgent});
     if(gen!==generation)return;
     const rows=[...(data.items||[])].sort((a,b)=>Number(b.observedMs)-Number(a.observedMs)||Number(b.sequence)-Number(a.sequence));
-    if(reset){el("items").replaceChildren();timelineDay="";}
+    if(reset){el("items").replaceChildren();timelineDay="";timelineSection=null;}
     for(const item of rows)appendTimelineItem(item,source,view);
     if(reset&&!rows.length)el("items").append(node("p",view==="screens"?"No screen text observations yet. Grouped records also shows activity intervals.":"No matching knowledge yet.","muted"));
     beforeMs=data.nextBeforeMs||0;beforeSequence=data.nextBeforeSequence||0;pages++;
     el("more").hidden=!(data.hasMore??(rows.length===(view==="screens"?screenPageSize:30)))||!beforeSequence||beforeSequence===previous;
     status("");return true;
   }catch(e){if(gen===generation){
-    if(saved){({beforeMs,beforeSequence,pages,timelineDay}=saved);}
+    if(saved){({beforeMs,beforeSequence,pages,timelineDay,timelineSection}=saved);}
     if(reset&&!live)el("items").replaceChildren(node("p",e.message,"muted"));
     status(e.message);
   }return false;}
