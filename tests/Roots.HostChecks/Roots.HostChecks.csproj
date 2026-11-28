@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Wds.Roots.Host/Tree/DesktopPublicAxonReceipt.cs" Link="Tree/DesktopPublicAxonReceipt.cs" />
     <Compile Include="../../src/Wds.Roots.Host/Runtime/ManagedModelProcess.cs" Link="Runtime/ManagedModelProcess.cs" />
     <Compile Include="../../src/Wds.Roots.Host/Runtime/HostInstanceLease.cs" Link="Runtime/HostInstanceLease.cs" />
     <Compile Include="../../src/Wds.Roots.Host/Runtime/ChildProcessJob.cs" Link="Runtime/ChildProcessJob.cs" />
