@@ -247,7 +247,7 @@ public final class EncounterService extends Service {
                 if(until!=null&&now<until)return;
                 if(!busy.compareAndSet(false,true))return;
                 if(cooldown.size()>=128)cooldown.clear();
-                cooldown.put(address,now+25000+jitter.nextInt(20000));
+                cooldown.put(address,now+(AxonReceiveCoordinator.requested()?2500+jitter.nextInt(2500):25000+jitter.nextInt(20000)));
             }
             try{outbound.execute(()->{
                 try{
@@ -305,7 +305,7 @@ public final class EncounterService extends Service {
                     int comparison=EncounterArbitration.compareRank(rank,remote.rank());
                     // Equal ranks imply a self-discovery or negligible random collision.
                     // Occasionally let the other side initiate in case its scan is throttled.
-                    if(comparison==0||(comparison>0&&jitter.nextInt(4)!=0))return -1;
+                    if(comparison==0||(comparison>0&&!AxonReceiveCoordinator.requested()&&jitter.nextInt(4)!=0))return -1;
                 }
                 if(!sessionGate.compareAndSet(false,true))return -1;
                 try{
@@ -323,7 +323,10 @@ public final class EncounterService extends Service {
             if(!active())return -1;
             sessionSocket=connection;String peer="",result="Interrupted";EncounterSync sync=null;
             ScheduledFuture<?> deadline=null;
+            android.os.PowerManager.WakeLock transferWake=null;
             try{
+                android.os.PowerManager power=getSystemService(android.os.PowerManager.class);
+                if(power!=null){transferWake=power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK,"Roots:AxonTransfer");transferWake.acquire(125000L);}
                 // Bound time and explicit cancellation, not a tiny fixed item count.
                 deadline=timer.schedule(()->{closeResource(connection);closeResource(bulkSocket);},120,TimeUnit.SECONDS);
                 status="Authenticating nearby Axon";
@@ -341,6 +344,7 @@ public final class EncounterService extends Service {
             finally{
                 if(deadline!=null)deadline.cancel(false);
                 if(sync!=null)sync.close();closeResource(bulkSocket);bulkSocket=null;
+                if(transferWake!=null&&transferWake.isHeld())transferWake.release();
                 ExternalTreeImport.schedule(EncounterService.this);
                 int sent=sync==null?0:sync.sent(),received=sync==null?0:sync.received();
                 // Don't build a persistent tracking record of repeatedly rejected blocked encounters.
@@ -349,7 +353,7 @@ public final class EncounterService extends Service {
                     catch(Exception failure){result+=" · history not saved";}
                 }
                 if(radio==this){lastResult=result+" · "+sent+" sent · "+received+" received";activePeer="";}
-                if(!peer.isEmpty()&&!"Blocked or stopped".equals(result))AxonReceiveCoordinator.completed(peer,received,sent,sync!=null&&sync.completedSweep()&&!result.startsWith("Interrupted"),result);
+                if(!peer.isEmpty()&&!"Blocked or stopped".equals(result))AxonReceiveCoordinator.completed(peer,received,sent,sync!=null&&sync.completedReceive()&&!result.startsWith("Interrupted"),result);
                 sessionSocket=null;
             }
         }

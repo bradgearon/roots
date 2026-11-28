@@ -23,7 +23,7 @@ final class EncounterSync {
     private int maxPages=3;
     String transport(){return transport;}
     void close(){if(upgrade!=null)try{upgrade.close();}catch(java.io.IOException ignored){}}
-    boolean completedSweep(){return complete&&!peerMore;}
+    boolean completedReceive(){return complete;}
     int remoteTotal(){return remoteTotal;}
     private void report(){progress.accept("Receiving knowledge · "+transport+" · "+received+" received · "+sent+" sent · "+examined+" checked"+(remoteTotal<0?"":" · "+remoteTotal+" offered"));}
     private final EncounterBindings bindings;

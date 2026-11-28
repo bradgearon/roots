@@ -89,11 +89,8 @@ public final class MeshActivity extends Activity {
         publish.addView(RootsUi.action(this,"Automatic publication settings",()->startActivity(new Intent(this,EncounterActivity.class))));
         LinearLayout nearby=RootsUi.card(this,content);
         nearby.addView(RootsUi.text(this,"Nearby encounters",18,RootsUi.TEXT,true));
-        nearby.addView(RootsUi.text(this,"Automatically discover and exchange published knowledge over Bluetooth. Manage bindings and interactions here.",13,RootsUi.MUTED,false));
+        nearby.addView(RootsUi.text(this,"Bluetooth discovers and binds Axons. Receive uses the best available transport automatically.",13,RootsUi.MUTED,false));
         nearbyStatus=RootsUi.text(this,"",13,RootsUi.MUTED,false);nearby.addView(nearbyStatus);
-        nearby.addView(RootsUi.action(this,"Receive nearby Axons now",()->{
-            status.setText(EncounterService.requestReceive(this));refresh();
-        }));
         nearby.addView(RootsUi.action(this,"External receipt history",()->startActivity(new Intent(this,ExternalKnowledgeActivity.class))));
         nearby.addView(RootsUi.action(this,"Manage nearby exchange",()->startActivity(new Intent(this,EncounterActivity.class))));
         nearby.addView(RootsUi.action(this,"Network Explorer",()->startActivity(new Intent(this,NetworkExplorerActivity.class))));
@@ -123,7 +120,7 @@ public final class MeshActivity extends Activity {
         analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         LinearLayout inbound=RootsUi.card(this,content);
         inbound.addView(RootsUi.text(this,"Receive knowledge",18,RootsUi.TEXT,true));
-        inbound.addView(RootsUi.text(this,"With no entered invitation, Receive can refresh nearby public Axons as well as the selected private LAN Axon. Private LAN interests stay on this device.",13,RootsUi.MUTED,false));
+        inbound.addView(RootsUi.text(this,"Receive synchronizes saved Axons, including automatically bound nearby peers. Wi-Fi is preferred for bulk transfer; Bluetooth is the offline fallback. Enter an invitation only for an additional private LAN peer.",13,RootsUi.MUTED,false));
         invitations=new EditText(this);invitations.setHint("Optional: new or refreshed peer invitations");invitations.setMinLines(2);
         invitations.setSaveEnabled(false); // Credentials use encrypted private storage, never Android view state.
         if(android.os.Build.VERSION.SDK_INT>=26)invitations.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
@@ -504,40 +501,62 @@ public final class MeshActivity extends Activity {
     }
     private void receive(){
         if(busy)return;
-        // An empty invitation field can use automatic public Axons independently
-        // of the manually saved private LAN subscription. Explicit LAN input
-        // remains authoritative and is never silently replaced.
         final boolean noDraft=invitations.getText().toString().trim().isEmpty();
         final boolean lanSelected=useAxon.isChecked()&&new java.io.File(getNoBackupFilesDir(),"subscription.axon").isFile();
         final boolean nearby=EncounterReceivePolicy.nearby(noDraft,lanSelected,EncounterBindings.get(this).availableCount(),EncounterService.available(this)&&EncounterSettings.enabled(this));
-        String nearbyRequest=nearby?EncounterService.requestReceive(this):"";
-        if(nearby&&(!lanSelected||!NativeTree.available())){
-            status.setText(nearbyRequest);refresh();return;
-        }
-        if(!NativeTree.available()){status.setText("Native Tree unavailable for private LAN receive.");return;}
-        final List<MeshPeer.Invite> peers;
-        final AxonSubscription subscription;
-        try{
-            MeshPeerAccess.Resolution access=selectedPeers(useAxon.isChecked());
-            peers=access.peers();subscription=access.policy();
-            if(subscription!=null&&!access.fromSaved())clearSavedInvitationDraft();
-        }catch(Exception e){status.setText((nearby?nearbyRequest+"\nPrivate LAN: ":"")+e.getMessage());return;}
-        final String wanted=interests.getText().toString(),lang=new OverlayPreferences(this).targetLanguage();
-        busy=true;refresh();status.setText("Reading peer inventories…");
-        final int revision=++diagnosticRevision;
-        reportStale=true;analysisOutput.setText("Waiting for receive connection checks…");
-        WORK.execute(()->{
-            String message;
+        if(!NativeTree.available()){status.setText("Native Tree unavailable for knowledge receive.");return;}
+        List<MeshPeer.Invite> selected=java.util.Collections.emptyList();
+        AxonSubscription policy=null;
+        String selectionFailure="";
+        if(!noDraft||lanSelected||!nearby){
             try{
-                MeshPeer.SyncResult result=mesh.sync(peers,wanted,lang,subscription,progress->runOnUiThread(()->{if(!isDestroyed()&&revision==diagnosticRevision)status.setText(progress);}));
-                message="Received "+result.received()+" of "+result.wanted()+" missing items · "+result.peers()+" peers · "+result.failed()+" failures. Return Home to read.";
-            }catch(Exception|LinkageError e){message="Receive failed: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
-            String result=nearby?nearbyRequest+"\nPrivate LAN: "+message:message;
-            final MeshConnectionDiagnostics.Report report=mesh.lastConnectionReport();
-            runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();status.setText(result);if(revision==diagnosticRevision){
-                if(subscription!=null&&report!=null)lastBoundHealth=updateBoundHealth(report);
-                showConnectionReport(report);
-            }});
+                MeshPeerAccess.Resolution access=selectedPeers(useAxon.isChecked());
+                selected=access.peers();policy=access.policy();
+                if(policy!=null&&!access.fromSaved())clearSavedInvitationDraft();
+            }catch(Exception e){
+                selectionFailure=e.getMessage()==null?"Private LAN access unavailable":e.getMessage();
+                if(!nearby){status.setText(selectionFailure);return;}
+            }
+        }
+        final List<MeshPeer.Invite> peers=selected;
+        final AxonSubscription subscription=policy;
+        final String accessFailure=selectionFailure;
+        final String wanted=interests.getText().toString(),lang=new OverlayPreferences(this).targetLanguage();
+        busy=true;refresh();status.setText("Reading Axon inventories…");
+        final int revision=++diagnosticRevision;
+        reportStale=true;analysisOutput.setText("Receiving knowledge from selected Axons…");
+        // Discovery/bulk synchronization starts from the UI, then completes
+        // asynchronously on the service. Private LAN work can run concurrently.
+        final AxonReceiveCoordinator.Job publicJob=nearby?AxonReceiveCoordinator.start(this,
+            message->runOnUiThread(()->{if(!isDestroyed()&&revision==diagnosticRevision)status.setText(message);})):null;
+        WORK.execute(()->{
+            String lanMessage=accessFailure;
+            MeshConnectionDiagnostics.Report lanReport=null;
+            if(!peers.isEmpty()){
+                try{
+                    MeshPeer.SyncResult result=mesh.sync(peers,wanted,lang,subscription,progress->runOnUiThread(()->{
+                        if(!isDestroyed()&&revision==diagnosticRevision)status.setText("Private LAN · "+progress);
+                    }));
+                    lanMessage="Private LAN: received "+result.received()+" of "+result.wanted()+" missing items · "+result.peers()+" peers · "+result.failed()+" failures.";
+                }catch(Exception|LinkageError e){lanMessage="Private LAN receive failed: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
+                lanReport=mesh.lastConnectionReport();
+            }
+            String publicMessage="";
+            if(publicJob!=null){
+                try{publicMessage=publicJob.finished.get().summary();}
+                catch(InterruptedException e){Thread.currentThread().interrupt();publicMessage="Receive view interrupted; automatic synchronization continues.";}
+                catch(Exception e){publicMessage="Public Axon receive unavailable.";}
+            }
+            final String result=publicMessage+(publicMessage.isEmpty()||lanMessage.isEmpty()?"":"\n")+lanMessage;
+            final MeshConnectionDiagnostics.Report report=lanReport;
+            runOnUiThread(()->{
+                if(isDestroyed())return;
+                busy=false;refresh();status.setText(result);
+                if(revision==diagnosticRevision&&report!=null){
+                    if(subscription!=null)lastBoundHealth=updateBoundHealth(report);
+                    showConnectionReport(report);
+                }else if(revision==diagnosticRevision)analysisOutput.setText("Receive result shown below · public Axon progress is independent of private LAN diagnostics.");
+            });
         });
     }
     /** Explicit publication confirmation; never prefill private original text. */
