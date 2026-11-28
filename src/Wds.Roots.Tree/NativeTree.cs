@@ -105,6 +105,17 @@ public sealed class NativeTree : IDisposable
         Check(N.Records(_handle,term,agent,before,limit,cb,IntPtr.Zero));GC.KeepAlive(cb);
         if(failure!=null)ExceptionDispatchInfo.Capture(failure).Throw();return result;
     }
+    public IReadOnlyList<Fragment> QueryByTime(string term="",long agent=0,long beforeMs=0,long beforeSequence=0,uint limit=30)
+    {
+        Validate(term);var result=new List<Fragment>();Exception? failure=null;
+        FragmentCallback cb=(_,p)=>{
+            try{var f=Marshal.PtrToStructure<NativeFragment>(p);
+                result.Add(new(f.Sequence,Decode(f.Source),Decode(f.ExternalId),Decode(f.Body),Decode(f.Language),f.ObservedMs));return 0;}
+            catch(Exception e){failure=e;return 1;}
+        };
+        Check(N.QueryByTime(_handle,term,agent,beforeMs,beforeSequence,limit,cb,IntPtr.Zero));GC.KeepAlive(cb);
+        if(failure!=null)ExceptionDispatchInfo.Capture(failure).Throw();return result;
+    }
     public IReadOnlyList<RecordMember> RecordsByTime(string term="",long agent=0,long beforeMs=0,long beforeSequence=0,uint limit=30)
     {
         Validate(term);var result=new List<RecordMember>();Exception? failure=null;
@@ -203,6 +214,7 @@ public sealed class NativeTree : IDisposable
         [DllImport(Lib, EntryPoint="roots_tree_observe", CallingConvention=CallingConvention.Cdecl)] internal static extern int Observe(TreeHandle h, [In] NativeObservation[] rows, nuint n, out nuint inserted);
         [DllImport(Lib, EntryPoint="roots_tree_query", CallingConvention=CallingConvention.Cdecl)] internal static extern int Query(TreeHandle h, [MarshalAs(UnmanagedType.LPUTF8Str)] string term, long agent, long before, uint limit, FragmentCallback cb, IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_records", CallingConvention=CallingConvention.Cdecl)] internal static extern int Records(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long before,uint limit,RecordCallback cb,IntPtr user);
+        [DllImport(Lib, EntryPoint="roots_tree_query_time", CallingConvention=CallingConvention.Cdecl)] internal static extern int QueryByTime(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long beforeMs,long beforeSequence,uint limit,FragmentCallback cb,IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_records_time", CallingConvention=CallingConvention.Cdecl)] internal static extern int RecordsByTime(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long beforeMs,long beforeSequence,uint limit,RecordCallback cb,IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_fragment_weights", CallingConvention=CallingConvention.Cdecl)] internal static extern int FragmentWeights(TreeHandle h,long sequence,[Out] float[] weights,nuint count);
         [DllImport(Lib, EntryPoint="roots_tree_compile_localized", CallingConvention=CallingConvention.Cdecl)] internal static extern int CompileLocalized(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string path,[MarshalAs(UnmanagedType.LPUTF8Str)] string language,out long revision);
