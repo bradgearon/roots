@@ -67,6 +67,9 @@ final class AutoSceneSurfaceManager {
             lastPaint=Collections.emptyList();
             attachFailed = false;
         }
+        // An origin change with the same allocation must not expose the
+        // previous frame at the new coordinate transform.
+        if(target!=null&&target.sameSurface(next)&&!java.util.Objects.equals(target.origin,next.origin))invalidateGeometry();
         target = next;
         return true;
     }
@@ -146,6 +149,10 @@ final class AutoSceneSurfaceManager {
                             | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                     PixelFormat.TRANSLUCENT);
             params.gravity = Gravity.TOP | Gravity.LEFT;
+            // This layer paints in screen space. Insets are accounted for by
+            // the View's actual location, not a presumed zero origin.
+            if(Build.VERSION.SDK_INT>=30){params.setFitInsetsTypes(0);params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;}
+            else if(Build.VERSION.SDK_INT>=28)params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             params.setTitle("Roots selective translation fallback");
             try {
                 wm.addView(view, params);
