@@ -46,6 +46,7 @@ final class XAccessibilityInspector {
     static final class Scan {
         final long request;
         final StringBuilder text=new StringBuilder();
+        final XPostMetadata.Probe metadataProbe=new XPostMetadata.Probe(24);
         int count;
         boolean truncated;
         Scan(long request){this.request=request;}
@@ -77,6 +78,8 @@ final class XAccessibilityInspector {
             List<String> available=node.getAvailableExtraData();
             if(available!=null&&!available.isEmpty())field(line,"availableExtraData",String.join(", ",available));
             extras(line,"extras",node.getExtras(),0);
+            if(XPostMetadata.conversationCard(node)||XPostMetadata.timelineHeader(node.getViewIdResourceName())||XKnowledgeRecords.hasPostMetadataRole(node.getViewIdResourceName()))
+                extras(line,"requested",metadataProbe.read(node,true),0);
             if(text.length()+line.length()>MAX_REPORT){truncated=true;return;}
             text.append(line).append('\n');count++;
         }
