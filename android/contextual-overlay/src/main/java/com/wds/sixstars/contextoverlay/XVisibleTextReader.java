@@ -32,6 +32,7 @@ public final class XVisibleTextReader {
     private int lastAuthorMatchCount;
     private int lastClippedNameCount;
     private boolean lastPostDetail;
+    private long nextMetadataProbeAt;
     // In-memory discovery snapshot, independent of the chosen render layout.
     private List<TextCandidate> lastDiscovered = Collections.emptyList();
     public List<TextCandidate> lastDiscovered() { return lastDiscovered; }
@@ -70,6 +71,11 @@ public final class XVisibleTextReader {
         Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> observations=new LinkedHashMap<>();
         List<XKnowledgeRecords.Sample> knowledgeSamples=new ArrayList<>();
         long observedAt=System.currentTimeMillis();
+        // Do not turn fast scrolling into repeated metadata IPC. Explicit
+        // values already present in extras are still read on every scan.
+        long uptime=android.os.SystemClock.uptimeMillis();
+        XPostMetadata.Probe metadataProbe=new XPostMetadata.Probe(retainKnowledge&&uptime>=nextMetadataProbeAt?6:0);
+        if(retainKnowledge&&uptime>=nextMetadataProbeAt)nextMetadataProbeAt=uptime+1000;
         lastKnowledge=Collections.emptyList();
         lastKnowledgeBounded=false;
         List<TextCandidate> raw = new ArrayList<>();
@@ -135,9 +141,12 @@ public final class XVisibleTextReader {
                         XKnowledgeRecords.sample(knowledgeSamples,node.getText(),node.getViewIdResourceName(),observedBounds,false,sourceAllowed);
                         XKnowledgeRecords.sample(knowledgeSamples,node.getContentDescription(),node.getViewIdResourceName(),observedBounds,true,sourceAllowed);
                         String metadataRole=node.getViewIdResourceName();
+                        if(sourceAllowed&&XPostMetadata.conversationCard(node))metadataRole="post_container";
                         if(sourceAllowed&&XKnowledgeRecords.hasPostMetadataRole(metadataRole)){
-                            try{XKnowledgeRecords.sampleMetadata(knowledgeSamples,node.getExtras(),metadataRole,observedBounds);}
-                            catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
+                            try{
+                                XKnowledgeRecords.sampleMetadata(knowledgeSamples,node.getExtras(),metadataRole,observedBounds);
+                                XKnowledgeRecords.sampleMetadata(knowledgeSamples,metadataProbe.read(node,true),metadataRole,observedBounds);
+                            }catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
                         }
                     }
                 }
@@ -401,7 +410,7 @@ public final class XVisibleTextReader {
                 String id = parent.getViewIdResourceName();
                 if (parent.isScrollable() || XPostDetailContextService.isDetailContainerId(id)
                         || XPostDetailContextService.isReplyContextId(id)) break;
-                if (PostTextHeuristics.isPostContainerId(id))
+                if (PostTextHeuristics.isPostContainerId(id)||XPostMetadata.conversationCard(parent))
                     return new PostCard(rect, true);
 
                 AccessibilityNodeInfo grand = parent.getParent();
