@@ -15,6 +15,7 @@ Roots is both an intended open specification for portable, searchable, developab
 | [Honeycomb and Whirlwind](honeycomb-whirlwind.md) | Mesh neighborhoods, reciprocal Winds, emergence, judgment, retention and reversible reweaving |
 | [Garden participation](garden.md) | Patrols, anonymous nearby presence, swipe discovery, foreign Forge characters and optional playful Serpent encounters and blind actor battles |
 | [Architecture and roadmap](architecture.md) | Forge operations, service boundaries, Tree of Life storage, background work and delivery phases |
+| [Desktop Surface and Experience](desktop-surface-experience.md) | Windows capture and adaptive translation, browser/audio adapters, memory-only checkpoints, local experience records, timesheets and implementation milestones |
 
 ## Principles
 
