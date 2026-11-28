@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Wds.Roots.Tree;
 
+using Receipt = Wds.Roots.Host.DesktopPublicAxonReceipt;
+
 namespace Wds.Roots.Host;
 
 internal sealed partial class DesktopPublicAxonService
@@ -16,12 +18,6 @@ internal sealed partial class DesktopPublicAxonService
 
     // Older individual receipts used PascalCase; compressed receipts were
     // always written with WireOptions (camelCase). Accept both on recovery.
-    static readonly JsonSerializerOptions ReceiptOptions=new(DesktopPublicItem.WireOptions)
-    {
-        PropertyNameCaseInsensitive=true,
-        RespectRequiredConstructorParameters=true
-    };
-
     static bool ValidReceipt(Receipt? receipt)
         =>receipt!=null&&receipt.Item.ValueKind==JsonValueKind.Object&&
             !string.IsNullOrEmpty(receipt.Peer)&&MeshGraphItem.IsHash(receipt.Peer)&&receipt.At>=0;
@@ -59,7 +55,7 @@ internal sealed partial class DesktopPublicAxonService
                     // of an otherwise readable archive. Preserve files in place.
                     try
                     {
-                        var receipt=row.Deserialize<Receipt>(ReceiptOptions);
+                        var receipt=row.Deserialize<Receipt>(Receipt.Options);
                         if(!ValidReceipt(receipt)){invalidRows++;continue;}
                         var item=DesktopPublicItem.Parse(receipt!.Item);
                         if(_receipts.TryGetValue(item.Id,out var old)&&old.Promoted)continue;
@@ -90,7 +86,7 @@ internal sealed partial class DesktopPublicAxonService
         {
             using(var file=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None))
             {
-                using(var gzip=new GZipStream(file,CompressionLevel.Fastest,true))JsonSerializer.Serialize(gzip,receipts,ReceiptOptions);
+                using(var gzip=new GZipStream(file,CompressionLevel.Fastest,true))JsonSerializer.Serialize(gzip,receipts,Receipt.Options);
                 file.Flush(true);
             }
             if(!OperatingSystem.IsWindows())File.SetUnixFileMode(temp,UnixFileMode.UserRead|UnixFileMode.UserWrite);
