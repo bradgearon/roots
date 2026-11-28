@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Roots · Tree and Translate",
   "description": "Capture visible X knowledge into the desktop Roots Tree, exchange it with bound Mesh peers, and translate with local PLaMo.",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "permissions": [
     "storage"
   ],
