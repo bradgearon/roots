@@ -19,6 +19,8 @@ if not exist "%EXPERIENCE%" (
 )
 rem Query commands never install anything. Explicit --no-ocr also skips provisioning.
 if /i "%~1"=="--status" goto run
+if /i "%~1"=="--pause" goto run
+if /i "%~1"=="--resume" goto run
 if /i "%~1"=="--backup" goto run
 if /i "%~1"=="--search" goto run
 for %%A in (%*) do if /i "%%~A"=="--no-ocr" goto run
