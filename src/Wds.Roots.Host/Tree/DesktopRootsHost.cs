@@ -22,9 +22,9 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
             if(string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ROOTS_TREE_LIBRARY")))
             {
                 string library=OperatingSystem.IsWindows()?"roots_tree.dll":"libroots_tree.so";
-                foreach(string directory in new[]{"build/desktop-tree/Release","build/desktop-tree","build/tree-core/Release","build/tree-core"})
+                foreach(string libraryDirectory in new[]{"build/desktop-tree/Release","build/desktop-tree","build/tree-core/Release","build/tree-core"})
                 {
-                    string candidate=Path.GetFullPath(Path.Combine(repositoryRoot,directory,library));
+                    string candidate=Path.GetFullPath(Path.Combine(repositoryRoot,libraryDirectory,library));
                     if(File.Exists(candidate)){Environment.SetEnvironmentVariable("ROOTS_TREE_LIBRARY",candidate);break;}
                 }
             }
