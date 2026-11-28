@@ -17,8 +17,7 @@ public final class AutoTranslationEligibilityService {
         if(candidate==null)return false;
         if(candidate.authorName)
             return candidate.text!=null && !candidate.text.trim().isEmpty()
-                && !candidate.languageHint.isEmpty()
-                && targetLanguage!=null && !candidate.languageHint.equalsIgnoreCase(targetLanguage);
+                && PostLanguage.letters(candidate.text)>0 && targetLanguage!=null&&!targetLanguage.isEmpty();
         return accepts(candidate.knownPostTextId,
                 candidate.hasPostContainer, candidate.fromDescription,
                 candidate.bodyScore, candidate.languageHint, targetLanguage,
@@ -34,8 +33,9 @@ public final class AutoTranslationEligibilityService {
         if (text == null || text.trim().length() < (recognizedBody ? 1 : 2) || text.length() > 1100)
             return false;
         if (target == null || target.isEmpty() || PostLanguage.letters(text)==0) return false;
-        source=PostLanguage.hint(text,source);
-        if (source != null && !source.isEmpty() && source.equalsIgnoreCase(target)) return false;
+        // A language attribute, including target-language metadata, cannot
+        // veto classification. Native X may already be displaying translated text.
+        source=PostLanguage.code(source);
         // Unknown source is eligible for credible post bodies. The provider
         // receives no source hint instead of an invented language.
         if (source == null || source.isEmpty()) {
