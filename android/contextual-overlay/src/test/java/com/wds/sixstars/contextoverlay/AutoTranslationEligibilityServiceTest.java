@@ -37,15 +37,15 @@ public class AutoTranslationEligibilityServiceTest {
                 "こんにちは世界"));
     }
 
-    @Test public void ignoresTargetLanguageButNotLowScoreForeignText() {
-        assertFalse(AutoTranslationEligibilityService.accepts(
+    @Test public void languageAttributeCannotPreventModelCheck() {
+        assertTrue(AutoTranslationEligibilityService.accepts(
                 true, true, false, 230, "en", "en", "English post"));
         assertTrue(AutoTranslationEligibilityService.accepts(
                 false, true, false, 50, "ja", "en", "こんにちは"));
     }
     @Test public void englishToFrenchAndUnknownRealBodies() {
         assertTrue(AutoTranslationEligibilityService.accepts(true,false,false,210,"en","fr","The original post."));
-        assertFalse(AutoTranslationEligibilityService.accepts(true,false,false,210,"fr","fr","Bonjour à tous."));
+        assertTrue(AutoTranslationEligibilityService.accepts(true,false,false,210,"fr","fr","Bonjour à tous."));
         assertTrue(AutoTranslationEligibilityService.accepts(true,false,false,210,"","fr","Great!"));
         assertTrue(AutoTranslationEligibilityService.accepts(false,true,false,68,"","fr","Great!"));
         assertFalse(AutoTranslationEligibilityService.accepts(false,false,true,70,"","fr","Unidentified description"));
