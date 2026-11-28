@@ -42,7 +42,12 @@ It looks in `%ProgramFiles%/Tesseract-OCR` or an absolute trusted
 `ROOTS_TESSERACT_DIR`. It loads the C API and language data once and passes
 redacted grayscale pixels in memory, not image files. English is the default;
 set `ROOTS_OCR_LANG=eng+jpn` for multiple installed traineddata languages.
-No dependency is downloaded or installed by Roots automatically.
+On a normal capture launch, `launch-surface.cmd` checks for the installed engine
+and English data. If absent, it provisions the pinned UB Mannheim Tesseract 5
+package through Windows Package Manager. Windows may require approval for the
+first installation. An existing configured installation is never overwritten.
+`--status`, `--search` and `--no-ocr` skip provisioning. If installation is
+unavailable or fails, capture continues with the existing local backends.
 
 If Tesseract is absent, Roots attempts the existing Windows.Media.Ocr backend.
 Microsoft officially supports this API in packaged desktop applications; an
@@ -90,8 +95,17 @@ registration is added. The console search command is an explicit local display
 of committed text. Start the regular Roots host with launch.cmd as well, reload
 the Chrome extension, and open its existing Tree page. The Knowledge source
 selector switches between social/received knowledge and private desktop
-Experience. Both grouped and raw views are ordered by observed time descending
-with a stable sequence tie-breaker. Live refresh, search, scoped branches,
+Experience. The default Experience view is **Screen groups**, with date
+headings and newest observation time first. A screen group combines all text
+observations emitted by the same foreground reading pass; each original
+observation retains its identity, coordinates, source and weights. Legacy
+observations group by session and timestamp, without migrating or deleting
+stored records. Search and branch filtering return the entire matching screen
+for context. Grouped records and raw fragments remain available, including
+activity intervals. All views page in descending observation time using a stable
+sequence tie-breaker. Repeated unchanged text remains deduplicated, so a group
+is a reading pass's observations, not a saved image or guaranteed complete
+transcription of every pixel. Live refresh, search, scoped branches,
 and native 128-component lexical weight inspection work across both sources.
 Experience branch membership uses the same literal-matching native agents;
 new observations join matching branches automatically. Compile private Experience
