@@ -41,18 +41,21 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private boolean scanScheduled;
     private boolean scrollSinceLastScan;
     private long lastTimelineScrollAt=-1L;
-    // Independent, low-frequency recovery only while foreground X can be verified.
-    // Normal capture remains event-driven; recovery never starts translation work.
-    private static final long CAPTURE_RECOVERY_MS=4000L;
+    // Event-driven normal scans. A low-frequency, foreground-only recovery
+    // repairs a stale scene when X stops emitting scroll/content events.
+    private static final long CAPTURE_RECOVERY_MS=4000L, SCENE_RECOVERY_MS=900L;
     private static final int MAX_UNKNOWN_ROOT_RETRIES=3;
     private boolean captureRecoveryScheduled, screenReceiverRegistered;
     private int unknownRootChecks;
-    private long lastCaptureScanUptime=-1L;
+    private long lastCaptureScanUptime=-1L,lastSceneScanUptime=-1L;
     private final Runnable captureRecovery=this::recoverCapture;
     private final BroadcastReceiver screenReceiver=new BroadcastReceiver(){
         @Override public void onReceive(Context context,Intent intent){
             if(Intent.ACTION_SCREEN_OFF.equals(intent.getAction())){
                 stopCaptureRecovery();
+                main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
+                scanScheduled=false;scrollSinceLastScan=false;scrollTracker.reset();lastSceneScanUptime=-1L;
+                if(coordinator!=null)coordinator.clear();
                 if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Screen off; capture waiting");
             }else{
                 unknownRootChecks=0;
@@ -94,29 +97,40 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         KeyguardManager keyguard=getSystemService(KeyguardManager.class);
         return power!=null&&power.isInteractive()&&keyguard!=null&&!keyguard.isKeyguardLocked();
     }
+    private boolean sceneRecoveryEnabled(){
+        return !destroyed&&preferences!=null&&preferences.enabled()&&preferences.autoPreview();
+    }
+    private boolean recoveryEnabled(){return captureEnabled()||sceneRecoveryEnabled();}
+    private long recoveryInterval(){return sceneRecoveryEnabled()?SCENE_RECOVERY_MS:CAPTURE_RECOVERY_MS;}
     private void armCaptureRecovery(){
-        if(!captureRecoveryScheduled&&captureEnabled()&&screenAllowsCapture())
-            captureRecoveryScheduled=main.postDelayed(captureRecovery,CAPTURE_RECOVERY_MS);
+        if(!captureRecoveryScheduled&&recoveryEnabled()&&screenAllowsCapture())
+            captureRecoveryScheduled=main.postDelayed(captureRecovery,recoveryInterval());
     }
     private void stopCaptureRecovery(){
         main.removeCallbacks(captureRecovery);captureRecoveryScheduled=false;unknownRootChecks=0;
     }
     private void recoverCapture(){
         captureRecoveryScheduled=false;
-        if(!captureEnabled()||!screenAllowsCapture()){unknownRootChecks=0;return;}
+        if(!recoveryEnabled()||!screenAllowsCapture()){unknownRootChecks=0;return;}
         boolean again=false;
         try{
             AccessibilityNodeInfo root=foregroundApplicationRoot();
             if(isXRoot(root)){
                 unknownRootChecks=0;again=true;
                 long now=SystemClock.uptimeMillis();
-                if(lastCaptureScanUptime<0||now-lastCaptureScanUptime>=CAPTURE_RECOVERY_MS)
+                if(sceneRecoveryEnabled()){
+                    // Repair actual presentation, not merely the Tree.
+                    // No scan when normal X events have kept it fresh.
+                    if(!scanScheduled&&(lastSceneScanUptime<0||now-lastSceneScanUptime>=SCENE_RECOVERY_MS))
+                        refreshWindowSafely();
+                }else if(lastCaptureScanUptime<0||now-lastCaptureScanUptime>=CAPTURE_RECOVERY_MS)
                     captureFresh();
             }else if(root==null||root.getPackageName()==null){
-                treeRuntime.noteCaptureReaderState("Foreground root unavailable; waiting for X");
+                if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Foreground root unavailable; waiting for X");
+                if(sceneRecoveryEnabled()&&renderer!=null){coordinator.noteUncertainScroll();renderer.uncertainScroll();}
                 again=++unknownRootChecks<=MAX_UNKNOWN_ROOT_RETRIES;
             }else{
-                treeRuntime.noteCaptureReaderState("Outside X; capture waiting");
+                hideOutsideX();
                 unknownRootChecks=0;
             }
         }catch(RuntimeException error){
@@ -131,7 +145,11 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     }
     private void refreshWindowSafely(){
         try{refreshWindow();}
-        catch(RuntimeException error){noteCaptureFailure("Window scan",error);armCaptureRecovery();}
+        catch(RuntimeException error){
+            noteCaptureFailure("Window scan",error);
+            if(sceneRecoveryEnabled()&&renderer!=null){coordinator.noteUncertainScroll();renderer.uncertainScroll();}
+            armCaptureRecovery();
+        }
     }
     private void registerScreenEvents(){
         if(screenReceiverRegistered)return;
@@ -160,7 +178,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         treeRuntime=NativeTree.available()?TreeRuntime.get(this):null;
         coordinator.setTree(treeRuntime);
         if(treeRuntime!=null)treeRuntime.noteCaptureReaderState("Accessibility service connected");
-        lastCaptureScanUptime=-1L;stopCaptureRecovery();registerScreenEvents();
+        lastCaptureScanUptime=-1L;lastSceneScanUptime=-1L;stopCaptureRecovery();registerScreenEvents();
         armCaptureRecovery();
         TranslationRuntime.startCompute(this);
         scheduleScan();scheduleSettledScan();
@@ -189,7 +207,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         // Window-list changes often have no package name. They can be the only
         // signal after an app switch, unlock or a temporarily missing X root.
         if(kind==AccessibilityEvent.TYPE_WINDOWS_CHANGED){
-            if(captureEnabled()){unknownRootChecks=0;armCaptureRecovery();}
+            if(recoveryEnabled()){unknownRootChecks=0;armCaptureRecovery();}
             return;
         }
         if(kind==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED||
@@ -275,6 +293,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         main.removeCallbacks(scan);main.removeCallbacks(settledScan);main.removeCallbacks(settledScanRetry);
         scanScheduled = false;
         scrollSinceLastScan = false;
+        lastSceneScanUptime=-1L;
         scrollTracker.reset();
         coordinator.clear();
         // Keep the paired compute socket alive across foreground apps.
@@ -324,6 +343,11 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         // Retain the verified snapshot before touching the renderer. A compositor
         // failure must not prevent Tree intake.
         List<TextCandidate> candidates = captureFresh();
+        if(!readerStatus.startsWith("X active;")){
+            // A failed/absent root cannot authorize replay of old geometry.
+            if(preferences.autoPreview()){coordinator.noteUncertainScroll();renderer.uncertainScroll();}
+            if(isNonXApplicationForeground()){hideOutsideX();return;}
+        }
         publishAutoWindowTarget();
         boolean scrolling = scrollSinceLastScan;
         scrollSinceLastScan = false;
@@ -333,6 +357,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         coordinator.refresh(candidates,
                 readerStatus.startsWith("X active;") ? reader.lastDiscovered() : Collections.emptyList(),
                 scrolling);
+        if(readerStatus.startsWith("X active;"))lastSceneScanUptime=SystemClock.uptimeMillis();
         boolean scannedX = readerStatus.startsWith("X");
         OverlayDiagnostics.record(this, readerStatus,
                 scannedX ? reader.lastVisitedNodes() : 0,
