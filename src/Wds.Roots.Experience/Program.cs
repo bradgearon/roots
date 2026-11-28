@@ -193,6 +193,9 @@ internal sealed record SurfaceObservation(string Kind, ulong Session, uint Pid, 
         Add("kind", activity ? "activity.interval" : "observation");
         Add("process", ProcessName);
         Add("parent", parent);
+        // UIA and OCR observations emitted by one foreground read share this
+        // stable screen identity, even when wall-clock timestamps collide.
+        if (!activity) Add("screen", $"{parent}:screen:{StartMono}");
         Add("origin", activity ? "windows.foreground" : "windows." + Kind);
         Add("interval", JsonSerializer.Serialize(new { version = 1, startUtcMs = StartUtc, endUtcMs = EndUtc,
             startMonotonicUs = StartMono, endMonotonicUs = EndMono, state = activity ? Kind : "observed" }));
