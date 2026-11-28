@@ -107,6 +107,10 @@ ROOTS_TREE_API roots_tree_result roots_tree_relations(roots_tree *tree,
  * This lexical baseline is not a language model or learned embedding. */
 ROOTS_TREE_API roots_tree_result roots_tree_compile(roots_tree *tree,
     const char *new_output_path, int64_t *revision);
+/* Private Experience content-only projection. Retains every observed text
+ * occurrence and structural screen/session edges without embedding metadata. */
+ROOTS_TREE_API roots_tree_result roots_tree_compile_experience(roots_tree *tree,
+    const char *new_output_path,int64_t *revision);
 /* No file is created when no local-language record is available. */
 ROOTS_TREE_API roots_tree_result roots_tree_compile_localized(roots_tree *tree,
     const char *new_output_path,const char *language,int64_t *revision);
