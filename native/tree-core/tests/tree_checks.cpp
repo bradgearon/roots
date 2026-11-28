@@ -1,5 +1,6 @@
 #include "roots_tree.h"
 #include <cmath>
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -219,6 +220,63 @@ int main(){
             cursor=groups[0].first;groups.clear();
             ok(roots_tree_screens_time(t,"",0,10,cursor,1,record_member,&groups));
             need(groups.empty(),"screen pages exclude activity intervals");
+            ok(roots_tree_clear(t));
+        }
+        {
+            // Reproduce a real-sized Experience timeline (76,500 fragments).
+            // The former query scanned the whole namespace for each event,
+            // which could time out even with a few minutes of screen capture.
+            constexpr int events=10500;
+            constexpr int perScreen=30;
+            constexpr int perBatch=32;
+            for(int start=0;start<events;start+=perBatch){
+                struct fixture {std::string id,screen,body,parent;int64_t at;bool legacy;};
+                std::vector<fixture> values;values.reserve(perBatch);
+                std::vector<roots_observation> batch;batch.reserve(perBatch*8);
+                for(int i=start;i<std::min(events,start+perBatch);++i){
+                    auto parent="local:experience:scale:session:"+std::to_string(i/500);
+                    values.push_back({"local:experience:scale:event:"+std::to_string(i),
+                        parent+":screen:"+std::to_string(i/perScreen),
+                        "Visible line "+std::to_string(i)+(i==5678?" needle":""),
+                        parent,1700000000000LL+(i/perScreen)*1000LL,i<7500});
+                }
+                for(const auto &v:values){
+                    auto add=[&](const char *source,const char *body){
+                        batch.push_back({source,v.id.c_str(),body,"",v.at});
+                    };
+                    add("record.experience.body",v.body.c_str());
+                    add("record.experience.kind","observation");
+                    add("record.experience.parent",v.parent.c_str());
+                    add("record.experience.process","chrome.exe");
+                    add("record.experience.origin","windows.ocr");
+                    add("record.experience.interval","observed");
+                    add("record.experience.evidence","fixture bounds");
+                    if(!v.legacy)add("record.experience.screen",v.screen.c_str());
+                }
+                size_t n=0;ok(roots_tree_observe(t,batch.data(),batch.size(),&n));
+                need(n==batch.size(),"large timeline ingestion");
+            }
+            int64_t count=0;ok(roots_tree_count(t,&count));need(count==76500,"large timeline size");
+            const auto began=std::chrono::steady_clock::now();
+            std::vector<std::pair<int64_t,std::string>> groups;
+            ok(roots_tree_screens_time(t,"",0,0,0,12,record_member,&groups));
+            need(groups.size()==2880,"large timeline returns complete newest screens");
+            need(groups.front().second=="Visible line 10470","large timeline newest first");
+            auto last=groups.back().first;
+            std::set<int64_t> firstPage;for(const auto &g:groups)firstPage.insert(g.first);
+            groups.clear();
+            ok(roots_tree_screens_time(t,"",0,1700000000000LL+338000LL,last,12,record_member,&groups));
+            need(!groups.empty(),"large timeline older page");
+            for(const auto &g:groups)need(firstPage.count(g.first)==0,"large timeline no duplicate screen pages");
+            groups.clear();
+            ok(roots_tree_screens_time(t,"needle",0,0,0,12,record_member,&groups));
+            need(groups.size()==210,"large timeline search retains entire legacy screen");
+            int64_t branch=0;ok(roots_tree_agent_create(t,"Needle","needle",&branch));
+            std::vector<std::pair<int64_t,std::string>> branchGroups;
+            ok(roots_tree_screens_time(t,"",branch,0,0,12,record_member,&branchGroups));
+            need(groups==branchGroups,"large timeline branch filter retains context");
+            const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-began).count();
+            std::cout<<"Large Experience timeline regression: "<<elapsed<<" ms for paging/search/branch checks\n";
             ok(roots_tree_clear(t));
         }
         {
