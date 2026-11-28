@@ -69,7 +69,7 @@ public final class MeshActivity extends Activity {
         publish.addView(RootsUi.action(this,"Write a remembrance",()->publish(this,null,this::refresh)));
         LinearLayout listener=RootsUi.card(this,content);
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
-        listener.addView(RootsUi.text(this,"Create a roots:// invitation for another phone. Keep Roots running while the other phone receives. Stop serving to invalidate the invitation.",13,RootsUi.MUTED,false));
+        listener.addView(RootsUi.text(this,"Create an invitation for another phone. Stop listening pauses sharing; saved invitations remain valid after restart.",13,RootsUi.MUTED,false));
         serve=RootsUi.action(this,"Start listening",this::start);listener.addView(serve);
         copy=RootsUi.action(this,"Copy private invitation",this::copy);listener.addView(copy);
         listener.addView(RootsUi.action(this,"Share invitation…",this::share));
@@ -402,7 +402,7 @@ public final class MeshActivity extends Activity {
         }
         catch(Exception e){axonStatus.setText(e.getMessage());return;}
         LinearLayout box=RootsUi.column(this);box.setPadding(dp(16),0,dp(16),0);box.setBackgroundColor(RootsUi.CARD);
-        box.addView(RootsUi.text(this,"Peer connection details are saved encrypted on this device. Test and Receive reuse them when the invitation box is empty. If a peer restarts its listener, paste its new invitation to refresh access.",13,RootsUi.MUTED,false));
+        box.addView(RootsUi.text(this,"Saved peer access survives listener restarts. Paste a new invitation only if the source address or access changes.",13,RootsUi.MUTED,false));
         box.addView(RootsUi.text(this,"All knowledge is wanted by default. Optional topics and FFN groups prioritize its flow. Example: music | 7:12,8:2.",13,RootsUi.MUTED,false));
         android.widget.Spinner model=new android.widget.Spinner(this);RootsUi.styleSpinner(this,model,IntelligenceModel.labels());
         model.setSelection((old==null?IntelligenceModel.selected(this):old.model).ordinal());box.addView(model);
