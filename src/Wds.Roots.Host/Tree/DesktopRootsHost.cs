@@ -95,7 +95,10 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
         });
         // Private DOM ingestion shares the existing local token boundary.
         // It does not call the social observation or Mesh import path.
-        group.MapGet("/experience/browser/status",()=>Results.Json(new{ok=true,capture=DesktopBrowserExperience.Enabled()}));
+        group.MapGet("/experience/capture",()=>Results.Json(new {ok=true,state=DesktopBrowserExperience.CaptureStatus()}));
+        group.MapPost("/experience/capture",(CaptureSetting setting)=>
+            Results.Json(new {ok=true,state=DesktopBrowserExperience.SetCapture(setting.Enabled)}));
+        group.MapGet("/experience/browser/status",()=>Results.Json(DesktopBrowserExperience.Settings()));
         group.MapPost("/experience/browser/observe",async (HttpContext ctx)=>{
             var limit=ctx.Features.Get<IHttpMaxRequestBodySizeFeature>();
             if(limit!=null&&!limit.IsReadOnly)limit.MaxRequestBodySize=96*1024;
