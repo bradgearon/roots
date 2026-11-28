@@ -4,6 +4,8 @@ import android.content.*;
 import android.database.Cursor;
 import android.database.sqlite.*;
 import java.io.IOException;
+import com.wds.sixstars.contextoverlay.tree.NativeTree;
+import com.wds.sixstars.contextoverlay.tree.TreeRuntime;
 import java.util.*;
 import org.json.JSONObject;
 
@@ -39,6 +41,54 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
             values.put("id",item.id());values.put("body",json);values.put("peer",peer);values.put("received_at",System.currentTimeMillis());
             db.insertOrThrow("publications",null,values);db.setTransactionSuccessful();return true;
         }finally{db.endTransaction();}
+    }
+    /** Commit an entire verified chunk as one receipt transaction, one native
+     * Tree transaction and one marker transaction. A crash between the two
+     * databases leaves pending receipts recoverable; ACK happens afterwards. */
+    synchronized int retainBatch(List<MeshItem> items,String peer,TreeRuntime tree,long epoch)throws Exception{
+        if(items.isEmpty()||items.size()>KnowledgeChunk.MAX_ITEMS||!EncounterBindings.digest(peer))throw new IOException("Invalid receipt batch");
+        List<Publication> pending=new ArrayList<>();
+        SQLiteDatabase db=getWritableDatabase();
+        long now=System.currentTimeMillis();int added=0;
+        db.beginTransaction();
+        try{
+            long count=android.database.DatabaseUtils.longForQuery(db,"SELECT COUNT(*) FROM publications",null);
+            for(MeshItem item:items){
+                if(!RootGraphExchange.fitsFrame(item))throw new IOException("Invalid publication size");
+                boolean exists=false;
+                try(Cursor cur=db.rawQuery("SELECT body,peer,received_at,promoted FROM publications WHERE id=?",new String[]{item.id()})){
+                    if(cur.moveToFirst()){
+                        exists=true;
+                        if(cur.getInt(3)==0){
+                            MeshItem saved=MeshItem.parse(new JSONObject(cur.getString(0)));
+                            if(!saved.id().equals(item.id())||!EncounterBindings.digest(cur.getString(1)))throw new IOException("Invalid pending receipt");
+                            pending.add(new Publication(saved,cur.getString(1),cur.getLong(2),false));
+                        }
+                    }
+                }
+                if(exists)continue;
+                if(count>=LIMIT)throw new IOException("External publication storage limit reached");
+                ContentValues values=new ContentValues();
+                values.put("id",item.id());values.put("body",item.json().toString());values.put("peer",peer);values.put("received_at",now);
+                db.insertOrThrow("publications",null,values);count++;added++;
+                pending.add(new Publication(item,peer,now,false));
+            }
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+        if(!pending.isEmpty()){
+            List<NativeTree.Observation> rows=new ArrayList<>();
+            for(Publication publication:pending)rows.addAll(publication.item().receivedRows(publication.peer(),publication.receivedAt()));
+            // 32 items * at most six observations is within native 256-row limit.
+            tree.storeExplicit(rows,epoch);
+            db.beginTransaction();
+            try{
+                ContentValues mark=new ContentValues();mark.put("promoted",1);
+                for(Publication publication:pending)db.update("publications",mark,"id=?",new String[]{publication.item().id()});
+                db.setTransactionSuccessful();
+            }finally{db.endTransaction();}
+            ExternalTreeImport.notifyImported();
+        }
+        return added;
     }
     long count(){return android.database.DatabaseUtils.longForQuery(getReadableDatabase(),"SELECT COUNT(*) FROM publications",null);}
     NavigableMap<String,MeshItem> catalog()throws Exception{

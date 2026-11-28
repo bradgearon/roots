@@ -20,7 +20,7 @@ final class EncounterSync {
     private final java.util.function.Consumer<String> progress;
     private final java.util.function.Consumer<java.io.Closeable> trackTransport;
     private String transport="Bluetooth";
-    private boolean peerBulk;
+    private boolean peerBulk,peerChunks;
     private int maxPages=3;
     String transport(){return transport;}
     void close(){if(upgrade!=null)try{upgrade.close();}catch(java.io.IOException ignored){}}
@@ -105,11 +105,12 @@ final class EncounterSync {
         return received;
     }
     private JSONObject capabilities(String op)throws JSONException{
-        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("lan_upgrade_v1",!directLan);
+        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_chunks_v1",true).put("lan_upgrade_v1",!directLan);
     }
     private void negotiate(JSONObject hello,boolean client)throws Exception{
         peerGraph=hello.optBoolean("root_graph",false);
         peerBulk=peerGraph&&hello.optBoolean("bulk_receive_v1",false);
+        peerChunks=peerBulk&&hello.optBoolean("knowledge_chunks_v1",false);
         if(peerGraph){maxItems=32;maxIds=256;maxPages=9;}
         if(peerBulk){maxItems=128;maxIds=2048;maxPages=65;}
         if(peerBulk&&directLan){maxItems=4096;maxIds=65536;maxPages=2049;}
@@ -141,6 +142,7 @@ final class EncounterSync {
         binding=new EncounterBindings.Binding(binding.peer(),remoteRoot,after,binding.encounters());bindings.save(binding);
     }
     private void pull()throws Exception{
+        if(peerChunks){pullChunks();return;}
         stage="Receiving inventory";
         int inspected=0,transferred=0;
         String after=binding.after(),remoteRoot=binding.root();
@@ -197,6 +199,74 @@ final class EncounterSync {
         }
         send(message("release").put("more_pending",!complete));
     }
+    private List<MeshItem> receiveChunk(List<String> requested)throws Exception{
+        send(message("want_chunk").put("ids",new JSONArray(requested)));
+        JSONObject header=read();expect(header,"chunk");
+        check();byte[] wire=channel.receive();check();
+        List<MeshItem> items=KnowledgeChunk.unpack(wire,header.getString("codec"),header.getString("sha256"),
+            header.getInt("raw_size"),requested,header.getInt("count"));
+        stage="Retaining verified chunk";
+        check();received+=external.retainBatch(items,channel.peerId,tree,epoch);
+        check();send(message("chunk_ack").put("sha256",header.getString("sha256")).put("count",items.size()));
+        return items;
+    }
+    private void pullChunks()throws Exception{
+        stage="Receiving chunk inventory";
+        int inspected=0,transferred=0;
+        String after=binding.after(),remoteRoot=binding.root();
+        // A completed, unchanged remote inventory is a fast path; incomplete
+        // scans keep the last durable cursor across disconnects.
+        while(inspected<maxIds&&transferred<maxItems){
+            send(message("inventory").put("root",remoteRoot).put("after",after));
+            JSONObject answer=read();expect(answer,"inventory");remotePageSeen=true;
+            String actualRoot=answer.getString("root");
+            if(!EncounterBindings.digest(actualRoot))throw new IOException("Invalid inventory root");
+            JSONArray ids=answer.getJSONArray("ids");boolean more=answer.getBoolean("more");
+            int total=answer.getInt("total");
+            if(ids.length()>PAGE||total<ids.length()||total<0||(more&&ids.length()==0))throw new IOException("Invalid inventory page");
+            remoteTotal=total;report();remoteRoot=actualRoot;
+            List<String> page=new ArrayList<>();String previous=after;
+            for(int i=0;i<ids.length();i++){
+                String id=ids.getString(i);
+                if(!EncounterBindings.digest(id)||id.compareTo(previous)<=0)throw new IOException("Invalid inventory order");
+                page.add(id);previous=id;
+            }
+            int position=0;
+            while(position<page.size()&&inspected<maxIds&&transferred<maxItems){
+                List<String> wanted=new ArrayList<>();
+                int end=position;
+                while(end<page.size()&&inspected+end-position<maxIds&&wanted.size()<Math.min(KnowledgeChunk.MAX_ITEMS,maxItems-transferred)){
+                    String id=page.get(end);
+                    if(!catalog.containsKey(id)||pendingReceipts.contains(id))wanted.add(id);
+                    end++;
+                }
+                if(end==position)break;
+                int accepted=wanted.size();
+                if(!wanted.isEmpty()){
+                    stage="Receiving compressed chunk";
+                    List<MeshItem> items=receiveChunk(wanted);accepted=items.size();transferred+=accepted;
+                    for(MeshItem item:items)pendingReceipts.remove(item.id());
+                }
+                // A sender may fit only a prefix of the requested missing IDs.
+                // Advance only over known/committed records; never skip an
+                // unreceived item when a chunk is shortened.
+                Set<String> committed=new HashSet<>(wanted.subList(0,accepted));
+                int next=position;
+                while(next<end){
+                    String id=page.get(next);
+                    if(committed.contains(id)){/* durably received */}
+                    else if(catalog.containsKey(id)&&!pendingReceipts.contains(id)){known++;}
+                    else break;
+                    after=id;next++;inspected++;examined++;
+                }
+                if(next==position)throw new IOException("Chunk made no progress");
+                position=next;checkpoint(remoteRoot,after);report();
+            }
+            if(position==page.size()&&!more){checkpoint(remoteRoot,"");complete=true;break;}
+            if(position<page.size())break;
+        }
+        send(message("release").put("more_pending",!complete));
+    }
     private void serve()throws Exception{
         stage="Serving public inventory";
         int pages=0,items=0;Set<String> offered=new HashSet<>();
@@ -215,6 +285,22 @@ final class EncounterSync {
                     ids.put(id);offered.add(id);
                 }
                 send(message("inventory").put("root",root).put("ids",ids).put("more",more).put("total",catalog.size()));
+            }else if("want_chunk".equals(op)&&peerChunks){
+                JSONArray ids=request.getJSONArray("ids");
+                if(ids.length()<1||ids.length()>KnowledgeChunk.MAX_ITEMS||items+ids.length()>maxItems)throw new IOException("Invalid chunk request");
+                List<MeshItem> wanted=new ArrayList<>();Set<String> unique=new HashSet<>();
+                for(int i=0;i<ids.length();i++){
+                    String id=ids.getString(i);
+                    if(!unique.add(id)||!offered.contains(id)||!catalog.containsKey(id))throw new IOException("Invalid chunk member request");
+                    wanted.add(catalog.get(id));
+                }
+                KnowledgeChunk.Packed chunk=KnowledgeChunk.pack(wanted);
+                send(message("chunk").put("codec",chunk.codec()).put("sha256",chunk.sha()).put("raw_size",chunk.rawSize()).put("count",chunk.count()));
+                check();channel.send(chunk.bytes());
+                JSONObject ack=read();expect(ack,"chunk_ack");
+                if(!chunk.sha().equals(ack.getString("sha256"))||chunk.count()!=ack.getInt("count"))throw new IOException("Invalid chunk receipt");
+                for(int i=0;i<chunk.count();i++)offered.remove(wanted.get(i).id());
+                items+=chunk.count();sent+=chunk.count();report();
             }else if("want".equals(op)){
                 String id=request.getString("id");
                 if(++items>maxItems||!offered.remove(id)||!catalog.containsKey(id))throw new IOException("Invalid or excessive want");
