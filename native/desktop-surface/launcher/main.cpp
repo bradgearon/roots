@@ -85,7 +85,8 @@ static Target target(const std::set<std::wstring>& excluded) {
         L"signal.exe",L"telegram.exe",L"whatsapp.exe",L"skype.exe",L"mstsc.exe",L"msrdc.exe"};
     if(name.empty()||excluded.contains(name)||denied.contains(name))return {};
     DWORD affinity=0;
-    if(!GetWindowDisplayAffinity(hwnd,&affinity)||affinity!=WDA_NONE)return {};
+    // This query can fail on ordinary non-layered windows; WGC still honors OS capture protection.
+    if(GetWindowDisplayAffinity(hwnd,&affinity)&&affinity!=WDA_NONE)return {};
     ULARGE_INTEGER time{};time.LowPart=c.dwLowDateTime;time.HighPart=c.dwHighDateTime;
     if(GetForegroundWindow()!=hwnd)return {};
     return {hwnd,pid,time.QuadPart,std::move(name)};
