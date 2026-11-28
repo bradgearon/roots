@@ -67,6 +67,9 @@ ROOTS_TREE_API roots_tree_result roots_tree_records(roots_tree *tree,const char 
 /* Capture-time ordering with a stable tie breaker. Cursor (0,0) starts newest.
  * Timestamp is the earliest observed_ms in a grouped record; before_seq is
  * the exclusive master sequence at that timestamp. No changes to old cursors. */
+ROOTS_TREE_API roots_tree_result roots_tree_query_time(roots_tree *tree,const char *term,
+    int64_t agent_id,int64_t before_ms,int64_t before_seq,uint32_t limit,
+    roots_fragment_callback callback,void *user);
 ROOTS_TREE_API roots_tree_result roots_tree_records_time(roots_tree *tree,const char *term,
     int64_t agent_id,int64_t before_ms,int64_t before_seq,uint32_t limit,
     roots_record_member_callback callback,void *user);
