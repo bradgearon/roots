@@ -57,7 +57,7 @@ internal sealed class DesktopMeshService : IAsyncDisposable
                     if(publicReceive!=null)publicResult=await publicReceive;
                     var result=new MeshReceiveResult(privateResult.Peers+publicResult.Peers,privateResult.Inserted+publicResult.Inserted,
                         privateResult.Missing+publicResult.Missing,privateResult.Failed+publicResult.Failed);
-                    lock(_gate){_receiveResult=result;_receiveStatus=result.Missing>0?"Continuation pending":"Completed";}
+                    lock(_gate){_receiveResult=result;_receiveStatus=result.Missing>0?"Continuation pending":result.Failed>0?"Completed with unavailable peers":"Completed";}
                 }catch(OperationCanceledException){lock(_gate)_receiveStatus="Cancelled";}
                 catch(Exception e){lock(_gate)_receiveStatus="Receive failed: "+e.GetType().Name;}
             });

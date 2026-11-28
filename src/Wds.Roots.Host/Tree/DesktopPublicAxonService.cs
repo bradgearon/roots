@@ -78,6 +78,7 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
                 _receipts[item.Id]=receipt;
             }catch(Exception){/* malformed receipt does not prevent other peers */}
         }
+        Console.WriteLine("ROOTS PUBLIC AXONS: "+_id[..12]+" · automatic BLE and local IP discovery; receive public knowledge into Tree.");
         _worker=Task.Run(()=>RunAsync(_lifetime.Token));
     }
     ECDsa Key(){var key=ECDsa.Create();key.ImportPkcs8PrivateKey(_privateKey,out _);return key;}
@@ -183,6 +184,8 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
                         failed++;Update(hint.Route.Id,p=>p with{Status="Waiting for route · "+e.GetType().Name});
                     }
                 }
+                int unavailable;lock(_gate)unavailable=Math.Max(0,_peers.Values.Count(p=>!p.Blocked)-peers-failed);
+                failed+=unavailable;
                 pending=missing>0;
                 Note(peers+" public Axon(s) reached · "+inserted+" fragments added"+(pending?" · inventory remaining":"")+
                     (failed>0?" · "+failed+" unavailable":""));
@@ -215,6 +218,7 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
         using var key=Key();
         using var channel=await DesktopRepChannel.OpenAsync(client.GetStream(),key,true,route.Id,ct);
         string peer=channel.PeerId;Require(peer,ct);
+        bool firstBinding=!Contains(peer);
         var bind=Message("bind");bind["root_graph"]=true;bind["bulk_receive_v1"]=true;bind["lan_upgrade_v1"]=false;
         await channel.SendAsync(bind,ct);var response=await channel.ReadAsync(ct);Expect(response,"bound");
         if(!B(response,"root_graph")||!B(response,"bulk_receive_v1"))throw new IOException("Phone needs current public Axon protocol.");
@@ -224,6 +228,7 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
             if(existing.Blocked)throw new IOException("Public Axon blocked.");
             Save(existing with{Host=route.Address.ToString(),Via=route.Via,Status="Receiving",LastSeen=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()});
         }
+        if(firstBinding)Console.WriteLine("ROOTS PUBLIC AXON: bound "+peer[..12]+" via "+route.Via+" · "+route.Address);
         // Freeze the offer inventory before pulling, matching Android's session snapshot.
         var catalog=new SortedDictionary<string,Receipt>(_receipts,StringComparer.Ordinal);
         string root=InventoryRoot(catalog.Keys);
@@ -295,6 +300,7 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
             else throw new IOException("Unsupported public Axon operation.");
         }
         Update(peer,p=>p with{Status=complete?"Inventory checked":"More inventory pending",LastSeen=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()});
+        if(inserted>0)Console.WriteLine("ROOTS PUBLIC AXON: "+peer[..12]+" · "+transferred+" items received · "+inserted+" Tree fragments added.");
         return (inserted,!complete||peerMore);
     }
     public async ValueTask DisposeAsync()

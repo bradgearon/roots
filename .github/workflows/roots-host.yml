@@ -5,6 +5,8 @@ on:
       - 'src/Wds.Roots.Host/**'
       - 'src/Wds.Roots.Api/**'
       - 'tests/Roots.HostChecks/**'
+      - 'tests/Roots.PublicAxonChecks/**'
+      - 'src/Wds.Roots.BleDiscovery/**'
       - 'tests/Roots.ContractChecks/**'
       - 'tests/Roots.IntelligenceChecks/**'
       - 'config/runtime.json'
@@ -20,6 +22,8 @@ on:
       - 'src/Wds.Roots.Host/**'
       - 'src/Wds.Roots.Api/**'
       - 'tests/Roots.HostChecks/**'
+      - 'tests/Roots.PublicAxonChecks/**'
+      - 'src/Wds.Roots.BleDiscovery/**'
       - 'tests/Roots.ContractChecks/**'
       - 'tests/Roots.IntelligenceChecks/**'
       - 'config/runtime.json'
@@ -46,6 +50,9 @@ jobs:
         with:
           dotnet-version: '9.0.x'
       - run: dotnet build src/Wds.Roots.Host -c Release
+      - if: runner.os == 'Windows'
+        run: dotnet build src/Wds.Roots.BleDiscovery -c Release
+      - run: dotnet run --project tests/Roots.PublicAxonChecks -c Release
       - run: dotnet run --project tests/Roots.ContractChecks -c Release
       - run: dotnet run --project tests/Roots.HostChecks -c Release
       - run: dotnet run --project tests/Roots.IntelligenceChecks -c Release

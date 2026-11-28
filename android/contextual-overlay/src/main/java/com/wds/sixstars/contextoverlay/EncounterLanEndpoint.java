@@ -45,7 +45,7 @@ final class EncounterLanEndpoint implements Closeable {
     void start(){
         if(cm!=null)try{cm.registerDefaultNetworkCallback(callback);registered=true;}catch(RuntimeException ignored){}
         refresh();
-        timer.scheduleWithFixedDelay(this::refresh,15,15,TimeUnit.SECONDS);
+        timer.scheduleWithFixedDelay(()->{try{refresh();}catch(RuntimeException ignored){}},15,15,TimeUnit.SECONDS);
     }
     synchronized void refresh(){
         if(closed)return;
@@ -107,12 +107,12 @@ final class EncounterLanEndpoint implements Closeable {
         String peer="",result="LAN exchange interrupted";
         EncounterSync sync=null;ScheduledFuture<?> deadline=null;android.os.PowerManager.WakeLock wake=null;
         try{
-            socket.setSoTimeout(45000);socket.setTcpNoDelay(true);
+            socket.setSoTimeout(8000);socket.setTcpNoDelay(true);
             deadline=timer.schedule(()->closeQuiet(socket),120,TimeUnit.SECONDS);
             android.os.PowerManager power=app.getSystemService(android.os.PowerManager.class);
             if(power!=null)try{wake=power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK,"Roots:AxonLan");wake.acquire(125000L);}catch(SecurityException unavailable){wake=null;}
             EncounterChannel channel=EncounterChannel.open(socket.getInputStream(),socket.getOutputStream(),key,false);
-            peer=channel.peerId;sessionPeer=peer;
+            peer=channel.peerId;sessionPeer=peer;socket.setSoTimeout(45000);
             if(!valid(s,socket.getInetAddress())||EncounterBindings.get(app).blocked(peer)){result="Blocked or stopped";return;}
             final String authenticated=peer;
             EncounterService.lanActive(peer);
