@@ -12,7 +12,7 @@ var directory = Path.Combine(home, "Roots", "Experience");
 var database = Path.Combine(directory, "experience.db");
 try
 {
-    if (args.Length == 0) return Usage();
+    if (args.Length == 0) args = ["--capture"];
     if (args[0] is "--status" or "--search")
     {
         if (args[0] == "--status" && args.Length != 1 || args[0] == "--search" && args.Length != 2) return Usage();
@@ -32,17 +32,22 @@ try
         return 0;
     }
     if (args[0] != "--capture" || Console.IsInputRedirected || Console.IsOutputRedirected) return Usage();
-    var allow = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    bool ocr = false;
-    foreach (var arg in args.Skip(1))
+    var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    bool noOcr = false;
+    for (int i = 1; i < args.Length; i++)
     {
-        if (arg == "--ocr") ocr = true;
-        else if (arg.Length <= 128 && arg.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
-                 !arg.Any(c => char.IsControl(c) || c is '/' or '\\' or ':' or '*'))
-            allow.Add(arg);
+        if (args[i] == "--no-ocr") noOcr = true;
+        else if (args[i] == "--ocr") noOcr = false;
+        else if (args[i] == "--exclude" && i + 1 < args.Length && SurfaceObservation.ValidProcess(args[i + 1]))
+            excluded.Add(args[++i]);
         else return Usage();
     }
-    if (allow.Count is < 1 or > 64) return Usage();
+    if (excluded.Count > 64) return Usage();
+    Console.WriteLine("Roots will follow eligible foreground windows automatically and retain text and activity locally.");
+    Console.WriteLine("Known private apps, browsers, protected surfaces and sensitive controls are excluded.");
+    Console.WriteLine("Screen text can contain confidential information. Stop capture before opening private content.");
+    Console.Write("Start desktop watching? [y/N] ");
+    if (!string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase)) return 0;
     var executable = Environment.GetEnvironmentVariable("ROOTS_SURFACE_AGENT");
     if (string.IsNullOrWhiteSpace(executable) || !Path.IsPathFullyQualified(executable) || !File.Exists(executable))
         throw new InvalidOperationException("Surface agent missing; use launch-surface.cmd.");
@@ -55,9 +60,9 @@ try
     var run = Guid.NewGuid();
     using var privateTree = new NativeTree(database);
     Console.WriteLine("Roots Surface — LOCAL CAPTURE ACTIVE. Ctrl+C stops capture.");
-    Console.WriteLine("Approved foreground executables: " + string.Join(", ", allow));
-    Console.WriteLine(ocr ? "UI Automation + opt-in window OCR. Do not open confidential content in approved apps."
-                          : "UI Automation static text only. Browser and editable/private controls excluded.");
+    Console.WriteLine("Automatically following foreground applications. No application is launched or controlled.");
+    if (excluded.Count > 0) Console.WriteLine("Additional exclusions: " + string.Join(", ", excluded));
+    Console.WriteLine(noOcr ? "UI Automation static text only." : "UI Automation and window OCR where available.");
     Console.WriteLine("Only semantic text and activity enter the private Tree. No media file or network upload.");
     using var cancellation = new CancellationTokenSource();
     ConsoleCancelEventHandler stop = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
@@ -67,8 +72,8 @@ try
         UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
         RedirectStandardOutput = true, StandardOutputEncoding = new UTF8Encoding(false, true)
     };
-    if (ocr) start.ArgumentList.Add("--ocr");
-    foreach (var name in allow) start.ArgumentList.Add(name);
+    if (noOcr) start.ArgumentList.Add("--no-ocr");
+    foreach (var name in excluded) { start.ArgumentList.Add("--exclude"); start.ArgumentList.Add(name); }
     using var child = Process.Start(start) ?? throw new InvalidOperationException("Cannot start Surface agent.");
     long sequence = 0;
     try
@@ -77,7 +82,7 @@ try
         {
             var line = await child.StandardOutput.ReadLineAsync(cancellation.Token);
             if (line == null) break;
-            var observation = SurfaceObservation.Parse(line, allow);
+            var observation = SurfaceObservation.Parse(line, excluded);
             if (cancellation.IsCancellationRequested) break;
             var rows = observation.ToRows(device, run, ++sequence);
             privateTree.Observe(rows);
@@ -113,7 +118,7 @@ catch (Exception e)
 static string SafeConsole(string s) => string.Concat(s.Select(c => char.IsControl(c) ? ' ' : c));
 static int Usage()
 {
-    Console.WriteLine("launch-surface.cmd --capture app.exe [other.exe] [--ocr]");
+    Console.WriteLine("launch-surface.cmd [--capture [--no-ocr] [--exclude app.exe]]");
     Console.WriteLine("launch-surface.cmd --status");
     Console.WriteLine("launch-surface.cmd --search \"text\"");
     return 2;
@@ -122,7 +127,19 @@ static int Usage()
 internal sealed record SurfaceObservation(string Kind, ulong Session, uint Pid, ulong Created, ulong Window,
     long StartUtc, long EndUtc, long StartMono, long EndMono, string ProcessName, int[] Bounds, string Text)
 {
-    public static SurfaceObservation Parse(string line, IReadOnlySet<string> allow)
+    private static readonly HashSet<string> Denied = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe",
+        "roots-surface.exe", "wds.roots.host.exe", "wds.roots.experience.exe", "dotnet.exe", "windowsterminal.exe",
+        "conhost.exe", "openconsole.exe", "credentialuibroker.exe", "logonui.exe", "keepass.exe", "keepassxc.exe",
+        "1password.exe", "bitwarden.exe", "outlook.exe", "olk.exe", "thunderbird.exe", "ms-teams.exe",
+        "teams.exe", "slack.exe", "discord.exe", "signal.exe", "telegram.exe", "whatsapp.exe", "skype.exe",
+        "mstsc.exe", "msrdc.exe"
+    };
+    internal static bool ValidProcess(string name) =>
+        name.Length is > 4 and <= 128 && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+        !name.Any(c => char.IsControl(c) || c is '/' or '\\' or ':' or '*' or '?');
+    public static SurfaceObservation Parse(string line, IReadOnlySet<string> excluded)
     {
         if (line.Length > 18000) throw new InvalidDataException("Oversized Surface event.");
         var p = line.Split('\t');
@@ -140,7 +157,7 @@ internal sealed record SurfaceObservation(string Kind, ulong Session, uint Pid, 
         var process = Decode(p[9]); var text = Decode(p[11]);
         var bounds = p[10].Split(',').Select(x => int.Parse(x, CultureInfo.InvariantCulture)).ToArray();
         bool activity = p[0] is "focused" or "idle";
-        if (session == 0 || pid == 0 || created == 0 || window == 0 || !allow.Contains(process) ||
+        if (session == 0 || pid == 0 || created == 0 || window == 0 || !ValidProcess(process) || Denied.Contains(process) || excluded.Contains(process) ||
             start < 0 || end < start || end > DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds() ||
             startMono < 0 || endMono < startMono || endMono - startMono > 15_000_000 ||
             bounds.Length != 4 || bounds[2] < bounds[0] || bounds[3] < bounds[1] ||
