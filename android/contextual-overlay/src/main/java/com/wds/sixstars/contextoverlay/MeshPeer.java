@@ -122,8 +122,8 @@ final class MeshPeer {
             network=check.detail()+(iface.isEmpty()?"":" Interface "+iface+".")+(addresses.isEmpty()?"":" IPv4 "+addresses+".");
         }catch(RuntimeException e){network="Current network information unavailable.";}
         Server server=active;
-        return network+"\n"+(server==null?"Local listener: stopped. Receiving does not require a local listener.":
-            "Local listener: serving at "+server.address.getHostAddress()+":"+PORT+". Keep Roots running.");
+        return network+"\n"+(server==null?"Local listener: "+MeshServingService.status(app)+".":
+            "Local listener: serving at "+server.address.getHostAddress()+":"+PORT+". Available in background.");
     }
     String connectionStateKey(){
         long handle=0;try{Network n=cm==null?null:cm.getActiveNetwork();if(n!=null)handle=n.getNetworkHandle();}catch(RuntimeException ignored){}
@@ -138,8 +138,9 @@ final class MeshPeer {
                 addresses.isEmpty()?"Join a Wi-Fi network that assigns an IPv4 address.":""));
         }catch(RuntimeException e){checks.add(failure("Wi-Fi",e,0));}
         Server server=active;
-        checks.add(check("Local listener",server==null?SKIP:PASS,server==null?
-            "Not serving on this device. A local listener is not required to receive.":"Serving at "+server.address.getHostAddress()+":"+PORT+".",""));
+        boolean servingEnabled=MeshServingService.enabled(app);
+        checks.add(check("Local listener",server==null?(servingEnabled?WARN:SKIP):PASS,server==null?
+            (servingEnabled?"Automatic serving enabled. "+MeshServingService.status(app)+".":"Not serving on this device. A local listener is not required to receive."):"Serving at "+server.address.getHostAddress()+":"+PORT+" in the background.",""));
         checks.add(check("Local TLS identity",tlsIdentityState,tlsIdentityStatus,FAIL.equals(tlsIdentityState)?"Update Roots on this device and try Start listening again.":""));
         Check incoming=incomingTlsLast;
         if(server!=null){
@@ -302,12 +303,23 @@ final class MeshPeer {
         final SSLContext context;final String pin;final SecretKey networkRoot;
         final Set<Socket> clients=ConcurrentHashMap.newKeySet();
         final ThreadPoolExecutor workers=new ThreadPoolExecutor(2,2,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(4));
-        ConnectivityManager.NetworkCallback callback;
         Server(Network n,Inet4Address a,String t,SSLServerSocket s,SSLContext context,String pin,SecretKey networkRoot){
             network=n;address=a;token=t;socket=s;this.context=context;this.pin=pin;this.networkRoot=networkRoot;
         }
     }
-    synchronized String start()throws Exception{
+    synchronized String restoreListener()throws Exception{
+        if(!MeshServingService.enabled(app)){stop();return "";}
+        Network network=wifi();
+        if(network==null){stop();return "";}
+        Inet4Address currentAddress;
+        try{currentAddress=address(network);}catch(IOException unavailable){stop();return "";}
+        Server server=active;
+        if(server!=null&&(!network.equals(server.network)||!currentAddress.equals(server.address)||server.socket.isClosed()))stop();
+        if(!MeshServingService.enabled(app))return "";
+        return start();
+    }
+    private synchronized String start()throws Exception{
+        if(!MeshServingService.enabled(app))return "";
         if(active!=null)return invitation;
         if(!NativeTree.available())throw new IOException("Native Tree unavailable.");
         Network network=wifi();if(network==null)throw new IOException("Connect to Wi-Fi without VPN first.");
@@ -340,28 +352,20 @@ final class MeshPeer {
             socket.setReuseAddress(true);socket.setEnabledProtocols(working);
             socket.bind(new InetSocketAddress(address,PORT),8);
             Server server=new Server(network,address,token,socket,context,pin,networkRoot);
+            if(!MeshServingService.enabled(app)){socket.close();server.workers.shutdownNow();return "";}
             active=server;
             invitation=new Invite(address.getHostAddress(),pin,token).uri();
             status="Sharing Tree graph on Wi-Fi";
-            server.callback=new ConnectivityManager.NetworkCallback(){
-                @Override public void onLost(Network n){if(n.equals(network))stopIfCurrent(server);}
-                @Override public void onLinkPropertiesChanged(Network n,LinkProperties lp){
-                    if(!n.equals(network))return;
-                    boolean found=false;for(LinkAddress l:lp.getLinkAddresses())if(address.equals(l.getAddress()))found=true;
-                    if(!found)stopIfCurrent(server);
-                }
-                @Override public void onAvailable(Network n){if(!n.equals(network))stopIfCurrent(server);}
-            };
-            try{cm.registerDefaultNetworkCallback(server.callback);}catch(RuntimeException e){stopIfCurrent(server);throw e;}
             Thread thread=new Thread(()->accept(server),"RootsMeshListener");thread.setDaemon(true);thread.start();
             return invitation;
         }catch(Exception e){try{socket.close();}catch(Exception ignored){}throw e;}
     }
-    private synchronized void stopIfCurrent(Server server){if(active==server)stop();}
+    private synchronized void stopIfCurrent(Server server){
+        if(active==server){stop();MeshServingService.listenerLost();}
+    }
     synchronized void stop(){
         Server server=active;active=null;invitation="";status="Not serving";
         if(server==null)return;
-        try{cm.unregisterNetworkCallback(server.callback);}catch(Exception ignored){}
         try{server.socket.close();}catch(Exception ignored){}
         for(Socket client:server.clients)try{client.close();}catch(Exception ignored){}
         server.workers.shutdownNow();
@@ -370,7 +374,7 @@ final class MeshPeer {
         try{
             while(active==server){
                 SSLSocket client=(SSLSocket)server.socket.accept();
-                if(active!=server){client.close();continue;}
+                if(active!=server||!MeshServingService.enabled(app)){client.close();continue;}
                 boolean allowed;
                 try{allowed=sameSubnet(server.network,client.getInetAddress());}
                 catch(RuntimeException error){
@@ -463,14 +467,21 @@ final class MeshPeer {
     }
     private void handle(Server server,SSLSocket socket){
         boolean handshaken=false;long handshakeStarted=android.os.SystemClock.elapsedRealtime();
+        android.os.PowerManager.WakeLock requestLock=null;
         try(SSLSocket client=socket){
+            if(active!=server||!MeshServingService.enabled(app))return;
+            android.os.PowerManager power=app.getSystemService(android.os.PowerManager.class);
+            if(power!=null){
+                requestLock=power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK,"Roots:MeshRequest");
+                requestLock.acquire(30000L);
+            }
             client.setSoTimeout(8000);client.startHandshake();
             handshaken=true;
             if(active==server)incomingTlsLast=new Check("Last incoming TLS",PASS,
                 "Incoming TLS handshake completed using "+client.getSession().getProtocol()+".","",
                 android.os.SystemClock.elapsedRealtime()-handshakeStarted);
             JSONObject request=read(client);
-            if(active!=server)return;
+            if(active!=server||!MeshServingService.enabled(app))return;
             if(request.optInt("version")!=1){reject(server,client,"unsupported_version");return;}
             String member=request.optString("member");
             if(!MeshNetworkAccess.validHex(member)){reject(server,client,"member_required");return;}
@@ -483,7 +494,7 @@ final class MeshPeer {
             String nonce=MeshNetworkAccess.nonce(random);
             write(client,new JSONObject().put("version",1).put("op","member_challenge").put("nonce",nonce));
             JSONObject proof=read(client);
-            if(active!=server)return;
+            if(active!=server||!MeshServingService.enabled(app))return;
             if(proof.optInt("version")!=1||!"member_proof".equals(proof.optString("op"))||
                 !MeshNetworkAccess.verifyProof(proof.optString("certificate"),proof.optString("proof"),server.pin,member,nonce)){
                 reject(server,client,"member_proof_failed");return;
@@ -549,7 +560,7 @@ final class MeshPeer {
                     response.put("item",item.json());
                 }
             }
-            if(active==server&&tree.captureEpoch()==epoch)write(client,response);
+            if(active==server&&MeshServingService.enabled(app)&&tree.captureEpoch()==epoch)write(client,response);
         }catch(Exception error){
             if(!handshaken&&active==server){
                 Check failed=failure("TLS",error,android.os.SystemClock.elapsedRealtime()-handshakeStarted);
@@ -557,7 +568,10 @@ final class MeshPeer {
             }
             // No request, content, invitation or arbitrary provider message is logged.
         }
-        finally{server.clients.remove(socket);}
+        finally{
+            if(requestLock!=null&&requestLock.isHeld())try{requestLock.release();}catch(RuntimeException ignored){}
+            server.clients.remove(socket);
+        }
     }
     private JSONObject exchange(Network network,Invite invite,JSONObject request)throws Exception{
         return exchange(network,invite,request,0,null);
