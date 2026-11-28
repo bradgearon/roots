@@ -28,6 +28,8 @@ internal static class DesktopExperienceTree
         =>Read<IReadOnlyList<RecordMember>>(t=>t.RecordsByTime(term,agent,beforeMs,beforeSequence,limit),Array.Empty<RecordMember>());
     public static IReadOnlyList<RecordMember> Screens(string term,long beforeMs,long beforeSequence,uint limit,long agent)
         =>Read<IReadOnlyList<RecordMember>>(t=>t.ScreensByTime(term,agent,beforeMs,beforeSequence,limit),Array.Empty<RecordMember>());
+    public static IReadOnlyList<RecordMember> Page(string parent,string afterOrder,long afterSequence,uint limit)
+        =>Read<IReadOnlyList<RecordMember>>(t=>t.ExperiencePage(parent,afterOrder,afterSequence,limit),Array.Empty<RecordMember>());
     public static IReadOnlyList<BranchAgent> Branches()
         =>Read<IReadOnlyList<BranchAgent>>(t=>t.Agents(),Array.Empty<BranchAgent>());
     public static (float[] Weights,long Occurrences) Weights(long sequence)
