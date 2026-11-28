@@ -54,6 +54,65 @@ final class XNodeIdAudit {
     }
 
     void requested(Bundle values,String path){bundle(values,"requested",path,0);}
+
+    // Events are a separate public Android channel. Keep candidate evidence
+    // only, never raw event data or references to live nodes.
+    private int eventCount,eventRecords,eventParcels,eventBytes;
+    private final java.util.Map<String,Integer> eventTypes=new java.util.TreeMap<>();
+    void inspectEvent(android.view.accessibility.AccessibilityEvent event){
+        if(event==null||event.isPassword())return;
+        String type=android.view.accessibility.AccessibilityEvent.eventTypeToString(event.getEventType());
+        String path="event/"+type+"/"+event.getWindowId()+"/"+event.getEventTime();
+        eventCount++;eventTypes.merge(type,1,Integer::sum);
+        eventRecord(event,path);
+        for(int i=0;i<Math.min(16,event.getRecordCount());i++)eventRecord(event.getRecord(i),path+"/record/"+i);
+        Parcel data=Parcel.obtain();
+        try{
+            event.writeToParcel(data,0);
+            if(data.dataSize()<=MAX_PARCEL&&!data.hasFileDescriptors()){
+                byte[] raw=data.marshall();eventParcels++;eventBytes+=raw.length;
+                evidence.parcel(raw,"eventParcel",path);
+            }
+        }catch(RuntimeException ignored){}
+        finally{data.recycle();}
+    }
+    private void eventRecord(android.view.accessibility.AccessibilityRecord record,String path){
+        if(record==null||record.isPassword())return;
+        eventRecords++;
+        evidence.text("event.description",path,record.getContentDescription(),false);
+        for(CharSequence text:record.getText()){
+            evidence.text("event.text",path,text,false);spans(text,"event.span",path);
+        }
+        android.os.Parcelable payload=record.getParcelableData();
+        if(payload instanceof Bundle)bundle((Bundle)payload,"event.payload",path,0);
+        else if(payload instanceof android.net.Uri)evidence.text("event.payload.uri",path,payload.toString(),false);
+    }
+    String eventSummary(){
+        int named=0,urls=0,other=0;
+        for(XPostIdEvidence.Hit hit:evidence.hits()){
+            if(hit.kind().startsWith("explicit"))named++;
+            else if(hit.kind().startsWith("status URL"))urls++;
+            else other++;
+        }
+        StringBuilder out=new StringBuilder("Passive event audit · ").append(eventCount).append(" events · ")
+            .append(eventRecords).append(" records · ").append(eventParcels).append(" parcels / ").append(eventBytes)
+            .append(" bytes\nNamed IDs: ").append(named).append(" · status URLs: ").append(urls)
+            .append(" · unverified numeric candidates: ").append(other).append('\n');
+        int shown=0;
+        for(XPostIdEvidence.Hit hit:evidence.hits()){
+            if(hit.kind().startsWith("raw")||shown>=6)continue;
+            out.append("  ").append(hit.kind()).append(": ").append(hit.id()).append(" · ").append(hit.field()).append('\n');shown++;
+        }
+        return out.toString();
+    }
+    JSONObject eventJson()throws JSONException{
+        JSONArray candidates=new JSONArray();
+        for(XPostIdEvidence.Hit hit:evidence.hits())candidates.put(new JSONObject().put("candidate",hit.id())
+            .put("classification",hit.kind()).put("field",hit.field()).put("location",hit.location()));
+        return new JSONObject().put("events",eventCount).put("records",eventRecords).put("parcels",eventParcels)
+            .put("bytes",eventBytes).put("types",new JSONObject(eventTypes)).put("candidates",candidates);
+    }
+    int eventCount(){return eventCount;}
     private void spans(CharSequence text,String field,String path){
         if(!(text instanceof android.text.Spanned))return;
         android.text.Spanned s=(android.text.Spanned)text;
