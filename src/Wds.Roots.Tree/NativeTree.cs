@@ -158,6 +158,8 @@ public sealed class NativeTree : IDisposable
     }
     public long CreateAgent(string name, string term) { Validate(name); Validate(term); Check(N.AgentCreate(_handle, name, term, out var id)); return id; }
     public void RemoveAgent(long id) => Check(N.AgentRemove(_handle, id));
+    public long TextOccurrences(long sequence) { Check(N.TextOccurrences(_handle,sequence,out var n));return n; }
+    public long Backup(string newPath) { Validate(newPath);Check(N.Backup(_handle,Path.GetFullPath(newPath),out var revision));return revision; }
     public long Count() { Check(N.Count(_handle, out var n)); return n; }
     public long Revision() { Check(N.Revision(_handle, out var n)); return n; }
     public long Compile(string newPath) { Validate(newPath); Check(N.Compile(_handle, Path.GetFullPath(newPath), out var n)); return n; }
@@ -230,6 +232,8 @@ public sealed class NativeTree : IDisposable
         [DllImport(Lib, EntryPoint="roots_tree_records_time", CallingConvention=CallingConvention.Cdecl)] internal static extern int RecordsByTime(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long beforeMs,long beforeSequence,uint limit,RecordCallback cb,IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_fragment_weights", CallingConvention=CallingConvention.Cdecl)] internal static extern int FragmentWeights(TreeHandle h,long sequence,[Out] float[] weights,nuint count);
         [DllImport(Lib, EntryPoint="roots_tree_compile_localized", CallingConvention=CallingConvention.Cdecl)] internal static extern int CompileLocalized(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string path,[MarshalAs(UnmanagedType.LPUTF8Str)] string language,out long revision);
+        [DllImport(Lib, EntryPoint="roots_tree_text_occurrences", CallingConvention=CallingConvention.Cdecl)] internal static extern int TextOccurrences(TreeHandle h,long sequence,out long count);
+        [DllImport(Lib, EntryPoint="roots_tree_backup", CallingConvention=CallingConvention.Cdecl)] internal static extern int Backup(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string path,out long revision);
         [DllImport(Lib, EntryPoint="roots_tree_count", CallingConvention=CallingConvention.Cdecl)] internal static extern int Count(TreeHandle h, out long count);
         [DllImport(Lib, EntryPoint="roots_tree_revision", CallingConvention=CallingConvention.Cdecl)] internal static extern int Revision(TreeHandle h, out long revision);
         [DllImport(Lib, EntryPoint="roots_tree_agent_create", CallingConvention=CallingConvention.Cdecl)] internal static extern int AgentCreate(TreeHandle h, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string term, out long id);
