@@ -172,3 +172,34 @@ References: [Surface plan](../../design/desktop-surface-experience.md),
 [Six Stars speech contract](../../design/desktop-surface-speech.md),
 [Inworld upstream](https://github.com/inworld-ai/voice-isolator),
 [Microsoft WGC](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture).
+
+### Browser Experience, dialogue and backups
+
+Reload extension 0.4.4 and choose Experience → Enable visible webpage reading.
+Grant Chrome's requested site access once. It uses visible top-level page text,
+not hidden DOM, form values, browser history, or background tabs. The host also
+checks the live Surface lease and foreground Chromium window. The setting can
+be turned off in Experience. Restricted browser pages, incognito, cross-origin
+frames and inaccessible or protected content are outside this lane.
+
+Game subtitles still use the native OCR backend. Spoken-only conversations are
+not transcribed by this build; that requires the pending process-loopback audio
+capture and speech recognition pipeline. Consecutive screen observations from a
+single application session are grouped into time-based sections, not inferred
+semantic scenes. Exact text repeats retain their individual timestamps and
+appear as occurrence counts in the weight details.
+
+Run `launch-surface.cmd --backup` to create a consistent, self-contained
+`experience.backup.db`. Surface also makes a rolling backup after one minute
+and every 15 minutes if the revision changed. SQLite's online backup API reads
+committed WAL content and verifies the copy before publishing. Do not upload a
+raw copy of the main DB while capture is running. Default diagnostic output is
+written to `surface-diagnostics.txt`; use `--diagnostics` for console output.
+
+Compile private Experience GGUF publishes both `experience.weights.gguf`
+(full lossless metadata/weights) and `experience.content.gguf` (observed text
+only, with structural screen/session links and exact-repeat relations). Both
+files contain their own internally consistent revision. A newer live revision
+no longer invalidates a completed snapshot. The content vectors remain
+lexical, not trained semantic embeddings. These files and the rolling backup
+are private, local artifacts and do not enter Mesh or Axon exchange.
