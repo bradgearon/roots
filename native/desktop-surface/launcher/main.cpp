@@ -65,7 +65,7 @@ struct Target {
         return hwnd==r.hwnd && pid==r.pid && created==r.created && process==r.process;
     }
 };
-static Target target(const std::set<std::wstring>& allow) {
+static Target target(const std::set<std::wstring>& excluded) {
     if(!interactive())return {};
     HWND hwnd=GetForegroundWindow(); DWORD pid=0;
     if(!hwnd || !IsWindowVisible(hwnd) || IsIconic(hwnd))return {};
@@ -80,8 +80,12 @@ static Target target(const std::set<std::wstring>& allow) {
     name=lower(name.substr(slash==std::wstring::npos?0:slash+1));
     static const std::set<std::wstring> denied={L"chrome.exe",L"msedge.exe",L"firefox.exe",L"brave.exe",L"opera.exe",L"vivaldi.exe",
         L"roots-surface.exe",L"wds.roots.host.exe",L"wds.roots.experience.exe",L"dotnet.exe",L"windowsterminal.exe",L"conhost.exe",L"openconsole.exe",
-        L"credentialuibroker.exe",L"logonui.exe",L"keepass.exe",L"keepassxc.exe",L"1password.exe",L"bitwarden.exe"};
-    if(!allow.contains(name)||denied.contains(name))return {};
+        L"credentialuibroker.exe",L"logonui.exe",L"keepass.exe",L"keepassxc.exe",L"1password.exe",L"bitwarden.exe",
+        L"outlook.exe",L"olk.exe",L"thunderbird.exe",L"ms-teams.exe",L"teams.exe",L"slack.exe",L"discord.exe",
+        L"signal.exe",L"telegram.exe",L"whatsapp.exe",L"skype.exe",L"mstsc.exe",L"msrdc.exe"};
+    if(name.empty()||excluded.contains(name)||denied.contains(name))return {};
+    DWORD affinity=0;
+    if(!GetWindowDisplayAffinity(hwnd,&affinity)||affinity!=WDA_NONE)return {};
     ULARGE_INTEGER time{};time.LowPart=c.dwLowDateTime;time.HighPart=c.dwHighDateTime;
     if(GetForegroundWindow()!=hwnd)return {};
     return {hwnd,pid,time.QuadPart,std::move(name)};
@@ -151,11 +155,23 @@ static void emit(const char* kind,unsigned long long session,const Target& t,lon
         <<'\t'<<b.left<<','<<b.top<<','<<b.right<<','<<b.bottom<<'\t'<<text<<'\n'<<std::flush;
 }
 int wmain(int argc,wchar_t** argv) {
-    std::set<std::wstring> allow;bool useOcr=false;
-    for(int i=1;i<argc;++i){std::wstring a=lower(argv[i]);if(a==L"--ocr")useOcr=true;
-        else if(a.ends_with(L".exe")&&a.find_first_of(L"\\/:")==std::wstring::npos)allow.insert(a);
-        else return 2;}
-    if(allow.empty())return 2;
+    std::set<std::wstring> excluded;
+#ifdef ROOTS_SURFACE_OCR
+    bool useOcr=true;
+#else
+    bool useOcr=false;
+#endif
+    for(int i=1;i<argc;++i){
+        std::wstring a=lower(argv[i]);
+        if(a==L"--ocr")useOcr=true;
+        else if(a==L"--no-ocr")useOcr=false;
+        else if(a==L"--exclude" && i+1<argc){
+            std::wstring name=lower(argv[++i]);
+            if(name.empty() || name.size()>128 || !name.ends_with(L".exe") ||
+               name.find_first_of(L"\\/:*?")!=std::wstring::npos) return 2;
+            excluded.insert(std::move(name));
+        } else return 2;
+    }
     // Refuse a direct terminal run; the approved receiver owns all textual output.
     DWORD consoleMode=0;if(GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE),&consoleMode))return 2;
     if(GetFileType(GetStdHandle(STD_OUTPUT_HANDLE))!=FILE_TYPE_PIPE ||
@@ -199,7 +215,7 @@ int wmain(int argc,wchar_t** argv) {
         if(msg.message!=Tick){TranslateMessage(&msg);DispatchMessageW(&msg);continue;}
         // Coalesce timer / foreground notifications; no background capture queue.
         MSG redundant{};while(PeekMessageW(&redundant,nullptr,Tick,Tick,PM_REMOVE)){}
-        auto now=Clock::now();auto wall=utc();auto next=target(allow);bool isIdle=idle();
+        auto now=Clock::now();auto wall=utc();auto next=target(excluded);bool isIdle=idle();
         const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(now-previous).count();
         const bool gap=elapsed>3000||wall<lastUtc||std::llabs((wall-lastUtc)-elapsed)>3000;
         if(gap||!(next==current)||isIdle!=wasIdle) {
@@ -219,7 +235,7 @@ int wmain(int argc,wchar_t** argv) {
             kind="ocr";
         } else if(ocr)ocr->reset();
 #endif
-        if(!valid||sensitive||!(target(allow)==current)){seen.clear();seenKind.clear();continue;}
+        if(!valid||sensitive||!(target(excluded)==current)){seen.clear();seenKind.clear();continue;}
         if(seenKind!=kind){seen.clear();seenKind=kind;}
         for(const auto& row:rows){
             // Compare the previous visible snapshot, not a global text history.
