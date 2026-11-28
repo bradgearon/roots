@@ -1,5 +1,6 @@
 #include "ocr.h"
 #include "tesseract.h"
+#include "ocr_pixels.h"
 #include <d3d11.h>
 #include <dxgi.h>
 #include <dwmapi.h>
@@ -61,10 +62,7 @@ struct Pixels {
         });
     }
     void fill(RECT r){
-        RECT bounds{0,0,width,height},clip{};
-        if(!IntersectRect(&clip,&r,&bounds))return;
-        for(LONG y=clip.top;y<clip.bottom;++y)
-            std::fill_n(data.data()+static_cast<size_t>(y)*width+clip.left,clip.right-clip.left,uint8_t{255});
+        roots::surface::redact(data,width,height,{r.left,r.top,r.right,r.bottom});
     }
 };
 BOOL CALLBACK collectMonitor(HMONITOR,HDC,LPRECT rect,LPARAM user){
@@ -111,14 +109,6 @@ bool duplicate(SurfaceText const& a,SurfaceText const& b){
     auto area=[](RECT const& r){return static_cast<double>(r.right-r.left)*(r.bottom-r.top);};
     const auto smallerArea=std::min(area(a.bounds),area(b.bounds));
     return smallerArea>0&&area(overlap)>=0.55*smallerArea;
-}
-std::vector<int> starts(int extent,int tile){
-    if(extent<=tile)return {0};
-    int step=std::max(1,tile-96);
-    std::vector<int> result;
-    for(int x=0;x<extent-tile;x+=step)result.push_back(x);
-    if(result.empty()||result.back()!=extent-tile)result.push_back(extent-tile);
-    return result;
 }
 }
 
@@ -282,7 +272,7 @@ struct OcrLane::Impl {
         bool anyBackend=false,allTiles=true,usedPortable=false,usedWindows=false;
         // Full-resolution overlapping tiles keep 4K/ultrawide windows
         // readable instead of silently rejecting them at the OCR size limit.
-        for(int y:starts(pixels.height,limit))for(int x:starts(pixels.width,limit)){
+        for(int y:roots::surface::tileStarts(pixels.height,limit))for(int x:roots::surface::tileStarts(pixels.width,limit)){
             if(GetForegroundWindow()!=hwnd){output.clear();state="source-changed";return false;}
             const int width=std::min(limit,pixels.width-x),height=std::min(limit,pixels.height-y);
             std::vector<uint8_t> tilePixels(static_cast<size_t>(width)*height);
