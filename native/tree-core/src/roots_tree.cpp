@@ -15,6 +15,7 @@
 #include <utility>
 #include <tuple>
 #include <unordered_set>
+#include <unordered_map>
 
 struct roots_tree {
     sqlite3 *db=nullptr;
@@ -127,7 +128,7 @@ struct le_writer {
     }
 };
 void write_gguf(std::ofstream &stream,const std::vector<row> &rows,
-                const std::vector<edge> &edges,const std::vector<agent> &agents,int64_t rev,const char *language=nullptr){
+                const std::vector<edge> &edges,const std::vector<agent> &agents,int64_t rev,const char *language=nullptr,bool experience=false){
     static_assert(sizeof(float)==4 && std::numeric_limits<float>::is_iec559,"GGUF requires IEEE f32");
     le_writer w{stream};
     w.byte('G');w.byte('G');w.byte('U');w.byte('F');w.u32(3);
@@ -136,7 +137,7 @@ void write_gguf(std::ofstream &stream,const std::vector<row> &rows,
     w.str("general.alignment");w.u32(4);w.u32(32);
     w.string_kv("roots.vector.profile","roots.lexical.utf8-trigram.f32.v1");
     w.str("roots.tree.revision");w.u32(10);w.u64(static_cast<uint64_t>(rev));
-    w.string_kv("roots.scope",language?"localized-private":"local-private");
+    w.string_kv("roots.scope",experience?"experience-content-private":language?"localized-private":"local-private");
     if(language)w.string_kv("roots.local.language",language);
     w.str("roots.format.version");w.u32(4);w.u32(2);
     w.array_header("roots.node.keys",rows.size());
@@ -461,7 +462,7 @@ roots_tree_result roots_tree_relations(roots_tree *t,int64_t id,roots_relation_c
         for(const auto &e:edges)if(cb(user,e.subject.c_str(),e.predicate.c_str(),e.object.c_str()))break;
     });
 }
-static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *out,const char *language){
+static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *out,const char *language,bool experience=false){
     if(out)*out=0;
     return guard([&]{
         require(t&&out);bounded(path,32768,true);if(language)bounded(language,64,true);
@@ -473,7 +474,12 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
             try{
                 rev=revision_of(t->db);
                 // One preferred local-language content node per grouped master.
-                statement s(t->db,language?
+                statement s(t->db,experience?
+                    "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms FROM fragments f "
+                    "WHERE f.source='record.experience.body' AND f.external_id GLOB 'local:experience:*' "
+                    "AND EXISTS(SELECT 1 FROM fragments k WHERE k.source='record.experience.kind' "
+                    "AND k.external_id=f.external_id AND k.body='observation') ORDER BY f.seq":
+                    language?
                     "SELECT seq,source,external_id,body,language,observed_ms FROM fragments f "
                     "WHERE source GLOB 'record.*' AND external_id GLOB 'local:*' AND language=? "
                     "AND (source GLOB 'record.*.understanding' OR "
@@ -495,13 +501,25 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
                     while(branch.next())if(active.count(branch.str(0)))edges.push_back({"master:"+branch.str(0),"is.in","branch:"+std::to_string(branch.integer(1))});
                     statement wants(t->db,"SELECT DISTINCT external_id FROM fragments WHERE source GLOB 'record.*.want' AND external_id GLOB 'local:*'");
                     while(wants.next())if(active.count(wants.str(0)))edges.push_back({"master:"+wants.str(0),"has.state","state:wanted"});
+                }else if(experience){
+                    std::unordered_set<std::string> active;
+                    for(const auto &r:rows)active.insert(r.external);
+                    statement links(t->db,"SELECT external_id,source,body FROM fragments WHERE source IN "
+                        "('record.experience.parent','record.experience.screen') AND external_id GLOB 'local:experience:*'");
+                    while(links.next())if(active.count(links.str(0)))
+                        edges.push_back({"master:"+links.str(0),"is.part.of",
+                            (links.str(1)=="record.experience.screen"?"screen:":"session:")+links.str(2)});
+                    statement branch(t->db,"SELECT DISTINCT f.external_id,b.agent_id FROM branch_members b JOIN fragments f ON f.seq=b.fragment_seq "
+                        "WHERE f.source GLOB 'record.experience.*'");
+                    while(branch.next())if(active.count(branch.str(0)))
+                        edges.push_back({"master:"+branch.str(0),"is.in","branch:"+std::to_string(branch.integer(1))});
                 }else membership_edges(t->db,edges,0);
                 statement a(t->db,"SELECT id,name,term FROM agents ORDER BY id");
                 while(a.next())agents.push_back({a.integer(0),a.str(1),a.str(2)});
                 exec(t->db,"COMMIT");
             }catch(...){sqlite3_exec(t->db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
         }
-        if(language&&rows.empty()){*out=rev;return;}
+        if((language||experience)&&rows.empty()){*out=rev;return;}
         require(!rows.empty());
         if(language){
             std::unordered_set<std::string> keys;for(const auto &r:rows){keys.insert(fragment_key(r.id));keys.insert("master:"+r.external);}
@@ -514,6 +532,15 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
         // Multiple members of the same master emit the same network edge.
         edges.reserve(edges.size()+rows.size()*5);
         for(const auto &r:rows)add_edges(edges,r);
+        if(experience){
+            // Exact repeats keep independent observation identities but link
+            // to the first occurrence. No speculative semantic merging.
+            std::unordered_map<std::string,int64_t> first;
+            for(const auto &r:rows){
+                auto [entry,inserted]=first.emplace(r.body,r.id);
+                if(!inserted)edges.push_back({fragment_key(r.id),"is.occurrence.of",fragment_key(entry->second)});
+            }
+        }
         auto key=[](const edge &e){return std::tie(e.subject,e.predicate,e.object);};
         std::sort(edges.begin(),edges.end(),[&](const edge &a,const edge &b){return key(a)<key(b);});
         edges.erase(std::unique(edges.begin(),edges.end(),[&](const edge &a,const edge &b){return key(a)==key(b);}),edges.end());
@@ -524,13 +551,14 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
         try{
             std::ofstream file(dest,std::ios::binary|std::ios::out);
             if(!file)throw std::runtime_error("open snapshot");
-            write_gguf(file,rows,edges,agents,rev,language);file.close();if(!file)throw std::runtime_error("close snapshot");
+            write_gguf(file,rows,edges,agents,rev,language,experience);file.close();if(!file)throw std::runtime_error("close snapshot");
             *out=rev;
         }catch(...){std::error_code ec;std::filesystem::remove(dest,ec);throw;}
     });
 }
 
 roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out){return compile_tree(t,path,out,nullptr);}
+roots_tree_result roots_tree_compile_experience(roots_tree *t,const char *path,int64_t *out){return compile_tree(t,path,out,nullptr,true);}
 roots_tree_result roots_tree_compile_localized(roots_tree *t,const char *path,const char *language,int64_t *out){
     if(!language||!*language)return ROOTS_TREE_INVALID;
     return compile_tree(t,path,out,language);
