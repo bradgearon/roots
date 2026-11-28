@@ -78,12 +78,8 @@ static Target target(const std::set<std::wstring>& excluded) {
     CloseHandle(p);if(!ok)return {};
     std::wstring name(buf,len);auto slash=name.find_last_of(L"\\/");
     name=lower(name.substr(slash==std::wstring::npos?0:slash+1));
-    static const std::set<std::wstring> denied={L"chrome.exe",L"msedge.exe",L"firefox.exe",L"brave.exe",L"opera.exe",L"vivaldi.exe",
-        L"roots-surface.exe",L"wds.roots.host.exe",L"wds.roots.experience.exe",L"dotnet.exe",L"windowsterminal.exe",L"conhost.exe",L"openconsole.exe",
-        L"credentialuibroker.exe",L"logonui.exe",L"keepass.exe",L"keepassxc.exe",L"1password.exe",L"bitwarden.exe",
-        L"outlook.exe",L"olk.exe",L"thunderbird.exe",L"ms-teams.exe",L"teams.exe",L"slack.exe",L"discord.exe",
-        L"signal.exe",L"telegram.exe",L"whatsapp.exe",L"skype.exe",L"mstsc.exe",L"msrdc.exe"};
-    if(name.size()<=4||name.size()>128||!name.ends_with(L".exe")||excluded.contains(name)||denied.contains(name))return {};
+    // No built-in process-name exclusions. Only explicit user exclusions apply.
+    if(name.size()<=4||name.size()>128||!name.ends_with(L".exe")||excluded.contains(name))return {};
     DWORD affinity=0;
     // This query can fail on ordinary non-layered windows; WGC still honors OS capture protection.
     if(GetWindowDisplayAffinity(hwnd,&affinity)&&affinity!=WDA_NONE)return {};
