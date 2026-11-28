@@ -100,6 +100,21 @@ final class XKnowledgeRecords {
             }catch(RuntimeException ignored){/* Optional metadata; raw capture still proceeds. */}
         }
     }
+    /** A node's metadata is gathered together before adding it to the legacy
+     * sample lane, so list truncation cannot change its structural owner. */
+    static void appendSamples(List<Sample> out,List<Sample> samples){
+        for(Sample sample:samples){
+            if(sample.sourceLink)sourceLink(out,sample.text,sample.id,sample.bounds);
+            else if(out.size()<SAMPLE_LIMIT)out.add(sample);
+        }
+    }
+    static List<NativeTree.Observation> assembleCards(List<XTimelineCardRecords.Post> posts,long at){
+        Map<String,NativeTree.Observation> out=new LinkedHashMap<>();
+        for(XTimelineCardRecords.Post post:posts)
+            for(XTimelineCardRecords.Field field:post.fields())
+                add(out,post.key(),field.role(),field.value(),at);
+        return new ArrayList<>(out.values());
+    }
     static List<NativeTree.Observation> assemble(List<TextCandidate> bodies,List<Sample> samples,long at){
         Map<String,NativeTree.Observation> out=new LinkedHashMap<>();
         for(TextCandidate body:bodies){
