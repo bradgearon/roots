@@ -97,7 +97,7 @@ public final class XVisibleTextReader {
                 || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
 
         ArrayDeque<ScanNode> queue = new ArrayDeque<>();
-        queue.add(new ScanNode(root,true,retainKnowledge||inspector!=null?"0":null));
+        queue.add(new ScanNode(root,true,"0"));
         boolean detailScreen = false;
 
         while (!queue.isEmpty()
@@ -129,12 +129,12 @@ public final class XVisibleTextReader {
                             inspectedMetadata=inspector.node(node,entry.path(),bounds);
                     }catch(RuntimeException ignored){/* A transient or unsupported inspector property must not interrupt capture. */}
                 }
-                if(retainKnowledge&&node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())&&
-                        !node.isVisibleToUser()&&XPostMetadata.conversationCard(node)){
+                if(node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())&&
+                        !node.isVisibleToUser()&&(XPostMetadata.conversationCard(node)||XPostMetadata.timelineHeader(node.getViewIdResourceName()))){
                     // A clipped parent can own visible descendants. Do not
                     // read its invisible text; keep only its structural marker.
                     cardNodes.add(new XTimelineCardRecords.Node(order,entry.path(),node.getViewIdResourceName(),
-                        "", "", "", true,false,false,false,sourceAllowed,List.of(),""));
+                        "", "", "", XPostMetadata.conversationCard(node),XPostMetadata.timelineHeader(node.getViewIdResourceName()),false,false,sourceAllowed,List.of(),""));
                 }
                 if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
                 if (node.getPackageName() != null && !X_PACKAGE.contentEquals(node.getPackageName()))
@@ -142,16 +142,17 @@ public final class XVisibleTextReader {
 
                 // Record visible accessibility text before translation or
                 // post-role eligibility, including English and short labels.
-                if(retainKnowledge && node.getPackageName()!=null
-                        && X_PACKAGE.contentEquals(node.getPackageName())){
+                if(node.getPackageName()!=null && X_PACKAGE.contentEquals(node.getPackageName())){
                     Rect observedBounds=new Rect();
                     node.getBoundsInScreen(observedBounds);
                     if(XPostSpatialAnalyzer.onScreen(observedBounds,width,height)){
                         CharSequence value=node.getText(),descriptionValue=node.getContentDescription();
                         String resource=node.getViewIdResourceName();
+                        boolean conversation=XPostMetadata.conversationCard(node);
+                        List<String> links=new ArrayList<>();
+                        if(retainKnowledge){
                         retain(observations,value,observedAt);
                         retain(observations,descriptionValue,observedAt);
-                        boolean conversation=XPostMetadata.conversationCard(node);
                         List<XKnowledgeRecords.Sample> nodeSamples=new ArrayList<>();
                         XKnowledgeRecords.sample(nodeSamples,value,resource,observedBounds,false,sourceAllowed);
                         XKnowledgeRecords.sample(nodeSamples,descriptionValue,resource,observedBounds,true,sourceAllowed);
@@ -163,8 +164,8 @@ public final class XVisibleTextReader {
                             }catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
                         }
                         samplesByOrder.put(order,nodeSamples);
-                        List<String> links=new ArrayList<>();
                         for(XKnowledgeRecords.Sample sample:nodeSamples)if(sample.sourceLink)links.add(sample.text);
+                        }
                         cardNodes.add(new XTimelineCardRecords.Node(order,entry.path(),resource,
                             node.getClassName()==null?"":node.getClassName().toString(),
                             value==null?"":value.toString(),descriptionValue==null?"":descriptionValue.toString(),
@@ -268,6 +269,23 @@ public final class XVisibleTextReader {
         }
 
         lastKnowledgeBounded|=!queue.isEmpty();
+        XTimelineCardRecords.Result joined=XTimelineCardRecords.assemble(cardNodes);
+        // A structurally selected body is authoritative for the overlay as
+        // well as for storage. Never let a sibling poll choice win the card.
+        // This works even without capture consent or a complete author handle.
+        Map<String,Rect> cardBounds=new HashMap<>();
+        for(XTimelineCardRecords.Node n:cardNodes)if(n.card()&&cardNodeBounds.containsKey(n.order()))
+            cardBounds.put(n.path(),cardNodeBounds.get(n.order()));
+        raw.removeIf(candidate->joined.primaryBodies().containsKey(joined.cardByOrder().getOrDefault(candidate.order,"")));
+        for(var entry:joined.primaryBodies().entrySet()){
+            XTimelineCardRecords.Node body=entry.getValue();
+            String text=TextFingerprint.normalized(body.text());
+            Rect bounds=cardNodeBounds.get(body.order());
+            if(bounds==null||text.isEmpty()||text.length()>MAX_SOURCE_CHARS)continue;
+            Rect postBounds=cardBounds.getOrDefault(entry.getKey(),bounds);
+            raw.add(new TextCandidate(text,PostLanguage.hint(text,body.language()),bounds,postBounds,
+                body.order(),300,true,false,true));
+        }
         // The raw lane remains intact. Structural associations are added
         // only after resolving the same measured post/header candidates.
         // Associate each readable body with its nearest profile image. The
@@ -293,7 +311,6 @@ public final class XVisibleTextReader {
         selected.removeIf(body -> !body.knownPostTextId && overlapsAuthor(body,authorNames));
         List<TextCandidate> cardTranslationBodies=new ArrayList<>();
         if(retainKnowledge){
-            XTimelineCardRecords.Result joined=XTimelineCardRecords.assemble(cardNodes);
             // A partial/recycled Compose card is not an independent post.
             // Preserve its raw text and wait for a complete header/body rather
             // than creating a second master using a guessed author.
