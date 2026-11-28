@@ -15,13 +15,14 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
     {_tree=tree;_mesh=mesh;_meshError=meshError;}
     public static DesktopRootsHost? TryOpen(string repositoryRoot,bool lan)
     {
+        if(Environment.GetEnvironmentVariable("ROOTS_TREE_DISABLED")=="1")return null;
         DesktopTreeService? tree=null;
         try
         {
             if(string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ROOTS_TREE_LIBRARY")))
             {
                 string library=OperatingSystem.IsWindows()?"roots_tree.dll":"libroots_tree.so";
-                foreach(string directory in new[]{"build/tree-core/Release","build/tree-core","build/desktop-tree/Release","build/desktop-tree"})
+                foreach(string directory in new[]{"build/desktop-tree/Release","build/desktop-tree","build/tree-core/Release","build/tree-core"})
                 {
                     string candidate=Path.GetFullPath(Path.Combine(repositoryRoot,directory,library));
                     if(File.Exists(candidate)){Environment.SetEnvironmentVariable("ROOTS_TREE_LIBRARY",candidate);break;}
