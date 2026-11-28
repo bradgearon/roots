@@ -162,6 +162,24 @@ public final class AutoOverlayPositionStoreTest {
         assertEquals(170,store.snapshot(130).get(0).rectangle.y);
     }
 
+    @Test public void replacementAtSameBoundsImmediatelyEvictsOldTranslation(){
+        AutoOverlayPositionStore store=new AutoOverlayPositionStore(440,920);
+        store.publish(Arrays.asList(post("old",40,350)),false,100);
+        store.publish(Arrays.asList(post("new",40,350)),false,200);
+        assertEquals(1,store.snapshot(200).size());
+        assertEquals("new",store.snapshot(200).get(0).id);
+        assertFalse(store.contains("old"));
+    }
+
+    @Test public void layoutMovementWithoutScrollEventEvictsMissingPosts(){
+        AutoOverlayPositionStore store=new AutoOverlayPositionStore(440,920);
+        store.publish(Arrays.asList(post("old",40,200),post("remaining",40,600)),false,100);
+        store.publish(Arrays.asList(post("remaining",40,450)),false,200);
+        assertEquals(1,store.snapshot(200).size());
+        assertEquals(450,store.snapshot(200).get(0).rectangle.y);
+        assertFalse(store.contains("old"));
+    }
+
     @Test public void temporaryStationaryTreeGapDoesNotBlink() {
         AutoOverlayPositionStore store = new AutoOverlayPositionStore(440, 920);
         store.publish(Arrays.asList(post("one", 40, 350)), false, 100);
