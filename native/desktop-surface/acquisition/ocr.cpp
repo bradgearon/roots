@@ -14,11 +14,11 @@
 #include <cmath>
 
 using namespace winrt;
-using namespace Windows::Graphics::Capture;
-using namespace Windows::Graphics::DirectX;
-using namespace Windows::Graphics::DirectX::Direct3D11;
-using namespace Windows::Graphics::Imaging;
-using namespace Windows::Media::Ocr;
+using namespace winrt::Windows::Graphics::Capture;
+using namespace winrt::Windows::Graphics::DirectX;
+using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
+using namespace winrt::Windows::Graphics::Imaging;
+using namespace winrt::Windows::Media::Ocr;
 
 struct OcrLane::Impl {
     IDirect3DDevice device{nullptr};
@@ -26,7 +26,7 @@ struct OcrLane::Impl {
     GraphicsCaptureItem item{nullptr};
     Direct3D11CaptureFramePool pool{nullptr};
     GraphicsCaptureSession session{nullptr};
-    Windows::Graphics::SizeInt32 size{};
+    winrt::Windows::Graphics::SizeInt32 size{};
     HWND window{};
     Impl() {
         if (!GraphicsCaptureSession::IsSupported()) return;
@@ -39,7 +39,7 @@ struct OcrLane::Impl {
         device = inspectable.as<IDirect3DDevice>();
         engine = OcrEngine::TryCreateFromUserProfileLanguages();
     }
-    bool fits(Windows::Graphics::SizeInt32 s) const {
+    bool fits(winrt::Windows::Graphics::SizeInt32 s) const {
         return s.Width>0 && s.Height>0 && s.Width<=3840 && s.Height<=2160 &&
             static_cast<uint32_t>(s.Width)<=OcrEngine::MaxImageDimension() &&
             static_cast<uint32_t>(s.Height)<=OcrEngine::MaxImageDimension();
@@ -53,7 +53,7 @@ struct OcrLane::Impl {
         reset();
         if(!device || !engine) return false;
         auto factory=get_activation_factory<GraphicsCaptureItem, IGraphicsCaptureItemInterop>();
-        check_hresult(factory->CreateForWindow(hwnd,guid_of<GraphicsCaptureItem>(),put_abi(item)));
+        check_hresult(factory->CreateForWindow(hwnd,guid_of<IGraphicsCaptureItem>(),put_abi(item)));
         size=item.Size();
         if(!fits(size)) { reset(); return false; }
         pool=Direct3D11CaptureFramePool::CreateFreeThreaded(device,
