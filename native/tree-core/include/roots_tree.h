@@ -64,6 +64,16 @@ ROOTS_TREE_API roots_tree_result roots_tree_query(roots_tree *tree,
 typedef int (*roots_record_member_callback)(void *user,int64_t master_sequence,const roots_fragment *fragment);
 ROOTS_TREE_API roots_tree_result roots_tree_records(roots_tree *tree,const char *term,
     int64_t agent_id,int64_t before,uint32_t limit,roots_record_member_callback callback,void *user);
+/* Capture-time ordering with a stable tie breaker. Cursor (0,0) starts newest.
+ * Timestamp is the earliest observed_ms in a grouped record; before_seq is
+ * the exclusive master sequence at that timestamp. No changes to old cursors. */
+ROOTS_TREE_API roots_tree_result roots_tree_records_time(roots_tree *tree,const char *term,
+    int64_t agent_id,int64_t before_ms,int64_t before_seq,uint32_t limit,
+    roots_record_member_callback callback,void *user);
+/* The same normalized 128 byte-trigram lexical features used by GGUF compile.
+ * These are not learned semantic relation weights. Caller owns 128 floats. */
+ROOTS_TREE_API roots_tree_result roots_tree_fragment_weights(roots_tree *tree,
+    int64_t sequence,float *weights,size_t count);
 ROOTS_TREE_API roots_tree_result roots_tree_count(roots_tree *tree, int64_t *count);
 ROOTS_TREE_API roots_tree_result roots_tree_agent_create(roots_tree *tree,
     const char *name, const char *term, int64_t *id);
