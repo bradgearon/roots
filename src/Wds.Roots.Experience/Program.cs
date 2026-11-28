@@ -21,7 +21,7 @@ try
         Console.WriteLine($"Private Experience Tree: {tree.Count()} fragments.");
         if (args[0] == "--search")
         {
-            foreach (var record in tree.Records(args[1], limit: 50).GroupBy(x => x.MasterSequence))
+            foreach (var record in tree.RecordsByTime(args[1], limit: 50).GroupBy(x => x.MasterSequence))
             {
                 var body = record.FirstOrDefault(x => x.Fragment.Source == "record.experience.body")?.Fragment;
                 var app = record.FirstOrDefault(x => x.Fragment.Source == "record.experience.process")?.Fragment.Body;
