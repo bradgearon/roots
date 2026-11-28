@@ -27,7 +27,7 @@ final class PostLanguage {
         static Detection unknown(){return new Detection("",0,0,false);}
         String accepted(boolean name){
             return available&&!language.isEmpty()&&Double.isFinite(confidence)&&Double.isFinite(margin)&&
-                confidence>=(name?.90:.70)&&margin>=(name?.20:.15)?language:"";
+                confidence>=.70&&margin>=.15?language:"";
         }
     }
     static String resolve(String text,String reported,String detected,double confidence,boolean reliable){
