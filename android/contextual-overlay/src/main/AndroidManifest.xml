@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application>
+        <activity android:name="com.wds.sixstars.contextoverlay.NetworkExplorerActivity" android:exported="false" android:label="Network Explorer" android:theme="@style/RootsTheme" />
         <activity android:name="com.wds.sixstars.contextoverlay.ExternalKnowledgeActivity" android:exported="false" android:label="External knowledge" android:theme="@style/RootsTheme" />
         <receiver android:name="com.wds.sixstars.contextoverlay.EncounterBootReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>

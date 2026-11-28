@@ -71,6 +71,7 @@ public final class MeshActivity extends Activity {
         nearby.addView(RootsUi.text(this,"Nearby encounters",18,RootsUi.TEXT,true));
         nearby.addView(RootsUi.text(this,"Automatically discover and exchange published knowledge over Bluetooth. Manage bindings and interactions here.",13,RootsUi.MUTED,false));
         nearby.addView(RootsUi.action(this,"Manage nearby exchange",()->startActivity(new Intent(this,EncounterActivity.class))));
+        nearby.addView(RootsUi.action(this,"Network Explorer",()->startActivity(new Intent(this,NetworkExplorerActivity.class))));
         LinearLayout listener=RootsUi.card(this,content);
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
         listener.addView(RootsUi.text(this,"Create a roots:// invitation for another phone. Keep Roots running while the other phone receives. Stop serving to invalidate the invitation.",13,RootsUi.MUTED,false));

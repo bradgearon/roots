@@ -11,9 +11,24 @@ Two separate networks: Internal Mesh private compute and External Mesh shared kn
 5. Switch the phone to cellular and test again. The selected GPU is still the PC host's configured pinned model. The desktop must remain on and running. No automatic local or cloud fallback. Poetic Movement and element-flow profiling remain on-device, as before.
 6. Optional independent fallback: set ROOTS_INTERNAL_LIBP2P_RELAY to a trusted libp2p relay multiaddress ending in its peer ID before launching the host. It requests a Circuit Relay reservation. Copy a printed usable libp2p route ending in the desktop's Peer ID and append &fallback=<multiaddr> to the Iroh address. The client attempts fallback only during pre-request setup; no automatic re-submission of a generation. Direct libp2p multiaddresses work if reachable. No relay server or fallback address is bundled.
 
-## External routing prototype
+## External directory prototype
 
-Run native\whirlwind\target\release\roots-whirlwind.exe external-dht <separate-private-key-path> [bootstrap-multiaddr ...]. It uses a dedicated /roots/external/kad/1 namespace, separate persistent key file and in-memory Kademlia routing. No public bootstrap infrastructure is bundled. This is only a routing-node prototype: signed public .member/.axon/.route storage, member lookup and Internet Axon synchronization are not yet wired to it. BLE external exchange remains functional independently. Do not pass an internal key path, grant or address as an external seed.
+Run a publicly reachable external bootstrap/router using a separate key file:
+```cmd
+set ROOTS_EXTERNAL_LISTEN=/ip4/0.0.0.0/tcp/8240
+native\whirlwind\target\release\roots-whirlwind.exe external-dht external-seed.key
+```
+Use a reachable address replacing 0.0.0.0 in its printed multiaddress. Permit only the chosen router port, not the private inference gateway. Then publish a demo public directory card from a different terminal:
+```cmd
+native\whirlwind\target\release\roots-whirlwind.exe external-publish external-publisher.key "Music and Harmonics" music,harmony <external-seed-multiaddr>
+```
+Search from a third identity:
+```cmd
+native\whirlwind\target\release\roots-whirlwind.exe external-search external-client.key music <external-seed-multiaddr>
+```
+Use "*" instead of a topic to sample browse shards. Android: Roots Mesh > Manage nearby exchange > Network Explorer > External bootstrap settings. Enter a reachable seed address (not an internal compute route), then search a tag or leave blank to browse. Nearby saved bindings are shown separately.
+
+Public node cards are signed with the external libp2p key, expire in 24 hours, and are republished by the running publisher. DHT provider records are untrusted discovery hints; the client verifies the actual signed card, publisher Peer ID, expiry and topic match. Directory cards currently advertise only directory capability, not a complete .axon, and no Internet data exchange is attempted from a search result. Nearby BLE auto-binding still works. Internet auto-join and publishing real Axon inventories require the public exchange stream and a durable verified member/Axon identity binding. Public bootstraps are not bundled. DHT stores are memory-only; publishers refresh. See design/network-explorer.md.
 
 ## Limitations and safety
 
