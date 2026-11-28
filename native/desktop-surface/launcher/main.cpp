@@ -6,6 +6,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cwctype>
+#include <cstdint>
+#include <cstdlib>
+#ifdef ROOTS_SURFACE_OCR
+#include <roapi.h>
+#endif
 #include <iostream>
 #include <memory>
 #include <set>
@@ -100,7 +105,8 @@ static bool walk(IUIAutomationTreeWalker* walker,IUIAutomationElement* parent,co
                 if(SUCCEEDED(node->get_CurrentBoundingRectangle(&bounds))&&IntersectRect(&clipped,&bounds,&window)&&
                    SUCCEEDED(node->get_CurrentName(&name))&&name) {
                     std::wstring text(name,SysStringLen(name)); SysFreeString(name);
-                    if(!text.empty()&&text.size()<=2000&&text.find(L'\0')==std::wstring::npos)
+                    if(!text.empty()&&text.size()<=2000&&text.find(L'\0')==std::wstring::npos&&
+                       std::any_of(text.begin(),text.end(),[](wchar_t ch){return !iswspace(ch);}))
                         rows.push_back({std::move(text),clipped});
                 } else if(name) SysFreeString(name);
             }
@@ -139,7 +145,7 @@ static LRESULT CALLBACK signalProc(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
 static void emit(const char* kind,unsigned long long session,const Target& t,long long startUtc,long long endUtc,
         Clock::time_point start,Clock::time_point end,const RECT& b,const std::wstring& content) {
     const auto text=hex(content),process=hex(t.process);
-    if(process.empty()||text.empty())return;
+    if(process.empty()||text.empty()||std::none_of(content.begin(),content.end(),[](wchar_t ch){return !iswspace(ch);}))return;
     std::cout<<kind<<'\t'<<session<<'\t'<<t.pid<<'\t'<<t.created<<'\t'<<reinterpret_cast<uintptr_t>(t.hwnd)
         <<'\t'<<startUtc<<'\t'<<endUtc<<'\t'<<mono(start)<<'\t'<<mono(end)<<'\t'<<process
         <<'\t'<<b.left<<','<<b.top<<','<<b.right<<','<<b.bottom<<'\t'<<text<<'\n'<<std::flush;
@@ -155,6 +161,9 @@ int wmain(int argc,wchar_t** argv) {
     if(GetFileType(GetStdHandle(STD_OUTPUT_HANDLE))!=FILE_TYPE_PIPE ||
        GetFileType(GetStdHandle(STD_INPUT_HANDLE))!=FILE_TYPE_PIPE)return 2;
     if(FAILED(CoInitializeEx(nullptr,COINIT_MULTITHREADED)))return 3;
+#ifdef ROOTS_SURFACE_OCR
+    if(useOcr && FAILED(RoInitialize(RO_INIT_MULTITHREADED))) { CoUninitialize(); return 4; }
+#endif
     ComPtr<IUIAutomation> automation;
     CoCreateInstance(CLSID_CUIAutomation,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&automation));
     if(!automation){CoUninitialize();return 3;}
@@ -206,7 +215,8 @@ int wmain(int argc,wchar_t** argv) {
         bool valid=uia(automation.Get(),current.hwnd,rows,sensitive);const char* kind="uia";
 #ifdef ROOTS_SURFACE_OCR
         if(ocr && valid && !sensitive && rows.empty()){
-            valid=ocr->read(current.hwnd,rows);kind="ocr";
+            if(!ocr->read(current.hwnd,rows))continue;
+            kind="ocr";
         } else if(ocr)ocr->reset();
 #endif
         if(!valid||sensitive||!(target(allow)==current)){seen.clear();seenKind.clear();continue;}
@@ -224,5 +234,9 @@ int wmain(int argc,wchar_t** argv) {
 #endif
     KillTimer(signalWindow,1);UnhookWinEvent(hook);
     WTSUnRegisterSessionNotification(signalWindow);DestroyWindow(signalWindow);
-    automation2.Reset();automation.Reset();CoUninitialize();return 0;
+    automation2.Reset();automation.Reset();
+#ifdef ROOTS_SURFACE_OCR
+    if(useOcr)RoUninitialize();
+#endif
+    CoUninitialize();return 0;
 }
