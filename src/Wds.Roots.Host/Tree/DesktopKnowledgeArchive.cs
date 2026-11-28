@@ -132,7 +132,7 @@ internal sealed class DesktopKnowledgeManifest
         return result;
     }
 }
-internal sealed record DesktopArchiveProfile(int Previous=4096,double MillisPerRecord=0,double RawPerRecord=0,double WirePerRecord=0)
+internal sealed record DesktopArchiveProfile(int Previous=4096,double MillisPerRecord=0,double RawPerRecord=0,double WirePerRecord=0,int InFlight=0,int RetryLimit=0)
 {
     public (int Records,int Raw,int Wire,int Estimate) Budget()
     {
@@ -140,13 +140,20 @@ internal sealed record DesktopArchiveProfile(int Previous=4096,double MillisPerR
         int wire=Math.Min(raw,DesktopKnowledgeArchive.MaxWire);
         double ms=MillisPerRecord,rb=RawPerRecord,wb=WirePerRecord;
         int count=ms>0&&rb>0&&wb>0&&double.IsFinite(ms)&&double.IsFinite(rb)&&double.IsFinite(wb)?
-            Math.Clamp((int)Math.Min(Math.Min(8000/ms,Math.Min(raw/rb,wire/wb)),Math.Clamp(Previous,64,16384)*2.0),64,16384):4096;
+            Math.Clamp((int)Math.Min(Math.Min(8000/ms,Math.Min(raw/rb,wire/wb)),Math.Clamp(Previous,64,16384)*2.0),64,16384):Math.Clamp(Previous,64,16384);
+        if(RetryLimit>0)count=Math.Min(count,Math.Clamp(RetryLimit,64,16384));
         return (count,raw,wire,ms>0&&double.IsFinite(ms)?(int)Math.Min(int.MaxValue,Math.Ceiling(count*ms)):-1);
+    }
+    public DesktopArchiveProfile Recover()
+    {
+        if(InFlight<=0)return this;
+        int retry=Math.Clamp(InFlight/2,64,16384);
+        return this with{Previous=Math.Min(Previous,retry),RetryLimit=retry,InFlight=0};
     }
     static double Blend(double old,double next)=>old>0&&double.IsFinite(old)?old*.65+next*.35:next;
     public DesktopArchiveProfile Observe(int count,int raw,int wire,long elapsed)
     {
-        var next=new DesktopArchiveProfile(Previous,Blend(MillisPerRecord,(double)Math.Max(1,elapsed)/count),Blend(RawPerRecord,(double)raw/count),Blend(WirePerRecord,(double)wire/count));
+        var next=new DesktopArchiveProfile(Math.Clamp(count,64,16384),Blend(MillisPerRecord,(double)Math.Max(1,elapsed)/count),Blend(RawPerRecord,(double)raw/count),Blend(WirePerRecord,(double)wire/count));
         return next with{Previous=next.Budget().Records};
     }
 }

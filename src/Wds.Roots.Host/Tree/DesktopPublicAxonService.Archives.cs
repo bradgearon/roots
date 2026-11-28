@@ -23,14 +23,14 @@ internal sealed partial class DesktopPublicAxonService
         {
             try
             {
-                if(new FileInfo(path).Length>32*1024*1024)continue;
+                if(new FileInfo(path).Length>64*1024*1024)continue;
                 using var file=File.OpenRead(path);
                 using var gzip=new GZipStream(file,CompressionMode.Decompress);
                 using var output=new MemoryStream();
                 byte[] buffer=new byte[65536];int n;
                 while((n=gzip.Read(buffer))>0)
                 {
-                    if(output.Length+n>32*1024*1024)throw new InvalidDataException("Receipt archive exceeds budget.");
+                    if(output.Length+n>64*1024*1024)throw new InvalidDataException("Receipt archive exceeds budget.");
                     output.Write(buffer,0,n);
                 }
                 var receipts=JsonSerializer.Deserialize<Receipt[]>(output.ToArray())??[];
@@ -55,7 +55,7 @@ internal sealed partial class DesktopPublicAxonService
         {
             using(var file=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None))
             {
-                using(var gzip=new GZipStream(file,CompressionLevel.Fastest,true))JsonSerializer.Serialize(gzip,receipts);
+                using(var gzip=new GZipStream(file,CompressionLevel.Fastest,true))JsonSerializer.Serialize(gzip,receipts,DesktopPublicItem.WireOptions);
                 file.Flush(true);
             }
             if(!OperatingSystem.IsWindows())File.SetUnixFileMode(temp,UnixFileMode.UserRead|UnixFileMode.UserWrite);
@@ -114,7 +114,7 @@ internal sealed partial class DesktopPublicAxonService
         var offeredManifest=new DesktopKnowledgeManifest(catalog.Keys);
         var held=new DesktopKnowledgeManifest(catalog.Keys);
         var saved=ReadProfile(ManifestFile(peer),new Dictionary<int,DesktopKnowledgeManifest.Checkpoint>());
-        var profile=ReadProfile(ProfileFile(peer),new DesktopArchiveProfile());
+        var profile=ReadProfile(ProfileFile(peer),new DesktopArchiveProfile()).Recover();
         await channel.SendAsync(Message("manifest"),ct);
         var manifestReply=await channel.ReadAsync(ct);Expect(manifestReply,"manifest");
         var remote=DesktopKnowledgeManifest.Parse(manifestReply["parts"] as JsonArray??throw new InvalidDataException("Missing manifest."));
@@ -141,6 +141,7 @@ internal sealed partial class DesktopPublicAxonService
             {
                 Require(peer,ct);var budget=profile.Budget();
                 var ids=wanted.Skip(offset).Take(budget.Records).ToArray();
+                Atomic(ProfileFile(peer),JsonSerializer.Serialize(profile with{InFlight=ids.Length}));
                 var watch=Stopwatch.StartNew();
                 await channel.SendAsync(new JsonObject{["op"]="want_archive",["count"]=ids.Length,["raw_limit"]=budget.Raw,["wire_limit"]=budget.Wire},ct);
                 await DesktopKnowledgeArchive.SendBytes(channel,DesktopKnowledgeArchive.EncodeIds(ids),ct);

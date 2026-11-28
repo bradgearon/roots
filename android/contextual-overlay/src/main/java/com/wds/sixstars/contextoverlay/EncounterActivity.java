@@ -34,7 +34,7 @@ public final class EncounterActivity extends Activity {
         automaticPublication=new Switch(this);automaticPublication.setText("Automatically publish linked original posts");automaticPublication.setTextColor(RootsUi.TEXT);controls.addView(automaticPublication);
         controls.addView(RootsUi.text(this,"Restricted mode: linked originals only. Full Root mode below includes unlinked knowledge, all Tree observations and branches.",13,RootsUi.MUTED,false));
         fullRootGraph=new Switch(this);fullRootGraph.setText("Share full Root graph");fullRootGraph.setTextColor(RootsUi.TEXT);controls.addView(fullRootGraph);
-        controls.addView(RootsUi.text(this,"No topic or source-link filter. Only enable if all retained content may be publicly shared. This does not authorize private GPU access.",13,RootsUi.MUTED,false));
+        controls.addView(RootsUi.text(this,"No topic or source-link filter. Public archive traffic is not encrypted; only enable if all retained content may be publicly shared. This does not authorize private GPU access.",13,RootsUi.MUTED,false));
         controls.addView(RootsUi.action(this,"Open Receive knowledge",()->startActivity(new android.content.Intent(this,MeshActivity.class))));
         controls.addView(RootsUi.action(this,"Publish existing public Tree items",()->PublicTreePublishing.choose(this,this::update)));
         controls.addView(RootsUi.action(this,"External knowledge · source and receipt history",()->startActivity(new android.content.Intent(this,ExternalKnowledgeActivity.class))));

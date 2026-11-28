@@ -134,9 +134,11 @@ final class EncounterSync {
         if(!peerGraph)catalog.values().removeIf(item->item.graph()!=null);
         root=inventoryRoot(catalog.navigableKeySet());
         if(peerChunks){
+            // A persisted receipt that has not reached the main Tree is
+            // recovered locally first; do not advertise it as retained.
+            catalog.keySet().removeAll(pendingReceipts);
             offeredManifest=new KnowledgeManifest(catalog.navigableKeySet());
-            Set<String> held=new HashSet<>(catalog.navigableKeySet());held.removeAll(pendingReceipts);
-            heldManifest=new KnowledgeManifest(held);
+            heldManifest=new KnowledgeManifest(catalog.navigableKeySet());
             boolean wifi="Wi-Fi".equals(transport);
             sizing=new ArchiveSizing(context,channel.peerId,wifi);
             maxItems=wifi?65536:8192;
@@ -221,6 +223,7 @@ final class EncounterSync {
         check();byte[] bytes=channel.receivePublicBytes(size,limit);check();return bytes;
     }
     private List<MeshItem> receiveArchive(List<String> requested,ArchiveSizing.Budget budget)throws Exception{
+        sizing.begin(requested.size());
         long start=android.os.SystemClock.elapsedRealtime();
         stage="Receiving compressed archive";
         progress.accept("Requesting public archive · "+requested.size()+" records · "+(budget.estimatedMs()<0?"measuring device performance":budget.estimatedMs()+" ms estimated for "+budget.records()+" records"));

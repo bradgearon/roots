@@ -13,7 +13,7 @@ final class ArchiveSizing {
     private final String key;
     private final int rawLimit,wireLimit,targetMs;
     private double millisPerRecord,rawPerRecord,wirePerRecord;
-    private int previous;
+    private int previous,retryLimit;
     ArchiveSizing(Context context,String peer,boolean wifi){
         prefs=context.getSharedPreferences("roots_archive_profiles_v1",Context.MODE_PRIVATE);
         key=peer+(wifi?":wifi":":ble");
@@ -25,10 +25,15 @@ final class ArchiveSizing {
         millisPerRecord=valid(prefs.getFloat(key+":ms",0));
         rawPerRecord=valid(prefs.getFloat(key+":raw",0));
         wirePerRecord=valid(prefs.getFloat(key+":wire",0));
+        int interrupted=prefs.getInt(key+":in_flight",0);
+        if(interrupted>0){
+            retryLimit=Math.max(MIN,Math.min(MAX,interrupted/2));
+            previous=Math.min(previous,retryLimit);
+        }
     }
     private static double valid(double n){return Double.isFinite(n)&&n>0?n:0;}
     static int choose(int previous,int targetMs,int rawLimit,int wireLimit,double ms,double raw,double wire){
-        if(ms<=0||raw<=0||wire<=0)return INITIAL;
+        if(ms<=0||raw<=0||wire<=0)return Math.max(MIN,Math.min(MAX,previous));
         double ideal=Math.min(targetMs/ms,Math.min(rawLimit/raw,wireLimit/wire));
         // Limit growth between observed runs, but allow fast reduction on
         // slower devices. Byte ceilings remain hard limits at the sender.
@@ -36,8 +41,14 @@ final class ArchiveSizing {
     }
     Budget budget(){
         int n=choose(previous,targetMs,rawLimit,wireLimit,millisPerRecord,rawPerRecord,wirePerRecord);
+        if(retryLimit>0)n=Math.min(n,retryLimit);
         int estimate=millisPerRecord>0?(int)Math.min(Integer.MAX_VALUE,Math.ceil(n*millisPerRecord)):-1;
         return new Budget(n,rawLimit,wireLimit,estimate);
+    }
+    // Save the outstanding request before the transfer; a killed process
+    // will not attempt the same oversized archive repeatedly on restart.
+    void begin(int requested){
+        if(!prefs.edit().putInt(key+":in_flight",requested).commit())throw new IllegalStateException("Could not checkpoint archive attempt");
     }
     private static double blend(double old,double next){return old<=0?next:old*0.65+next*0.35;}
     void observe(int count,int raw,int wire,long elapsedMs){
@@ -45,8 +56,11 @@ final class ArchiveSizing {
         millisPerRecord=blend(millisPerRecord,(double)Math.max(1,elapsedMs)/count);
         rawPerRecord=blend(rawPerRecord,(double)raw/count);
         wirePerRecord=blend(wirePerRecord,(double)wire/count);
+        retryLimit=0;
+        previous=Math.max(MIN,Math.min(MAX,count));
         previous=budget().records();
-        prefs.edit().putInt(key+":next",previous).putFloat(key+":ms",(float)millisPerRecord)
-            .putFloat(key+":raw",(float)rawPerRecord).putFloat(key+":wire",(float)wirePerRecord).apply();
+        if(!prefs.edit().putInt(key+":next",previous).putFloat(key+":ms",(float)millisPerRecord)
+            .putFloat(key+":raw",(float)rawPerRecord).putFloat(key+":wire",(float)wirePerRecord).remove(key+":in_flight").commit())
+            throw new IllegalStateException("Could not save archive profile");
     }
 }

@@ -12,6 +12,7 @@ final class KnowledgeManifest {
     static final int BUCKETS=64;
     record Part(String root,int count){}
     private final List<NavigableSet<String>> buckets=new ArrayList<>(BUCKETS);
+    private final Part[] cached=new Part[BUCKETS];
     KnowledgeManifest(Collection<String> ids)throws Exception{
         for(int i=0;i<BUCKETS;i++)buckets.add(new TreeSet<>());
         for(String id:ids)add(id);
@@ -20,13 +21,13 @@ final class KnowledgeManifest {
         if(!EncounterBindings.digest(id))throw new IOException("Invalid knowledge identity");
         return Integer.parseInt(id.substring(0,2),16)>>>2;
     }
-    void add(String id)throws Exception{buckets.get(bucket(id)).add(id);}
+    void add(String id)throws Exception{int i=bucket(id);if(buckets.get(i).add(id))cached[i]=null;}
     boolean has(String id)throws Exception{return buckets.get(bucket(id)).contains(id);}
     Part part(int i)throws Exception{
-        checkBucket(i);var ids=buckets.get(i);
+        checkBucket(i);if(cached[i]!=null)return cached[i];var ids=buckets.get(i);
         MessageDigest hash=MessageDigest.getInstance("SHA-256");
         for(String id:ids)hash.update(id.getBytes(StandardCharsets.US_ASCII));
-        return new Part(MeshItem.hex(hash.digest()),ids.size());
+        return cached[i]=new Part(MeshItem.hex(hash.digest()),ids.size());
     }
     NavigableSet<String> after(int i,String cursor)throws Exception{
         checkBucket(i);

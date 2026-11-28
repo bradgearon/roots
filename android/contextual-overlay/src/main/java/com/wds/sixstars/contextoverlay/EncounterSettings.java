@@ -33,7 +33,7 @@ final class EncounterSettings {
         if(explaining)return;
         explaining=true;
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Share your full Root knowledge graph?")
-            .setMessage("Full Root mode offers all retained Tree observations, linked or unlinked, translations, understanding and branch definitions to nearby Roots peers. This can include sensitive captured text or private messages. Only enable on a Tree whose entire content you are authorized to redistribute publicly. Every nearby compatible Roots member can receive and forward it. Credentials, model files and private network permissions are never part of this protocol. You can disable future sharing; delivered copies cannot be recalled.")
+            .setMessage("Full Root mode offers all retained Tree observations, linked or unlinked, translations, understanding and branch definitions to nearby Roots peers. This can include sensitive captured text or private messages. Only enable on a Tree whose entire content you are authorized to redistribute publicly. Every nearby compatible Roots member can receive and forward it. Public archive traffic is readable on the network; it is authenticated but not encrypted. Credentials, model files and private network permissions are never part of this protocol. You can disable future sharing; delivered copies cannot be recalled.")
             .setNegativeButton("Keep restricted publication",(d,w)->{setFullRootGraph(activity,false);changed.run();})
             .setPositiveButton("Share full Root graph",(d,w)->{setFullRootGraph(activity,true);changed.run();}).create();
         dialog.setOnDismissListener(d->{explaining=false;prefs(activity).edit().putBoolean("full_root_graph_reviewed_v1",true).apply();changed.run();});
@@ -49,7 +49,7 @@ final class EncounterSettings {
         if(explaining)return;
         explaining=true;
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Automatically publish linked original posts?")
-            .setMessage("Roots will offer every retained original X post with an exact source link automatically, without a per-item selection or topic filter. An exact link does not prove a post is public; only enable this if your linked captured posts are public and you have permission to redistribute them. Private understanding, other screen text, prompts and credentials are excluded. Received knowledge enters your Tree as external reference material. Shared copies cannot reliably be recalled.")
+            .setMessage("Roots will offer every retained original X post with an exact source link automatically, without a per-item selection or topic filter. An exact link does not prove a post is public; only enable this if your linked captured posts are public and you have permission to redistribute them. Private understanding, other screen text, prompts and credentials are excluded. Received knowledge enters your Tree as external reference material. Public archive traffic is not encrypted. Shared copies cannot reliably be recalled.")
             .setNegativeButton("Only existing publications",(d,w)->{setAutomaticPublication(activity,false);changed.run();})
             .setPositiveButton("Enable automatic publication",(d,w)->{setAutomaticPublication(activity,true);changed.run();}).create();
         dialog.setOnDismissListener(d->{explaining=false;prefs(activity).edit().putBoolean("automatic_public_reviewed",true).apply();changed.run();});
@@ -85,7 +85,7 @@ final class EncounterSettings {
         if(consent(activity)){request(activity);return;}
         explaining=true;
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Nearby Roots exchange is on by default")
-            .setMessage("Roots automatically binds over Bluetooth and retains received records in your Tree as external references. You can share only approved public items, or approve full Root graph publication once after permission is granted. No per-peer subscription approval is required. Copies cannot reliably be recalled.")
+            .setMessage("Roots automatically binds over Bluetooth and retains received records in your Tree as external references. You can share only approved public items, or approve full Root graph publication once after permission is granted. No per-peer subscription approval is required. Public archive traffic is not encrypted. Copies cannot reliably be recalled.")
             .setNegativeButton("Not now",(d,w)->{prefs(activity).edit().putBoolean("setup_shown",true).apply();})
             .setNeutralButton("Only existing publications",(d,w)->{
                 prefs(activity).edit().putBoolean("consent",true).putBoolean("setup_shown",true).putBoolean("automatic_public_posts",false).putBoolean("automatic_public_reviewed",true).putBoolean("full_root_graph_reviewed_v1",true).commit();request(activity);
