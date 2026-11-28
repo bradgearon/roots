@@ -4,21 +4,21 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class PostLanguageTest {
-    @Test public void hashtagAndSingleForeignCharacterDoNotSetLanguage(){
-        assertEquals("en",PostLanguage.hint("This is what I wanted to tell you. 猫 #日本語",""));
-        assertEquals("en",PostLanguage.hint("This is what I wanted to tell you. @example #日本語","ja"));
+    @Test public void normalizeStylizedLatinForTheModelOnly(){
+        assertEquals("Gerry",PostLanguage.clean("𝘎𝘦𝘳𝘳𝘺"));
+        assertEquals("Your peace deserves a quiet home.",PostLanguage.clean("Your peace deserves a quiet home. #日本語"));
     }
-    @Test public void dominantScriptCanCorrectAnEnglishHint(){
-        assertEquals("ja",PostLanguage.hint("今日もよろしくお願いします。","en"));
-        assertEquals("ko",PostLanguage.hint("오늘은 좋은 날입니다","en"));
+    @Test public void aConflictingAttributeCannotOverruleModel(){
+        assertEquals("en",PostLanguage.resolve("A quiet morning on the coast.","ja","en",.98,true));
+        assertEquals("ja",PostLanguage.resolve("気をつけます!! 忘れずつけます!!","en","ja",.98,true));
+        assertEquals("",PostLanguage.hint("こんにちは",""));
+        assertEquals("en",PostLanguage.hint("こんにちは","en"));
     }
-    @Test public void reliableFastTextCanCorrectAnUncertainLatinHint(){
-        assertEquals("en",PostLanguage.resolve("A quiet morning on the coast.","fr","en",.98,true));
-        assertEquals("fr",PostLanguage.resolve("Nous allons partir demain matin.","en","fr",.97,true));
-        assertEquals("ja",PostLanguage.resolve("今日もよろしくお願いします。","ja","en",.80,true));
-    }
-    @Test public void uncertainDetectionDoesNotOverrideLocalEvidence(){
-        assertEquals("en",PostLanguage.resolve("This is what I wanted to tell you.","en","fr",.52,false));
+    @Test public void uncertainClassificationDoesNotInventALanguage(){
+        assertEquals("",new PostLanguage.Detection("fr",.52,.06,true).accepted(false));
+        assertEquals("",new PostLanguage.Detection("fr",.83,.30,true).accepted(true));
+        assertEquals("ja",new PostLanguage.Detection("ja",.97,.94,true).accepted(true));
+        assertEquals("",PostLanguage.resolve("This is an English post.","en","fr",.52,false));
         assertEquals(0,PostLanguage.letters("🐓🥚 123"));
     }
 }
