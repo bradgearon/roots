@@ -20,6 +20,8 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
     private readonly int _port;
     private readonly bool _lan;
     private readonly DesktopRootsHost? _roots;
+    private readonly CancellationTokenSource _stopping = new();
+    private CancellationTokenRegistration _stopRegistration;
     private readonly PLaMoLocalTranslationService _translator;
     private WebApplication? _app;
     private System.Security.Cryptography.X509Certificates.X509Certificate2? _identity;
@@ -37,6 +39,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         string secret = ReadOrCreateToken();
         if (_lan) _identity = DesktopTlsIdentity.Load(Path.GetDirectoryName(TokenPath())!);
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = Array.Empty<string>() });
+        builder.Services.Configure<Microsoft.Extensions.Hosting.HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(4));
         builder.WebHost.ConfigureKestrel(options =>
         {
             if (_lan) options.ListenAnyIP(_port, listener => listener.UseHttps(_identity!));
@@ -46,6 +49,9 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
             options.AddServerHeader = false;
         });
         var app = builder.Build();
+        _app = app;
+        _stopRegistration = cancellationToken.Register(() => _stopping.Cancel());
+        app.Lifetime.ApplicationStopping.Register(() => _stopping.Cancel());
         app.Use(async (context, next) =>
         {
             // LAN port accepts only the existing authenticated mobile socket and health.
@@ -53,6 +59,10 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
                 context.Request.Path != "/api/translation/v1/socket" &&
                 context.Request.Path != "/api/translation/v1/health")
             { context.Response.StatusCode = 404; return; }
+            // Link all HTTP operations to host shutdown, not merely the
+            // client's willingness to disconnect.
+            using var request = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, _stopping.Token);
+            context.RequestAborted = request.Token;
             await next(context);
         });
         // A single authenticated extension WebSocket remains open across many
@@ -63,7 +73,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
         });
 
         app.MapGet("/api/translation/v1/socket", (HttpContext context) =>
-            LocalTranslationSocket.RunAsync(context, _translator, secret, FastTextLanguageDetectionService.Shared, _lan && context.Request.IsHttps));
+            LocalTranslationSocket.RunAsync(context, _translator, secret, FastTextLanguageDetectionService.Shared, _lan && context.Request.IsHttps, _stopping.Token));
 
 
         app.MapPost("/api/forge/v1/invoke", async (HttpContext context) =>
@@ -142,7 +152,6 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
 
         DesktopRootsHost.Map(app, secret, _port + 1, _roots);
         await app.StartAsync(cancellationToken);
-        _app = app;
         Console.WriteLine("LOCAL TRANSLATION WebSocket ws://127.0.0.1:" + (_port + 1) + "/api/translation/v1/socket");
         Console.WriteLine("LOCAL TRANSLATION HTTP fallback http://127.0.0.1:" + (_port + 1) + "/api/translation/v1/translate");
         Console.WriteLine("LOCAL TRANSLATION token file: " + TokenPath());
@@ -198,13 +207,23 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_app != null)
+        _stopping.Cancel();
+        _stopRegistration.Dispose();
+        try
         {
-            try { await _app.StopAsync(); } catch { }
-            await _app.DisposeAsync();
-            _app = null;
+            if (_app != null)
+            {
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                try { await _app.StopAsync(deadline.Token); } catch (OperationCanceledException) { }
+                await _app.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+                _app = null;
+            }
         }
-        _identity?.Dispose();
-        _translator.Dispose();
+        finally
+        {
+            _identity?.Dispose();
+            _translator.Dispose();
+            _stopping.Dispose();
+        }
     }
 }
