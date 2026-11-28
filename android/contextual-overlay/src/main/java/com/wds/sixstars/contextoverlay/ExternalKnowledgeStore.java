@@ -19,12 +19,40 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
         if(instance==null)instance=new ExternalKnowledgeStore(c.getApplicationContext());
         return instance;
     }
-    private ExternalKnowledgeStore(Context context){super(context,"roots-external-publications.db",null,1);}
+    private ExternalKnowledgeStore(Context context){super(context,"roots-external-publications.db",null,2);}
     @Override public void onCreate(SQLiteDatabase db){
         db.execSQL("CREATE TABLE publications(id TEXT PRIMARY KEY, body TEXT NOT NULL, peer TEXT NOT NULL, received_at INTEGER NOT NULL, promoted INTEGER NOT NULL DEFAULT 0)");
         db.execSQL("CREATE INDEX external_received ON publications(received_at DESC)");
+        createInventory(db);
     }
-    @Override public void onUpgrade(SQLiteDatabase db,int from,int to){throw new IllegalStateException("Unsupported external database migration");}
+    private static void createInventory(SQLiteDatabase db){
+        db.execSQL("CREATE TABLE IF NOT EXISTS inventory_progress(peer TEXT NOT NULL,bucket INTEGER NOT NULL,remote TEXT NOT NULL,local_hash TEXT NOT NULL,cursor TEXT NOT NULL,complete INTEGER NOT NULL,PRIMARY KEY(peer,bucket))");
+    }
+    @Override public void onUpgrade(SQLiteDatabase db,int from,int to){
+        if(from==1&&to==2){createInventory(db);return;}
+        throw new IllegalStateException("Unsupported external database migration");
+    }
+    Map<Integer,KnowledgeManifest.Checkpoint> inventoryProgress(String peer)throws Exception{
+        if(!EncounterBindings.digest(peer))throw new IOException("Invalid inventory identity");
+        Map<Integer,KnowledgeManifest.Checkpoint> out=new HashMap<>();
+        try(Cursor cur=getReadableDatabase().rawQuery("SELECT bucket,remote,local_hash,cursor,complete FROM inventory_progress WHERE peer=?",new String[]{peer})){
+            while(cur.moveToNext()){
+                int bucket=cur.getInt(0);String remote=cur.getString(1),local=cur.getString(2),after=cur.getString(3);
+                if(bucket<0||bucket>=KnowledgeManifest.BUCKETS||!EncounterBindings.digest(remote)||!EncounterBindings.digest(local)||
+                    (!after.isEmpty()&&KnowledgeManifest.bucket(after)!=bucket))continue;
+                out.put(bucket,new KnowledgeManifest.Checkpoint(remote,local,after,cur.getInt(4)!=0));
+            }
+        }
+        return out;
+    }
+    void saveInventoryProgress(String peer,int bucket,KnowledgeManifest.Part remote,KnowledgeManifest.Part local,String after,boolean complete)throws Exception{
+        if(!EncounterBindings.digest(peer))throw new IOException("Invalid inventory identity");
+        KnowledgeManifest.checkBucket(bucket);
+        if(!after.isEmpty()&&KnowledgeManifest.bucket(after)!=bucket)throw new IOException("Invalid inventory checkpoint");
+        ContentValues values=new ContentValues();values.put("peer",peer);values.put("bucket",bucket);
+        values.put("remote",remote.root());values.put("local_hash",local.root());values.put("cursor",after);values.put("complete",complete?1:0);
+        if(getWritableDatabase().insertWithOnConflict("inventory_progress",null,values,SQLiteDatabase.CONFLICT_REPLACE)<0)throw new IOException("Could not checkpoint inventory");
+    }
     record Publication(MeshItem item,String peer,long receivedAt,boolean promoted){}
     boolean receive(MeshItem item,String peer)throws Exception{
         if(!EncounterBindings.digest(peer)||!RootGraphExchange.fitsFrame(item))throw new IOException("Invalid or oversized external publication");

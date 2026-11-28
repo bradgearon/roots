@@ -489,16 +489,37 @@ final class MeshPeer {
         }
         return new EncounterCatalog(items,new EncounterCatalogStats(items.size(),projected,unlinked));
     }
-    Map<String,MeshItem> encounterCatalog()throws Exception{return buildEncounterCatalog().items();}
+    private final Object encounterCatalogLock=new Object();
+    private EncounterCatalog cachedEncounterCatalog;
+    private long cachedEncounterRevision=-1,cachedEncounterEpoch=-1;
+    private boolean cachedEncounterFull,cachedEncounterAutomatic;
+    private EncounterCatalog currentEncounterCatalog()throws Exception{
+        synchronized(encounterCatalogLock){
+            if(!NativeTree.available())return buildEncounterCatalog();
+            long revision=tree.graphRevision(),epoch=tree.captureEpoch();
+            boolean full=EncounterSettings.fullRootGraph(app),automatic=EncounterSettings.automaticPublication(app);
+            if(cachedEncounterCatalog!=null&&cachedEncounterRevision==revision&&cachedEncounterEpoch==epoch&&
+                cachedEncounterFull==full&&cachedEncounterAutomatic==automatic)return cachedEncounterCatalog;
+            EncounterCatalog next=buildEncounterCatalog();
+            if(tree.captureEpoch()!=epoch||full!=EncounterSettings.fullRootGraph(app)||automatic!=EncounterSettings.automaticPublication(app))
+                throw new IOException("Root publication scope changed");
+            // If observations arrive during collection, use this snapshot for
+            // the present session but rebuild on the next encounter.
+            cachedEncounterCatalog=new EncounterCatalog(java.util.Collections.unmodifiableMap(next.items()),next.stats());
+            cachedEncounterRevision=revision;cachedEncounterEpoch=epoch;cachedEncounterFull=full;cachedEncounterAutomatic=automatic;
+            return cachedEncounterCatalog;
+        }
+    }
+    Map<String,MeshItem> encounterCatalog()throws Exception{return currentEncounterCatalog().items();}
     private final Object encounterCountLock=new Object();
     private long encounterCountAt=-1;
     private EncounterCatalogStats encounterStats=new EncounterCatalogStats(0,0,0);
-    // UI-only cache: actual session inventory always reads a fresh catalog.
+    // UI count is additionally throttled; session catalog is keyed by Tree revision and scope.
     EncounterCatalogStats encounterPublicationStats()throws Exception{
         synchronized(encounterCountLock){
             long now=android.os.SystemClock.elapsedRealtime();
             if(encounterCountAt<0||now-encounterCountAt>=30000){
-                encounterStats=buildEncounterCatalog().stats();encounterCountAt=now;
+                encounterStats=currentEncounterCatalog().stats();encounterCountAt=now;
             }
             return encounterStats;
         }

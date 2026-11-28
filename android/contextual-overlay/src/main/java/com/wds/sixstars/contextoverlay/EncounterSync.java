@@ -21,12 +21,14 @@ final class EncounterSync {
     private final java.util.function.Consumer<java.io.Closeable> trackTransport;
     private String transport="Bluetooth";
     private boolean peerBulk,peerChunks;
+    private KnowledgeManifest offeredManifest,heldManifest;
+    private int skippedParts;
     private int maxPages=3;
     String transport(){return transport;}
     void close(){if(upgrade!=null)try{upgrade.close();}catch(java.io.IOException ignored){}}
     boolean completedReceive(){return complete;}
     int remoteTotal(){return remoteTotal;}
-    private void report(){progress.accept("Receiving knowledge · "+transport+" · "+received+" received · "+sent+" sent · "+examined+" checked"+(remoteTotal<0?"":" · "+remoteTotal+" offered"));}
+    private void report(){progress.accept("Receiving knowledge · "+transport+" · "+received+" received · "+sent+" sent · "+examined+" checked"+(peerChunks?" · "+skippedParts+" unchanged partitions skipped":"")+(remoteTotal<0?"":" · "+remoteTotal+" offered"));}
     private final EncounterBindings bindings;
     private final TreeRuntime tree;
     private final ExternalKnowledgeStore external;
@@ -48,7 +50,7 @@ final class EncounterSync {
     String summary(){
         String remote=remoteTotal<0?(remotePageSeen?"peer inventory total unknown":"no peer inventory"):"peer offers "+remoteTotal;
         if(complete&&received==0&&remoteTotal==0)return "Peer offers 0 Root items · local offers "+catalog.size()+(peerGraph?" · check peer Root sharing scope":" · peer needs update for graph exchange");
-        if(complete&&received==0&&remoteTotal!=0)return "No new items in completed scan · "+remote+" · "+known+" already known · local offers "+catalog.size();
+        if(complete&&received==0&&remoteTotal!=0)return (peerChunks?"Inventory current · "+skippedParts+" unchanged partitions skipped":"No new items in completed scan · "+known+" already known")+" · "+remote+" · local offers "+catalog.size();
         return (complete?"Inventory checked":"More inventory pending")+" · "+remote+" · "+examined+" examined · local offers "+catalog.size();
     }
     int received(){return received;}
@@ -128,6 +130,12 @@ final class EncounterSync {
         catalog.putAll(MeshPeer.get(context).encounterCatalog());
         if(!peerGraph)catalog.values().removeIf(item->item.graph()!=null);
         root=inventoryRoot(catalog.navigableKeySet());
+        if(peerChunks){
+            offeredManifest=new KnowledgeManifest(catalog.navigableKeySet());
+            Set<String> held=new HashSet<>(catalog.navigableKeySet());held.removeAll(pendingReceipts);
+            heldManifest=new KnowledgeManifest(held);
+            maxPages+=KnowledgeManifest.BUCKETS;
+        }
         check();
     }
     /** Full-graph peers retain a sorted scan cursor when inventory changes.
@@ -207,65 +215,77 @@ final class EncounterSync {
             header.getInt("raw_size"),requested,header.getInt("count"));
         stage="Retaining verified chunk";
         check();received+=external.retainBatch(items,channel.peerId,tree,epoch);
+        for(MeshItem item:items){heldManifest.add(item.id());pendingReceipts.remove(item.id());}
         check();send(message("chunk_ack").put("sha256",header.getString("sha256")).put("count",items.size()));
         return items;
     }
     private void pullChunks()throws Exception{
-        stage="Receiving chunk inventory";
-        int inspected=0,transferred=0;
-        String after=binding.after(),remoteRoot=binding.root();
-        // A completed, unchanged remote inventory is a fast path; incomplete
-        // scans keep the last durable cursor across disconnects.
-        while(inspected<maxIds&&transferred<maxItems){
-            send(message("inventory").put("root",remoteRoot).put("after",after));
-            JSONObject answer=read();expect(answer,"inventory");remotePageSeen=true;
-            String actualRoot=answer.getString("root");
-            if(!EncounterBindings.digest(actualRoot))throw new IOException("Invalid inventory root");
-            JSONArray ids=answer.getJSONArray("ids");boolean more=answer.getBoolean("more");
-            int total=answer.getInt("total");
-            if(ids.length()>PAGE||total<ids.length()||total<0||(more&&ids.length()==0))throw new IOException("Invalid inventory page");
-            remoteTotal=total;report();remoteRoot=actualRoot;
-            List<String> page=new ArrayList<>();String previous=after;
-            for(int i=0;i<ids.length();i++){
-                String id=ids.getString(i);
-                if(!EncounterBindings.digest(id)||id.compareTo(previous)<=0)throw new IOException("Invalid inventory order");
-                page.add(id);previous=id;
+        stage="Comparing knowledge manifests";
+        send(message("manifest"));
+        JSONObject reply=read();expect(reply,"manifest");
+        List<KnowledgeManifest.Part> remote=KnowledgeManifest.parse(reply.getJSONArray("parts"));
+        remoteTotal=remote.stream().mapToInt(KnowledgeManifest.Part::count).sum();remotePageSeen=true;
+        Map<Integer,KnowledgeManifest.Checkpoint> saved=external.inventoryProgress(channel.peerId);
+        int inspected=0,transferred=0;boolean allComplete=true;
+        for(int bucket=0;bucket<KnowledgeManifest.BUCKETS;bucket++){
+            check();
+            KnowledgeManifest.Part wantedPart=remote.get(bucket),localPart=heldManifest.part(bucket);
+            KnowledgeManifest.Checkpoint prior=saved.get(bucket);
+            // Local additions may invalidate a checkpoint for one partition,
+            // but never force other completed partitions to be scanned again.
+            if(wantedPart.count()==0||wantedPart.equals(localPart)||(prior!=null&&prior.complete()&&prior.matches(wantedPart,localPart))){
+                skippedParts++;continue;
             }
-            int position=0;
-            while(position<page.size()&&inspected<maxIds&&transferred<maxItems){
-                List<String> wanted=new ArrayList<>();
-                int end=position;
-                while(end<page.size()&&inspected+end-position<maxIds&&wanted.size()<Math.min(KnowledgeChunk.MAX_ITEMS,maxItems-transferred)){
-                    String id=page.get(end);
-                    if(!catalog.containsKey(id)||pendingReceipts.contains(id))wanted.add(id);
-                    end++;
+            if(inspected>=maxIds||transferred>=maxItems){allComplete=false;break;}
+            String after=prior!=null&&!prior.complete()&&prior.matches(wantedPart,localPart)?prior.after():"";
+            boolean done=false;
+            while(inspected<maxIds&&transferred<maxItems){
+                stage="Reading changed knowledge partition";
+                send(message("inventory").put("bucket",bucket).put("root",wantedPart.root()).put("after",after));
+                JSONObject answer=read();expect(answer,"inventory");
+                if(answer.getInt("bucket")!=bucket||!wantedPart.root().equals(answer.getString("root"))||answer.getInt("total")!=wantedPart.count())
+                    throw new IOException("Manifest partition changed during session");
+                JSONArray ids=answer.getJSONArray("ids");boolean more=answer.getBoolean("more");
+                if(ids.length()>PAGE||(more&&ids.length()==0))throw new IOException("Invalid inventory page");
+                List<String> page=new ArrayList<>();String previous=after;
+                for(int i=0;i<ids.length();i++){
+                    String id=ids.getString(i);
+                    if(KnowledgeManifest.bucket(id)!=bucket||id.compareTo(previous)<=0)throw new IOException("Invalid partition order");
+                    page.add(id);previous=id;
                 }
-                if(end==position)break;
-                int accepted=wanted.size();
-                if(!wanted.isEmpty()){
-                    stage="Receiving compressed chunk";
-                    List<MeshItem> items=receiveChunk(wanted);accepted=items.size();transferred+=accepted;
-                    for(MeshItem item:items)pendingReceipts.remove(item.id());
+                int position=0;
+                while(position<page.size()&&inspected<maxIds&&transferred<maxItems){
+                    List<String> wanted=new ArrayList<>();
+                    int end=position;
+                    while(end<page.size()&&inspected+end-position<maxIds&&wanted.size()<Math.min(KnowledgeChunk.MAX_ITEMS,maxItems-transferred)){
+                        String id=page.get(end++);
+                        if(!heldManifest.has(id))wanted.add(id);
+                    }
+                    if(end==position)break;
+                    if(!wanted.isEmpty()){
+                        stage="Receiving compressed chunk";
+                        List<MeshItem> items=receiveChunk(wanted);transferred+=items.size();
+                    }
+                    int next=position;
+                    while(next<end&&heldManifest.has(page.get(next))){
+                        after=page.get(next++);inspected++;examined++;
+                    }
+                    if(next==position)throw new IOException("Chunk made no progress");
+                    position=next;
+                    external.saveInventoryProgress(channel.peerId,bucket,wantedPart,heldManifest.part(bucket),after,false);
+                    report();
                 }
-                // A sender may fit only a prefix of the requested missing IDs.
-                // Advance only over known/committed records; never skip an
-                // unreceived item when a chunk is shortened.
-                Set<String> committed=new HashSet<>(wanted.subList(0,accepted));
-                int next=position;
-                while(next<end){
-                    String id=page.get(next);
-                    if(committed.contains(id)){/* durably received */}
-                    else if(catalog.containsKey(id)&&!pendingReceipts.contains(id)){known++;}
-                    else break;
-                    after=id;next++;inspected++;examined++;
+                if(position==page.size()&&!more){
+                    external.saveInventoryProgress(channel.peerId,bucket,wantedPart,heldManifest.part(bucket),"",true);
+                    done=true;break;
                 }
-                if(next==position)throw new IOException("Chunk made no progress");
-                position=next;checkpoint(remoteRoot,after);report();
+                if(position<page.size())break;
             }
-            if(position==page.size()&&!more){checkpoint(remoteRoot,"");complete=true;break;}
-            if(position<page.size())break;
+            if(!done){allComplete=false;break;}
         }
+        complete=allComplete;
         send(message("release").put("more_pending",!complete));
+        report();
     }
     private void serve()throws Exception{
         stage="Serving public inventory";
@@ -273,18 +293,32 @@ final class EncounterSync {
         while(true){
             JSONObject request=read();String op=request.getString("op");
             if("release".equals(op)){peerMore=request.optBoolean("more_pending",false);return;}
-            if("inventory".equals(op)){
+            if("manifest".equals(op)&&peerChunks){
+                if(++pages>maxPages)throw new IOException("Manifest budget exceeded");
+                send(message("manifest").put("parts",offeredManifest.json()));
+            }else if("inventory".equals(op)){
                 if(++pages>maxPages)throw new IOException("Inventory budget exceeded");
                 String after=request.getString("after"),knownRoot=request.getString("root");
                 if((!after.isEmpty()&&!EncounterBindings.digest(after))||(!knownRoot.isEmpty()&&!EncounterBindings.digest(knownRoot)))
                     throw new IOException("Invalid inventory cursor");
-                after=inventoryCursor(peerGraph,knownRoot,root,after);
+                int bucket=request.optInt("bucket",-1);
+                Collection<String> available;
+                String inventoryRoot=root;int total=catalog.size();
+                if(peerChunks&&request.has("bucket")){
+                    KnowledgeManifest.checkBucket(bucket);KnowledgeManifest.Part part=offeredManifest.part(bucket);
+                    if(!part.root().equals(knownRoot))throw new IOException("Unexpected manifest fingerprint");
+                    available=offeredManifest.after(bucket,after);inventoryRoot=part.root();total=part.count();
+                }else{
+                    after=inventoryCursor(peerGraph,knownRoot,root,after);available=catalog.tailMap(after,false).keySet();
+                }
                 JSONArray ids=new JSONArray();boolean more=false;offered.clear();
-                for(String id:catalog.tailMap(after,false).keySet()){
+                for(String id:available){
                     if(ids.length()==PAGE){more=true;break;}
                     ids.put(id);offered.add(id);
                 }
-                send(message("inventory").put("root",root).put("ids",ids).put("more",more).put("total",catalog.size()));
+                JSONObject inventory=message("inventory").put("root",inventoryRoot).put("ids",ids).put("more",more).put("total",total);
+                if(peerChunks&&request.has("bucket"))inventory.put("bucket",bucket);
+                send(inventory);
             }else if("want_chunk".equals(op)&&peerChunks){
                 JSONArray ids=request.getJSONArray("ids");
                 if(ids.length()<1||ids.length()>KnowledgeChunk.MAX_ITEMS||items+ids.length()>maxItems)throw new IOException("Invalid chunk request");
