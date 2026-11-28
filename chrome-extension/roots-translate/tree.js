@@ -182,6 +182,7 @@ function renderFragment(f,source){
     node("div",new Date(f.observedMs).toLocaleString(),"muted"),node("p",f.body),weightDetails(f.sequence,source));return a;
 }
 async function load(reset=false,live=false){
+  const saved=live?{beforeMs,beforeSequence,pages,timelineDay}:null;
   if(reset){
     generation++;
     if(!live){query=el("term").value;mode=el("view").value;selectedAgent=Number(el("branchFilter").value)||0;}
@@ -200,7 +201,11 @@ async function load(reset=false,live=false){
     beforeMs=data.nextBeforeMs||0;beforeSequence=data.nextBeforeSequence||0;pages++;
     el("more").hidden=!(data.hasMore??(rows.length===(view==="screens"?screenPageSize:30)))||!beforeSequence||beforeSequence===previous;
     status("");return true;
-  }catch(e){if(gen===generation){if(reset&&!live)el("items").replaceChildren(node("p",e.message,"muted"));status(e.message);}return false;}
+  }catch(e){if(gen===generation){
+    if(saved){({beforeMs,beforeSequence,pages,timelineDay}=saved);}
+    if(reset&&!live)el("items").replaceChildren(node("p",e.message,"muted"));
+    status(e.message);
+  }return false;}
   finally{if(gen===generation){loading=false;el("more").disabled=false;}}
 }
 async function refreshSelected(force=false){
