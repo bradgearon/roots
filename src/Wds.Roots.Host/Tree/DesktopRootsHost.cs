@@ -153,6 +153,20 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
             return Results.Json(new {ok=true,items=screens,nextBeforeMs=last?.observedMs??0,
                 nextBeforeSequence=last?.sequence??0,hasMore=screens.Length==count});
         });
+        group.MapGet("/view/{source}/page",(string source,string? parent,string? afterOrder,long? afterSequence,int? limit)=>{
+            if(source!="experience"||parent==null||!parent.StartsWith("local:experience:browser:",StringComparison.Ordinal)||
+               parent.Length>512||(afterOrder?.Length??0)>128)return Results.BadRequest(new {ok=false,error="invalid_page"});
+            uint count=(uint)Math.Clamp(limit??100,1,100);
+            var rows=DesktopExperienceTree.Page(parent,afterOrder??"",Math.Max(0,afterSequence??0),count);
+            var items=rows.GroupBy(r=>r.MasterSequence).Select(g=>{
+                var members=g.Select(r=>r.Fragment).ToArray();
+                var body=members.First(f=>f.Source=="record.experience.body");
+                return new {sequence=g.Key,body=body.Body,observedMs=body.ObservedMs,
+                    order=members.First(f=>f.Source=="record.experience.page-order").Body};
+            }).ToArray();
+            var last=items.LastOrDefault();
+            return Results.Json(new {ok=true,items,nextOrder=last?.order??"",nextSequence=last?.sequence??0,hasMore=items.Length==count});
+        });
         group.MapGet("/view/{source}/feed",(string source,string? term,long? beforeMs,long? beforeSequence,int? limit,long? agent)=>{
             if(source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_source"});
             long ms=Math.Max(0,beforeMs??0),seq=Math.Max(0,beforeSequence??0),branch=Math.Max(0,agent??0);
