@@ -85,25 +85,30 @@ final class XAccessibilityInspector {
         final org.json.JSONArray attributes=new org.json.JSONArray();
         int attributeChars;
         final XPostMetadata.Probe metadataProbe;
+        final XNodeIdAudit audit;
         int count;
         boolean truncated;
         Scan(long request,boolean automatic,boolean settled){
             this.request=request;this.automatic=automatic;this.settled=settled;
-            metadataProbe=new XPostMetadata.Probe(settled?12:0);
+            metadataProbe=new XPostMetadata.Probe(settled?20:0);
+            audit=new XNodeIdAudit(settled);
         }
 
         Bundle node(AccessibilityNodeInfo node,String path,Rect bounds){
             count++;
             Bundle requested=null;
             boolean visible=node.isVisibleToUser();
+            try{audit.inspect(node,path);}catch(RuntimeException ignored){/* Keep normal capture independent of diagnostics. */}
             boolean card=visible&&XPostMetadata.conversationCard(node);
             if(card)cards.add(path);
             CharSequence value=node.getText(),description=node.getContentDescription();
             if(visible&&(nonempty(value)||nonempty(description)))values.add(new Value(path,clip(value),clip(description)));
             boolean structural=card||XPostMetadata.timelineHeader(node.getViewIdResourceName())||XKnowledgeRecords.hasPostMetadataRole(node.getViewIdResourceName());
+            List<String> advertised=node.getAvailableExtraData();
+            boolean advertisedId=advertised!=null&&advertised.stream().anyMatch(XPostMetadata::remoteKey);
             // Skip empty layout wrappers in the compact diagnostic, but capture
             // the actual attributes of visible text, post and tagged nodes.
-            if(!visible||(!structural&&!nonempty(value)&&!nonempty(description)&&node.getViewIdResourceName()==null))return null;
+            if(!visible||(!structural&&!advertisedId&&!nonempty(value)&&!nonempty(description)&&node.getViewIdResourceName()==null))return null;
             StringBuilder line=new StringBuilder();
             line.append("\n# ").append(path).append(" ").append(bounds.toShortString());
             field(line,"resource",node.getViewIdResourceName());
@@ -136,9 +141,10 @@ final class XAccessibilityInspector {
             List<String> available=node.getAvailableExtraData();
             if(available!=null&&!available.isEmpty())field(line,"availableExtraData",String.join(", ",available));
             extras(line,"extras",node.getExtras(),0);
-            if(structural){
+            if(structural||advertisedId){
                 Bundle outcomes=new Bundle();
                 requested=metadataProbe.read(node,true,outcomes);
+                audit.requested(requested,path);
                 StringBuilder probe=new StringBuilder(path+" · "+(node.getViewIdResourceName()==null?"conversation card":node.getViewIdResourceName()));
                 extras(probe,"requested",requested,0);extras(probe,"probe",outcomes,0);
                 if(!settled)field(probe,"state","metadata request deferred until scrolling settles");
@@ -163,7 +169,7 @@ final class XAccessibilityInspector {
         }
 
         String format(){
-            StringBuilder out=new StringBuilder("Visible post cards: "+cards.size()+"\n");
+            StringBuilder out=new StringBuilder(audit.summary()).append("\nVisible post cards: ").append(cards.size()).append('\n');
             int index=0;
             for(String card:cards){
                 out.append("\nPost card ").append(++index).append(" · ").append(card).append('\n');
@@ -187,7 +193,7 @@ final class XAccessibilityInspector {
         }
         String serialized(){
             org.json.JSONObject result=new org.json.JSONObject();
-            try{result.put("format","roots.accessibility.node-attributes.v2")
+            try{result.put("format","roots.accessibility.node-attributes.v3").put("postIdAudit",audit.json())
                 .put("settled",settled).put("spanNodes",spanDetails.size()).put("inspected",count)
                 .put("bounded",truncated).put("nodes",attributes);}catch(org.json.JSONException ignored){}
             return result.toString();
