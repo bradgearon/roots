@@ -118,11 +118,12 @@ public final class XVisibleTextReader {
                     AccessibilityNodeInfo child = node.getChild(i);
                     if (child != null) queue.add(new ScanNode(child,sourceAllowed,inspector==null?null:entry.path()+"/"+i));
                 }
+                android.os.Bundle inspectedMetadata=null;
                 if(inspector!=null&&!inspector.truncated&&node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())){
                     try{
                         Rect bounds=new Rect();node.getBoundsInScreen(bounds);
                         if(node.isVisibleToUser()||XPostSpatialAnalyzer.onScreen(bounds,width,height)||order==1)
-                            inspector.node(node,entry.path(),bounds);
+                            inspectedMetadata=inspector.node(node,entry.path(),bounds);
                     }catch(RuntimeException ignored){/* A transient or unsupported inspector property must not interrupt capture. */}
                 }
                 if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
@@ -145,7 +146,7 @@ public final class XVisibleTextReader {
                         if(sourceAllowed&&XKnowledgeRecords.hasPostMetadataRole(metadataRole)){
                             try{
                                 XKnowledgeRecords.sampleMetadata(knowledgeSamples,node.getExtras(),metadataRole,observedBounds);
-                                XKnowledgeRecords.sampleMetadata(knowledgeSamples,metadataProbe.read(node,true),metadataRole,observedBounds);
+                                XKnowledgeRecords.sampleMetadata(knowledgeSamples,inspectedMetadata!=null?inspectedMetadata:metadataProbe.read(node,true),metadataRole,observedBounds);
                             }catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
                         }
                     }
