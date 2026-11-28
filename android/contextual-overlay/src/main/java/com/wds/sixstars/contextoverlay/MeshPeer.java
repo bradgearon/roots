@@ -454,10 +454,25 @@ final class MeshPeer {
             // native graph fragments and branch definitions to capable peers.
             items.putAll(legacyCatalog());
             int before=items.size();
-            for(MeshItem item:graphCatalog().values()){
-                MeshItem.Graph g=item.graph();
-                if(g==null||!RootGraphExchange.localOffer(item))continue;
-                if(RootGraphExchange.fitsFrame(item))items.putIfAbsent(item.id(),item);
+            long epoch=tree.captureEpoch(),beforeSequence=0;
+            // Page the entire native graph, not just the first 10,000 masters.
+            while(true){
+                List<NativeTree.Fragment> page=tree.query("",0,beforeSequence,100);
+                if(page.isEmpty())break;
+                for(NativeTree.Fragment fragment:page){
+                    try{
+                        MeshItem item=MeshItem.fromFragment(fragment);
+                        if(RootGraphExchange.localOffer(item)&&RootGraphExchange.fitsFrame(item))items.putIfAbsent(item.id(),item);
+                    }catch(IllegalArgumentException malformed){/* Keep other eligible observations available. */}
+                }
+                long next=page.get(page.size()-1).sequence();
+                if(next<=0||(beforeSequence!=0&&next>=beforeSequence)||tree.captureEpoch()!=epoch)throw new IllegalStateException("Tree changed during Root graph inventory");
+                beforeSequence=next;
+                if(page.size()<100)break;
+            }
+            for(NativeTree.Agent agent:tree.agents()){
+                try{MeshItem item=MeshItem.fromBranch(agent);if(RootGraphExchange.fitsFrame(item))items.putIfAbsent(item.id(),item);}
+                catch(IllegalArgumentException malformed){}
             }
             return new EncounterCatalog(items,new EncounterCatalogStats(items.size(),items.size()-before,0));
         }

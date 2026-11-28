@@ -11,7 +11,7 @@ import org.json.JSONObject;
  * main Tree as an external reference; its peer provenance is not an authority
  * or private capability. The promoted marker makes crash recovery idempotent. */
 final class ExternalKnowledgeStore extends SQLiteOpenHelper {
-    private static final int LIMIT=10000;
+    private static final int LIMIT=100000;
     private static ExternalKnowledgeStore instance;
     static synchronized ExternalKnowledgeStore get(Context c){
         if(instance==null)instance=new ExternalKnowledgeStore(c.getApplicationContext());

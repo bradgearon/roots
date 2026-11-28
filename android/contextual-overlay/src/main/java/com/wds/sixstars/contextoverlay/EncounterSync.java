@@ -46,8 +46,7 @@ final class EncounterSync {
         automaticScope=EncounterSettings.automaticPublication(context);fullScope=EncounterSettings.fullRootGraph(context);
         tree=TreeRuntime.get(context);epoch=tree.captureEpoch();check();
         external=ExternalKnowledgeStore.get(context);
-        catalog=new TreeMap<>(external.catalog());
-        catalog.putAll(MeshPeer.get(context).encounterCatalog());
+        catalog=new TreeMap<>();
         check();
         // Persist after the authenticated application bind is accepted, not merely after opening the radio.
     }
@@ -77,17 +76,20 @@ final class EncounterSync {
         stage="Binding handshake";
         if(client){
             send(message("bind").put("root_graph",true));JSONObject reply=read();expect(reply,"bound");
-            negotiate(reply);binding=bindings.bind(channel.peerId);pull();serve();
+            binding=bindings.bind(channel.peerId);negotiate(reply);pull();serve();
         }else{
-            JSONObject request=read();expect(request,"bind");negotiate(request);binding=bindings.bind(channel.peerId);
-            send(message("bound").put("root_graph",true));serve();pull();
+            JSONObject request=read();expect(request,"bind");binding=bindings.bind(channel.peerId);
+            send(message("bound").put("root_graph",true));negotiate(request);serve();pull();
         }
         return received;
     }
     private void negotiate(JSONObject hello)throws Exception{
         peerGraph=hello.optBoolean("root_graph",false);
         if(peerGraph){maxItems=32;maxIds=256;}
-        else catalog.values().removeIf(item->item.graph()!=null);
+        stage="Preparing Root inventory";
+        catalog.putAll(external.catalog());
+        catalog.putAll(MeshPeer.get(context).encounterCatalog());
+        if(!peerGraph)catalog.values().removeIf(item->item.graph()!=null);
         root=inventoryRoot(catalog.navigableKeySet());
         check();
     }

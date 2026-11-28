@@ -98,7 +98,13 @@ final class EncounterSettings {
     }
     private static void request(Activity activity){
         prefs(activity).edit().putBoolean("setup_shown",true).apply();
-        if(granted(activity)){startIfAllowed(activity);return;}
+        if(granted(activity)){
+            startIfAllowed(activity);
+            if(!rootGraphReviewed(activity))activity.getWindow().getDecorView().post(()->{
+                if(!activity.isFinishing()&&!activity.isDestroyed()&&!rootGraphReviewed(activity))configureRootGraph(activity,true,()->{});
+            });
+            return;
+        }
         activity.requestPermissions(permissions(),REQUEST);
     }
     static void permissionResult(Activity activity,int request){

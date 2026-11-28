@@ -20,6 +20,15 @@ final class EncounterBindings {
     private final Map<String,Peer> peers=new HashMap<>();
     private final List<Event> events=new ArrayList<>();
     private boolean loaded,historyLoaded;
+    private final java.util.concurrent.CopyOnWriteArrayList<Runnable> listeners=new java.util.concurrent.CopyOnWriteArrayList<>();
+    void addListener(Runnable listener){listeners.addIfAbsent(listener);}
+    void removeListener(Runnable listener){listeners.remove(listener);}
+    private void changed(){for(Runnable listener:listeners)try{listener.run();}catch(RuntimeException ignored){}}
+    synchronized List<Peer> subscriptions(){
+        load();List<Peer> list=new ArrayList<>(peers.values());
+        list.sort(Comparator.comparingLong(Peer::lastSeen).reversed().thenComparing(p->p.binding().peer()));
+        return list;
+    }
     record Binding(String peer,String root,String after,long encounters){}
     record Peer(Binding binding,String label,boolean blocked,long firstSeen,long lastSeen,long sent,long received,String result){}
     record Event(long at,String peer,String result,int sent,int received){}
@@ -82,7 +91,7 @@ final class EncounterBindings {
     }
     private void persist(Peer p)throws Exception{
         ensureDirectory();Binding b=p.binding();
-        JSONObject j=new JSONObject().put("version",1).put("peer",b.peer()).put("scope","published")
+        JSONObject j=new JSONObject().put("version",1).put("format","roots.axon.subscription").put("transport","ble").put("peer",b.peer()).put("scope","root-knowledge")
             .put("topics","*").put("root",b.root()).put("after",b.after()).put("encounters",b.encounters())
             .put("label",p.label()).put("blocked",p.blocked()).put("first_seen",p.firstSeen()).put("last_seen",p.lastSeen())
             .put("sent",p.sent()).put("received",p.received()).put("result",p.result());
@@ -107,7 +116,7 @@ final class EncounterBindings {
         if(p.blocked())throw new IOException("Peer blocked");
         Binding old=p.binding(),b=new Binding(peer,old.root(),old.after(),Math.min(Long.MAX_VALUE-1,old.encounters())+1);
         persist(new Peer(b,p.label(),false,p.firstSeen()==0?now:p.firstSeen(),now,p.sent(),p.received(),"Exchanging"));
-        return b;
+        changed();return b;
     }
     synchronized void save(Binding b)throws Exception{
         load();Peer p=peers.get(b.peer());
@@ -117,18 +126,18 @@ final class EncounterBindings {
     synchronized void setBlocked(String id,boolean blocked)throws Exception{
         load();Peer p=peers.get(id);if(p==null)return;
         persist(new Peer(p.binding(),p.label(),blocked,p.firstSeen(),p.lastSeen(),p.sent(),p.received(),blocked?"Blocked":"Available for encounters"));
-        event(id,blocked?"Blocked by you":"Unblocked by you",0,0);
+        try{event(id,blocked?"Blocked by you":"Unblocked by you",0,0);}finally{changed();}
     }
     synchronized void rename(String id,String label)throws Exception{
         load();Peer p=peers.get(id);if(p==null)return;
         label=label.trim();if(label.length()>60)throw new IOException("Label too long");
-        persist(new Peer(p.binding(),label,p.blocked(),p.firstSeen(),p.lastSeen(),p.sent(),p.received(),p.result()));
+        persist(new Peer(p.binding(),label,p.blocked(),p.firstSeen(),p.lastSeen(),p.sent(),p.received(),p.result()));changed();
     }
     synchronized void outcome(String peer,String result,int sent,int received)throws Exception{
         load();Peer p=peers.get(peer);
         if(p!=null)persist(new Peer(p.binding(),p.label(),p.blocked(),p.firstSeen(),System.currentTimeMillis(),
             p.sent()+sent,p.received()+received,p.blocked()?"Blocked":result));
-        event(peer,result,sent,received);
+        try{event(peer,result,sent,received);}finally{changed();}
     }
     private void event(String peer,String result,int sent,int received)throws Exception{
         loadHistory();ensureDirectory();

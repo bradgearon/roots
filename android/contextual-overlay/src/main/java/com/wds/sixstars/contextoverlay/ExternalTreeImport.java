@@ -28,7 +28,7 @@ final class ExternalTreeImport {
             try{
                 ExternalKnowledgeStore store=ExternalKnowledgeStore.get(app);
                 String after="";
-                for(int pages=0;pages<100&&tree.captureEpoch()==epoch;pages++){
+                for(int pages=0;pages<1000&&tree.captureEpoch()==epoch;pages++){
                     List<String> ids=store.pendingIds(after,100);
                     if(ids.isEmpty())break;
                     for(String id:ids){

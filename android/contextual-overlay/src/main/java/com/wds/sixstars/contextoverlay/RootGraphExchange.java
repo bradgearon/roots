@@ -16,8 +16,14 @@ final class RootGraphExchange {
         if("branch".equals(g.kind()))return true;
         // Re-export received envelopes from the receipt store, not the
         // local imported projection, private transport secrets or metadata.
-        return !g.source().startsWith("record.mesh.")&&!g.key().startsWith("local:mesh:")
-            &&!g.source().matches("(?i).*(credential|password|private-key|access-token|api-key).*");
+        if(g.key().startsWith("local:mesh:graph:"))return false;
+        if(g.source().matches("(?i).*(credential|password|private-key|access-token|api-key).*"))return false;
+        if(g.source().startsWith("record.mesh.")){
+            // Original published body/topic/link is already in its explicit
+            // envelope; do not turn receipt metadata into new graph items.
+            return g.source().matches("record\\.mesh\\.[a-z]{2,3}\\.(translation|localized|understanding)");
+        }
+        return true;
     }
     static boolean fitsFrame(MeshItem item)throws Exception{
         return new JSONObject().put("op","data").put("item",item.json()).toString().getBytes(StandardCharsets.UTF_8).length<=EncounterChannel.MAX_FRAME;
@@ -38,8 +44,8 @@ final class RootGraphExchange {
         // Only map known presentation roles. Imported peer-supplied role
         // strings cannot become trust, permission, offer, or executable fields.
         String mapped;
-        if(g.kind().equals("branch"))mapped="record.mesh.body";
-        else if(source.matches("record\\.x\\.[a-z]{2,3}\\.(translation|localized)")&&g.language().matches("[a-z]{2,3}"))mapped="record.mesh."+g.language()+"."+role;
+        if(g.kind().equals("branch")||g.key().isEmpty())mapped="record.mesh.body";
+        else if(source.matches("record\\.(x|mesh)\\.[a-z]{2,3}\\.(translation|localized)")&&g.language().matches("[a-z]{2,3}"))mapped="record.mesh."+g.language()+"."+role;
         else if(source.startsWith("record.")&&role.equals("body"))mapped="record.mesh.body";
         else if((role.equals("link")||role.equals("link-confirmed"))&&!XPostLink.canonical(item.text()).isEmpty())mapped="record.mesh.link";
         else mapped="record.mesh.graph-reference";

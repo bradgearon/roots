@@ -31,7 +31,7 @@ public final class RootsStreamActivity extends Activity {
     private final ArrayList<KnowledgeRank.Ranked> ranked=new ArrayList<>();
     private final java.util.Map<String,KnowledgeRank.Ranked> rankByKey=new java.util.HashMap<>();
     private TreeRuntime runtime;
-    private TextView status,empty,more,capture;
+    private TextView status,empty,more,capture,axonSubscriptions,axonPreview;
     private EditText search;
     private ListView feed;
     private KnowledgeRecordAdapter adapter;
@@ -61,6 +61,17 @@ public final class RootsStreamActivity extends Activity {
         externalHandler.removeCallbacks(refreshExternal);
         externalHandler.postDelayed(refreshExternal,500);
     });
+    private final Runnable subscriptionObserver=()->runOnUiThread(()->{if(resumed&&!closed)refreshSubscriptions();});
+    private void refreshSubscriptions(){
+        if(axonSubscriptions==null)return;
+        AxonRegistry.Snapshot registry=AxonRegistry.load(this);
+        axonSubscriptions.setText(registry.summary()+"  ›");
+        List<String> labels=new ArrayList<>();
+        for(var entry:registry.entries())if(!entry.blocked()&&labels.size()<3)labels.add(AxonRegistry.display(entry));
+        if(registry.count()>labels.size())labels.add("+"+(registry.count()-labels.size())+" more");
+        axonPreview.setText(String.join("\n",labels));
+        axonPreview.setVisibility(labels.isEmpty()?View.GONE:View.VISIBLE);
+    }
     private static final int PAGE=30;
 
     @Override protected void onCreate(Bundle saved){
@@ -92,6 +103,9 @@ public final class RootsStreamActivity extends Activity {
         LinearLayout.LayoutParams historyParams=new LinearLayout.LayoutParams(0,-2,1);historyParams.leftMargin=dp(8);
         network.addView(RootsUi.action(this,"Inference",()->startActivity(new Intent(this,InferenceHistoryActivity.class))),historyParams);
         tools.addView(network);
+        axonSubscriptions=RootsUi.action(this,"Axon subscriptions",()->startActivity(new Intent(this,MeshActivity.class)));tools.addView(axonSubscriptions);
+        axonPreview=RootsUi.text(this,"",12,RootsUi.MUTED,false);axonPreview.setMaxLines(4);tools.addView(axonPreview);
+        axonPreview.setOnClickListener(v->startActivity(new Intent(this,MeshActivity.class)));
         capture=RootsUi.action(this,"Enable local capture",this::toggleCapture);tools.addView(capture);
         feed=new ListView(this);feed.setDivider(null);feed.setClipToPadding(false);
         feed.setPadding(dp(16),dp(4),dp(16),dp(8));feed.setSelector(android.R.color.transparent);
@@ -119,11 +133,11 @@ public final class RootsStreamActivity extends Activity {
         }
     }
 
-    @Override protected void onResume(){super.onResume();EncounterSettings.foreground(this);resumed=true;MeshServingService.restore(this);if(runtime!=null){runtime.addWaveListener(waveListener);ExternalTreeImport.addListener(externalListener);ExternalTreeImport.schedule(this);reset();}}
+    @Override protected void onResume(){super.onResume();EncounterSettings.foreground(this);resumed=true;EncounterBindings.get(this).addListener(subscriptionObserver);refreshSubscriptions();MeshServingService.restore(this);if(runtime!=null){runtime.addWaveListener(waveListener);ExternalTreeImport.addListener(externalListener);ExternalTreeImport.schedule(this);reset();}}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
         super.onRequestPermissionsResult(request,permissions,results);EncounterSettings.permissionResult(this,request);
     }
-    @Override protected void onPause(){resumed=false;ExternalTreeImport.removeListener(externalListener);externalHandler.removeCallbacks(refreshExternal);if(runtime!=null)runtime.removeWaveListener(waveListener);super.onPause();}
+    @Override protected void onPause(){resumed=false;EncounterBindings.get(this).removeListener(subscriptionObserver);ExternalTreeImport.removeListener(externalListener);externalHandler.removeCallbacks(refreshExternal);if(runtime!=null)runtime.removeWaveListener(waveListener);super.onPause();}
     @Override protected void onDestroy(){closed=true;generation++;reader.shutdownNow();super.onDestroy();}
     private int dp(int n){return RootsUi.dp(this,n);}
     private void toggleCapture(){

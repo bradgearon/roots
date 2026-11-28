@@ -30,7 +30,12 @@ public final class MeshActivity extends Activity {
     private TextView status,serve,copy,receive,stop,axonStatus,servingStatus;
     private TextView connectionSummary,connectionStatus,connectionDetails,analysisOutput;
     private TextView testConnection,analyzeConnection,copyConnectionReport;
-    private TextView savedAxonStatus,boundConnectionStatus,nearbyStatus;
+    private TextView savedAxonStatus,boundConnectionStatus,nearbyStatus,subscriptionStatus;
+    private LinearLayout subscriptionRows;
+    private String shownSubscriptions="";
+    private final Runnable subscriptionObserver=()->runOnUiThread(()->{
+        if(foreground&&!isDestroyed()){refreshNearbyStatus();refreshSavedAxon();}
+    });
     private static final long REFRESH_MS=30000;
     private static final ExecutorService CONNECTION_REFRESH=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsAxonRefresh");t.setDaemon(true);return t;});
     private final android.os.Handler refreshHandler=new android.os.Handler(android.os.Looper.getMainLooper());
@@ -71,6 +76,11 @@ public final class MeshActivity extends Activity {
         ScrollView scroll=new ScrollView(this);
         LinearLayout content=RootsUi.column(this);content.setPadding(dp(16),0,dp(16),dp(16));scroll.addView(content);
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout subscriptions=RootsUi.card(this,content);
+        subscriptions.addView(RootsUi.text(this,"Axon subscriptions",18,RootsUi.TEXT,true));
+        subscriptionStatus=RootsUi.text(this,"Loading subscriptions…",14,RootsUi.ACCENT,true);subscriptions.addView(subscriptionStatus);
+        subscriptionRows=RootsUi.column(this);subscriptions.addView(subscriptionRows);
+        subscriptions.addView(RootsUi.action(this,"Manage Axon subscriptions",()->startActivity(new Intent(this,EncounterActivity.class))));
         LinearLayout publish=RootsUi.card(this,content);
         publish.addView(RootsUi.text(this,"Tree graph",18,RootsUi.TEXT,true));
         publish.addView(RootsUi.text(this,"Listening shares your Tree with connected peers.",13,RootsUi.MUTED,false));
@@ -181,7 +191,7 @@ public final class MeshActivity extends Activity {
         }catch(Exception e){status.setText("Invalid Roots Mesh invitation.");}
     }
     @Override protected void onResume(){
-        super.onResume();foreground=true;foregroundGeneration++;MeshServingService.addObserver(servingObserver);MeshServingService.restore(this);refresh();scheduleBoundRefresh(0);refreshHandler.removeCallbacks(refreshNearbyTick);refreshHandler.post(refreshNearbyTick);
+        super.onResume();foreground=true;foregroundGeneration++;MeshServingService.addObserver(servingObserver);EncounterBindings.get(this).addListener(subscriptionObserver);MeshServingService.restore(this);refresh();scheduleBoundRefresh(0);refreshHandler.removeCallbacks(refreshNearbyTick);refreshHandler.post(refreshNearbyTick);
         refreshNetworkManager=(android.net.ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
         if(refreshNetworkManager!=null){
             android.net.ConnectivityManager.NetworkCallback callback=new android.net.ConnectivityManager.NetworkCallback(){
@@ -198,7 +208,7 @@ public final class MeshActivity extends Activity {
         }
     }
     @Override protected void onPause(){
-        foreground=false;foregroundGeneration++;MeshServingService.removeObserver(servingObserver);refreshHandler.removeCallbacks(refreshBoundTick);refreshHandler.removeCallbacks(refreshNearbyTick);
+        foreground=false;foregroundGeneration++;MeshServingService.removeObserver(servingObserver);EncounterBindings.get(this).removeListener(subscriptionObserver);refreshHandler.removeCallbacks(refreshBoundTick);refreshHandler.removeCallbacks(refreshNearbyTick);
         if(refreshNetworkManager!=null&&refreshNetworkCallback!=null)
             try{refreshNetworkManager.unregisterNetworkCallback(refreshNetworkCallback);}catch(RuntimeException ignored){}
         refreshNetworkCallback=null;refreshNetworkManager=null;super.onPause();
@@ -274,17 +284,28 @@ public final class MeshActivity extends Activity {
     }
     private void refreshNearbyStatus(){
         if(nearbyStatus==null)return;
-        nearbyStatus.setText(EncounterBindings.get(this).availableCount()+" nearby Axon(s) · "+EncounterService.status()+"\n"+EncounterService.lastResult());
+        AxonRegistry.Snapshot registry=AxonRegistry.load(this);
+        nearbyStatus.setText(registry.nearbyCount()+" nearby Axon subscription(s) · "+EncounterService.status()+"\n"+EncounterService.lastResult());
+        subscriptionStatus.setText(registry.summary());
+        List<String> labels=new ArrayList<>();
+        for(var entry:registry.entries())labels.add(AxonRegistry.display(entry));
+        String fingerprint=String.join("\n",labels);
+        if(!fingerprint.equals(shownSubscriptions)||subscriptionRows.getChildCount()==0){
+            shownSubscriptions=fingerprint;subscriptionRows.removeAllViews();
+            if(labels.isEmpty())subscriptionRows.addView(RootsUi.text(this,"No subscriptions yet. Nearby peers bind automatically.",13,RootsUi.MUTED,false));
+            for(int i=0;i<Math.min(12,labels.size());i++)subscriptionRows.addView(RootsUi.text(this,labels.get(i),13,RootsUi.TEXT,false));
+            if(labels.size()>12)subscriptionRows.addView(RootsUi.text(this,"+"+(labels.size()-12)+" more · manage subscriptions",13,RootsUi.MUTED,false));
+        }
     }
     private void refreshSavedAxon(){
         try{
             AxonSubscription policy=AxonSubscription.load(this);
             if(policy==null){
                 int nearby=EncounterBindings.get(this).availableCount();
-                savedAxonStatus.setText("Private LAN Axon: none. Nearby public Axons: "+nearby+". Nearby bindings do not require a LAN invitation.");
+                savedAxonStatus.setText(nearby>0?nearby+" automatic nearby subscription(s) · all Root knowledge. Private LAN: not configured.":"No Axon subscriptions yet. Nearby Axons bind automatically; private LAN uses invitations.");
                 boundConnectionStatus.setText(nearby>0?"Nearby Axons: "+EncounterService.status():"Private LAN: no saved binding");return;
             }
-            String binding="Saved Axon: "+policy.pins.size()+" bound peer(s), "+policy.lanes.size()+" topic(s).";
+            String binding=AxonRegistry.load(this).summary()+"\nPrivate LAN: "+policy.pins.size()+" bound peer(s), "+policy.lanes.size()+" topic(s).";
             try{
                 int count=AxonPeerStore.load(this,policy).size();
                 savedAxonStatus.setText(binding+"\n"+(count==0?"This older binding has no saved connection details. Paste a current invitation once and tap Test connection to save access.":
@@ -468,7 +489,7 @@ public final class MeshActivity extends Activity {
     private void showAxon(){
         if(busy||!NativeTree.available())return;
         final AxonSubscription subscription;
-        try{subscription=AxonSubscription.load(this);if(subscription==null){axonStatus.setText("No private LAN .axon subscription. Nearby Axons use all published topics; see Manage nearby exchange.");return;}}
+        try{subscription=AxonSubscription.load(this);if(subscription==null){axonStatus.setText(AxonRegistry.load(this).summary()+" · nearby Axons subscribe to all Root knowledge; private LAN allocation is separate.");return;}}
         catch(Exception e){axonStatus.setText(e.getMessage());return;}
         final String lang=new OverlayPreferences(this).targetLanguage();
         axonStatus.setText("Calculating local flow…");
