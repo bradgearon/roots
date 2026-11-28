@@ -123,16 +123,16 @@
     busy=true;
     try{
       const state=await chrome.runtime.sendMessage({type:"rootsExperienceSettings"});
-      if(!state?.ok||!state.capture){lastSignature="";return;}
+      if(!state?.ok||!state.capture||!state.epoch||!state.run){lastSignature="";return;}
       const rows=collect();
       if(!rows.length)return;
       // Position-independent fingerprint avoids repeatedly recording a static
       // webpage merely because layout moved a few pixels.
-      const signature=JSON.stringify(rows.map(r=>[r.anchor,r.start,r.end,r.text,r.pageX,r.pageY]));
+      const signature=JSON.stringify([state.epoch,state.run,rows.map(r=>[r.anchor,r.start,r.end,r.text,r.pageX,r.pageY])]);
       if(signature===lastSignature)return;
       if(document.visibilityState!=="visible"||!document.hasFocus())return;
       const result=await chrome.runtime.sendMessage({type:"rootsExperienceObserve",
-        snapshot:{documentKey,host:location.hostname,rows}});
+        snapshot:{documentKey,host:location.hostname,rows,captureEpoch:state.epoch,captureRun:state.run}});
       if(result?.ok)lastSignature=signature;
     }catch{/* Extension reload or host unavailable: retry on the next tick. */}
     finally{busy=false;}
