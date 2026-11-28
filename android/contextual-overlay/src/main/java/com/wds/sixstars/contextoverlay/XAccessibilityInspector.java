@@ -20,6 +20,8 @@ final class XAccessibilityInspector {
     private static final int MAX_REPORT=90000,MAX_VALUE=4000,MAX_FRAMES=6,MAX_COPY=11000;
     private static long request,deadline,nextSample,accepted;
     private static boolean previousSettled;
+    private static long nextEventSample;
+    private static XNodeIdAudit eventAudit=new XNodeIdAudit(true);
     private static final java.util.ArrayDeque<Frame> frames=new java.util.ArrayDeque<>();
     private record Frame(String header,String body,String attributes,int spanNodes,boolean settled){}
     record Snapshot(String status,String latest,String report,String attributes){}
@@ -27,15 +29,32 @@ final class XAccessibilityInspector {
 
     static synchronized void arm(){
         request++;deadline=SystemClock.elapsedRealtime()+WINDOW_MS;nextSample=0;previousSettled=false;
+        nextEventSample=0;eventAudit=new XNodeIdAudit(true);
     }
-    static synchronized void cancel(){request++;deadline=0;nextSample=0;accepted=0;frames.clear();}
+    static synchronized void cancel(){request++;deadline=0;nextSample=0;accepted=0;frames.clear();nextEventSample=0;eventAudit=new XNodeIdAudit(true);}
     static synchronized boolean armed(){return deadline>SystemClock.elapsedRealtime();}
+    static synchronized boolean eventDue(boolean captureEnabled,int kind){
+        if(!captureEnabled&&!armed())return false;
+        if(kind!=android.view.accessibility.AccessibilityEvent.TYPE_VIEW_SCROLLED&&
+            kind!=android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED&&
+            kind!=android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED&&
+            kind!=android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED)return false;
+        long now=SystemClock.elapsedRealtime();
+        if(now<nextEventSample)return false;
+        nextEventSample=now+600;
+        return true;
+    }
+    static synchronized void noteEvent(android.view.accessibility.AccessibilityEvent event){
+        if(eventAudit.eventCount()>=128)eventAudit=new XNodeIdAudit(true);
+        try{eventAudit.inspectEvent(event);}catch(RuntimeException ignored){}
+    }
     static synchronized Snapshot snapshot(){
         if(frames.isEmpty())return new Snapshot(armed()?"Recording the next 90 seconds of X browsing.":"No timeline samples yet.","","","");
         String status=frames.size()+" recent timeline sample(s) · "+accepted+" distinct samples recorded";
         StringBuilder report=new StringBuilder("X accessibility scrolling trace · newest sample first\n"+
             "Actual text values first. Node paths and Compose IDs are UI identifiers, not post IDs.\n"+
             "Read-only metadata probes; no clicks or external lookup.\n");
+        report.append(eventAudit.eventSummary());
         for(Frame frame:frames){
             String block="\n"+frame.header()+frame.body()+"\n";
             if(report.length()+block.length()>MAX_COPY){report.append("\n[Older samples omitted from compact copy.]\n");break;}
@@ -49,10 +68,10 @@ final class XAccessibilityInspector {
             if(detailed.spanNodes()==0||frame.settled()&&!detailed.settled())detailed=frame;
             if(detailed.settled())break;
         }
-        return new Snapshot(status,latest.header()+latest.body(),report.toString(),withCaptureHeader(detailed));
+        return new Snapshot(status,eventAudit.eventSummary()+"\n"+latest.header()+latest.body(),report.toString(),withCaptureHeader(detailed));
     }
     private static String withCaptureHeader(Frame frame){
-        try{return new org.json.JSONObject(frame.attributes()).put("snapshot",frame.header()).toString();}
+        try{return new org.json.JSONObject(frame.attributes()).put("snapshot",frame.header()).put("eventIdAudit",eventAudit.eventJson()).toString();}
         catch(org.json.JSONException ignored){return frame.attributes();}
     }
     static synchronized Scan begin(boolean captureEnabled,boolean settled){
