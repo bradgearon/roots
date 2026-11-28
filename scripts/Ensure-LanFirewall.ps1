@@ -1,6 +1,6 @@
 # Only the explicitly requested LAN bridge is opened. Never elevate the host.
 [CmdletBinding()]
-param([switch]$Apply, [ValidateSet(8221, 8223)][int]$Port = 8223)
+param([switch]$Apply, [ValidateSet(8221, 8223, 8233)][int]$Port = 8223)
 
 $ErrorActionPreference = 'Stop'
 $ruleName = "Wds.Roots.DesktopLan.Tcp$Port"
