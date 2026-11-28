@@ -103,6 +103,8 @@ function weightDetails(sequence,source){
       if(!details.isConnected)return;
       if(!Array.isArray(r.weights)||r.weights.length!==128)throw new Error("Weights unavailable");
       body.replaceChildren(node("p","Normalized byte-trigram features used by Roots GGUF compilation; not learned relation strength.","muted"));
+      if(source==="experience"&&Number.isSafeInteger(r.occurrences)&&r.occurrences>0)
+        body.append(node("p",r.occurrences+" exact text occurrence(s) across Experience.","muted"));
       const grid=node("div",undefined,"weight-grid");
       r.weights.forEach((w,i)=>{
         const cell=node("span",Number(w).toFixed(3));cell.title="Weight "+i;
@@ -321,7 +323,7 @@ handle("bind","submit",async()=>{await command("bind",{invitation:el("invitation
 handle("branch","submit",async()=>{await command("viewAddBranch",{source:selectedSource,name:el("branchName").value,term:el("branchTerm").value});el("branchName").value="";el("branchTerm").value="";await refreshSelected(true);});
 handle("compile","click",async()=>{el("compile").disabled=true;const source=selectedSource;try{
   const r=await command("viewCompile",{source,language:el("language").value});
-  status(source==="experience"?(r.available?"Private Experience GGUF compiled · revision "+r.revision:"No current Experience snapshot published; retry after capture settles."):(r.available?"Localized Tree snapshot compiled.":"No localized knowledge yet."));
+  status(source==="experience"?(r.available?"Private Experience GGUF compiled · revision "+r.revision+" · "+(r.path||"experience.weights.gguf")+(r.contentPath?" · Content only: "+r.contentPath:""):"No Experience knowledge yet."):(r.available?"Localized Tree snapshot compiled.":"No localized knowledge yet."));
 }finally{el("compile").disabled=false;}});
 handle("knowledgeSource","change",async()=>{
   selectedSource=el("knowledgeSource").value;viewRevision=null;branchSignature="";selectedAgent=0;
