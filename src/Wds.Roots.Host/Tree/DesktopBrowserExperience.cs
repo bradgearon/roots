@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -12,7 +13,18 @@ namespace Wds.Roots.Host;
 /// The browser lane is available only while the local Surface lease is held.</summary>
 internal static class DesktopBrowserExperience
 {
-    internal sealed record Line(string Text,int[] Bounds);
+    internal sealed record Line(string Text,int[] Bounds,int? Anchor=null,int? Start=null,int? End=null,
+        int? PageX=null,int? PageY=null,int? Order=null)
+    {
+        public bool Positioned=>Anchor.HasValue&&Start.HasValue&&End.HasValue&&PageX.HasValue&&PageY.HasValue&&Order.HasValue;
+        public bool ValidPosition()
+        {
+            if(Anchor==null&&Start==null&&End==null&&PageX==null&&PageY==null&&Order==null)return true;
+            return Positioned&&Anchor is >=1 and <=1000000000&&Start is >=0&&End>Start&&End<=1000000000&&
+                PageX is >=-1000000000 and <=1000000000&&PageY is >=-1000000000 and <=1000000000&&Order is >=0 and <=1000000000;
+        }
+        public string OrderKey()=>FormattableString.Invariant($"{(long)PageY!.Value+1000000000:D10}:{(long)PageX!.Value+1000000000:D10}:{Order!.Value:D10}:{Anchor!.Value:D10}:{Start!.Value:D10}");
+    }
     internal sealed record Snapshot(string DocumentKey,string Host,Line[] Rows);
     internal sealed record CaptureSession(string Run,string[] Excluded);
     private sealed record Recent(string Signature,long At);
@@ -20,6 +32,7 @@ internal static class DesktopBrowserExperience
     private static readonly Dictionary<string,Recent> Previous=new(StringComparer.Ordinal);
     private static string ActiveRun="";
     private static long LastWrite;
+    private static string Hash(string value)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowDisplayAffinity(nint hwnd,out uint affinity);
@@ -99,7 +112,7 @@ internal static class DesktopBrowserExperience
         foreach(var line in snapshot.Rows){
             if(line==null||string.IsNullOrWhiteSpace(line.Text)||line.Text.Length>1800||
                line.Text.Contains('\0')||line.Bounds is not {Length:4}||
-               line.Bounds.Any(n=>n<0||n>32768)||line.Bounds[0]>=line.Bounds[2]||line.Bounds[1]>=line.Bounds[3])
+               line.Bounds.Any(n=>n<0||n>32768)||line.Bounds[0]>=line.Bounds[2]||line.Bounds[1]>=line.Bounds[3]||!line.ValidPosition())
                 throw new ArgumentException("Invalid visible text line.");
             bytes+=Encoding.UTF8.GetByteCount(line.Text);
             if(bytes>64000)throw new ArgumentException("Snapshot too large.");
@@ -114,38 +127,55 @@ internal static class DesktopBrowserExperience
             // the same page viewport, but retain a later repeated occurrence.
             if(now-LastWrite<1000)return new {ok=false,error="capture_rate_limited"};
             string key=document.ToString("N")+":"+window.ToInt64();
-            string signature=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-                JsonSerializer.Serialize(snapshot.Rows.Select(r=>r.Text)))));
+            string signature=Hash(JsonSerializer.Serialize(snapshot.Rows.Select(r=>new{r.Text,r.Anchor,r.Start,r.End,r.PageX,r.PageY})));
             if(Previous.TryGetValue(key,out var prior)&&prior.Signature==signature&&now-prior.At<60000)
                 return new {ok=true,inserted=0UL};
             var parent=$"local:experience:browser:{session.Run}:{key}";
             var screen=$"{parent}:screen:{Guid.NewGuid():N}";
             // One transaction per bounded batch, with all lines tied to the
             // same screen key. Do not merge DOM CSS coordinates with OCR pixels.
+            using var tree=new NativeTree(Path.Combine(DirectoryPath(),"experience.db"));
             var rows=new List<Observation>();
-            int ordinal=0;
+            var seenIds=new HashSet<string>(StringComparer.Ordinal);
+            var seenPositions=new HashSet<string>(StringComparer.Ordinal);
+            int ordinal=0,ignored=0;
             foreach(var line in snapshot.Rows){
                 string id=$"{screen}:event:{++ordinal}";
+                string positionKey="";
+                if(line.Positioned){
+                    // First sight owns the observation. A stable DOM text node
+                    // and span survives scrolling/reflow; position also catches
+                    // recreated nodes at the same document location.
+                    id=parent+":line:"+Hash(FormattableString.Invariant($"{line.Anchor}:{line.Start}:{line.End}:{line.Text}"));
+                    positionKey=Hash(FormattableString.Invariant($"{parent}:{line.PageX}:{line.PageY}:{line.Text}"));
+                    if(!seenIds.Add(id)||!seenPositions.Add(positionKey)||tree.ExperienceSeen(id,positionKey)){
+                        ignored++;continue;
+                    }
+                }
                 void Add(string role,string value)=>rows.Add(new("record.experience."+role,id,value,"",now));
                 Add("body",line.Text);Add("kind","observation");Add("process",process);
                 Add("parent",parent);Add("screen",screen);Add("origin","browser.dom");
+                if(line.Positioned){Add("page-order",line.OrderKey());Add("page-key",positionKey);}
                 Add("evidence",JsonSerializer.Serialize(new{version=1,host=snapshot.Host,
                     processInstance=$"{pid}:{created}",windowInstance=window.ToInt64(),
-                    boundsCssPx=line.Bounds,coordinateSpace="viewport-css",method="dom"}));
+                    boundsCssPx=line.Bounds,coordinateSpace="viewport-css",method="dom",
+                    pageX=line.PageX,pageY=line.PageY,anchor=line.Anchor,start=line.Start,end=line.End}));
             }
             var check=Foreground();
             if(check==null||check.Value.Window!=window||check.Value.Session.Run!=session.Run||
                check.Value.Pid!=pid||check.Value.Created!=created)return new {ok=false,error="capture_off"};
-            using var tree=new NativeTree(Path.Combine(DirectoryPath(),"experience.db"));
             ulong inserted=0;
-            foreach(var batch in rows.Chunk(252))inserted+=tree.Observe(batch);
+            // Up to nine fields per line. The Tree batch limit is 256; keep
+            // each observation atomic, including its page-order metadata.
+            foreach(var group in rows.GroupBy(r=>r.ExternalId).Chunk(28))
+                inserted+=tree.Observe(group.SelectMany(g=>g).ToArray());
             LastWrite=now;
             Previous[key]=new(signature,now);
             if(Previous.Count>256){
                 foreach(var expired in Previous.OrderBy(p=>p.Value.At).Take(Previous.Count-256).Select(p=>p.Key).ToArray())
                     Previous.Remove(expired);
             }
-            return new {ok=true,inserted};
+            return new {ok=true,inserted,ignored};
         }
     }
 }
