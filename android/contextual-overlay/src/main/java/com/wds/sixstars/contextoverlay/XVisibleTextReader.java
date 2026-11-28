@@ -70,7 +70,7 @@ public final class XVisibleTextReader {
     List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
             boolean retainKnowledge,XAccessibilityInspector.Scan inspector) {
         Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> observations=new LinkedHashMap<>();
-        List<XKnowledgeRecords.Sample> knowledgeSamples=new ArrayList<>();
+        Map<Integer,List<XKnowledgeRecords.Sample>> samplesByOrder=new LinkedHashMap<>();
         List<XTimelineCardRecords.Node> cardNodes=new ArrayList<>();
         Map<Integer,Rect> cardNodeBounds=new HashMap<>();
         long observedAt=System.currentTimeMillis();
@@ -129,6 +129,13 @@ public final class XVisibleTextReader {
                             inspectedMetadata=inspector.node(node,entry.path(),bounds);
                     }catch(RuntimeException ignored){/* A transient or unsupported inspector property must not interrupt capture. */}
                 }
+                if(retainKnowledge&&node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())&&
+                        !node.isVisibleToUser()&&XPostMetadata.conversationCard(node)){
+                    // A clipped parent can own visible descendants. Do not
+                    // read its invisible text; keep only its structural marker.
+                    cardNodes.add(new XTimelineCardRecords.Node(order,entry.path(),node.getViewIdResourceName(),
+                        "", "", "", true,false,false,false,sourceAllowed,List.of(),""));
+                }
                 if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
                 if (node.getPackageName() != null && !X_PACKAGE.contentEquals(node.getPackageName()))
                     continue;
@@ -155,14 +162,14 @@ public final class XVisibleTextReader {
                                 XKnowledgeRecords.sampleMetadata(nodeSamples,inspectedMetadata!=null?inspectedMetadata:metadataProbe.read(node,true),metadataRole,observedBounds);
                             }catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
                         }
-                        XKnowledgeRecords.appendSamples(knowledgeSamples,nodeSamples);
+                        samplesByOrder.put(order,nodeSamples);
                         List<String> links=new ArrayList<>();
                         for(XKnowledgeRecords.Sample sample:nodeSamples)if(sample.sourceLink)links.add(sample.text);
                         cardNodes.add(new XTimelineCardRecords.Node(order,entry.path(),resource,
                             node.getClassName()==null?"":node.getClassName().toString(),
                             value==null?"":value.toString(),descriptionValue==null?"":descriptionValue.toString(),
                             conversation,XPostMetadata.timelineHeader(resource),PostTextHeuristics.isPostTextId(resource),
-                            hasBodySpan(value),sourceAllowed,links));
+                            hasBodySpan(value),sourceAllowed,links,reportedLanguage(node,value)));
                         cardNodeBounds.put(order,new Rect(observedBounds));
                     }
                 }
@@ -294,7 +301,10 @@ public final class XVisibleTextReader {
             for(TextCandidate body:selected)if(!joined.cardByOrder().containsKey(body.order))legacy.add(body);
             List<com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> all=new ArrayList<>(
                     XKnowledgeRecords.assembleCards(joined.posts(),observedAt));
-            all.addAll(XKnowledgeRecords.assemble(legacy,knowledgeSamples,observedAt));
+            List<XKnowledgeRecords.Sample> legacySamples=new ArrayList<>();
+            for(var entry:samplesByOrder.entrySet())if(!joined.cardByOrder().containsKey(entry.getKey()))
+                XKnowledgeRecords.appendSamples(legacySamples,entry.getValue());
+            all.addAll(XKnowledgeRecords.assemble(legacy,legacySamples,observedAt));
             for(XTimelineCardRecords.Post post:joined.posts()){
                 for(TextCandidate candidate:selected)bindCardBody(candidate,post);
                 for(TextCandidate candidate:associated)bindCardBody(candidate,post);
@@ -303,7 +313,7 @@ public final class XVisibleTextReader {
                 // translation scheduler may still localize the actual record.
                 Rect bounds=cardNodeBounds.get(post.bodyOrder());
                 if(bounds!=null&&post.body().length()<=MAX_SOURCE_CHARS){
-                    TextCandidate candidate=new TextCandidate(post.body(),bodyLanguageHint(post.body()),bounds,bounds,
+                    TextCandidate candidate=new TextCandidate(post.body(),post.language(),bounds,bounds,
                         post.bodyOrder(),200,true,false,true);
                     candidate.knowledgeKey=post.key();cardTranslationBodies.add(candidate);
                 }
@@ -314,7 +324,10 @@ public final class XVisibleTextReader {
         Map<String, TextCandidate> work = new LinkedHashMap<>();
         for (TextCandidate name : authorNames) work.put(name.fingerprint, name);
         for (TextCandidate body : selected) work.put(body.fingerprint, body);
-        for(TextCandidate body:cardTranslationBodies)work.putIfAbsent(body.fingerprint,body);
+        for(TextCandidate body:cardTranslationBodies){
+            TextCandidate existing=work.get(body.fingerprint);
+            if(existing==null||existing.knowledgeKey.isEmpty())work.put(body.fingerprint,body);
+        }
         for (TextCandidate body : raw) {
             if (body.fromDescription && !body.knownPostTextId
                     || !body.knownPostTextId && overlapsAuthor(body, authorNames))
