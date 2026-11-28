@@ -50,6 +50,7 @@ import static com.wds.sixstars.contextoverlay.MeshConnectionDiagnostics.*;
  * invitation authorizes the Tree graph; legacy clients can still read offers. */
 final class MeshPeer {
     static final int PORT=8233, MAX_INVENTORY=256, MAX_FETCH=32, MAX_FRAME=256*1024;
+    private static final int SESSION_IDLE_MS=45000, TRANSFER_TIMEOUT_MS=15000;
     private static MeshPeer instance;
     static synchronized MeshPeer get(Context context){
         if(instance==null)instance=new MeshPeer(context.getApplicationContext());
@@ -302,7 +303,7 @@ final class MeshPeer {
         final Network network;final Inet4Address address;final String token;final SSLServerSocket socket;
         final SSLContext context;final String pin;final SecretKey networkRoot;
         final Set<Socket> clients=ConcurrentHashMap.newKeySet();
-        final ThreadPoolExecutor workers=new ThreadPoolExecutor(2,2,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(4));
+        final ThreadPoolExecutor workers=new ThreadPoolExecutor(4,4,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(4));
         Server(Network n,Inet4Address a,String t,SSLServerSocket s,SSLContext context,String pin,SecretKey networkRoot){
             network=n;address=a;token=t;socket=s;this.context=context;this.pin=pin;this.networkRoot=networkRoot;
         }
@@ -499,6 +500,11 @@ final class MeshPeer {
                 !MeshNetworkAccess.verifyProof(proof.optString("certificate"),proof.optString("proof"),server.pin,member,nonce)){
                 reject(server,client,"member_proof_failed");return;
             }
+            boolean persistent=request.optBoolean("session",false);
+            boolean first=true;
+            while(true){
+            if(active!=server||!MeshServingService.enabled(app)||!server.network.equals(wifi())||!sameSubnet(server.network,client.getInetAddress()))return;
+            if(request.optInt("version")!=1){reject(server,client,"unsupported_version");return;}
             String op=request.optString("op");
             if(!op.equals("inventory")&&!op.equals("want")&&!op.equals("want_batch")&&!op.equals("need")){reject(server,client,"unsupported_operation");return;}
             boolean graph=request.optBoolean("graph",false);
@@ -506,7 +512,8 @@ final class MeshPeer {
             long epoch=tree.captureEpoch();
             Map<String,MeshItem> catalog=graph?graphCatalog():legacyCatalog();
             JSONObject response=new JSONObject().put("version",1);
-            if(enroll)response.put("member_token",grant);
+            if(first&&enroll)response.put("member_token",grant);
+            if(first&&persistent)response.put("session",true);
             if(op.equals("inventory")){
                 String after=request.optString("after");if(!after.isEmpty()&&!after.matches("[0-9a-f]{64}")){reject(server,client,"invalid_request");return;}
                 JSONArray entries=new JSONArray();String next="";
@@ -560,7 +567,17 @@ final class MeshPeer {
                     response.put("item",item.json());
                 }
             }
-            if(active==server&&MeshServingService.enabled(app)&&tree.captureEpoch()==epoch)write(client,response);
+            if(active!=server||!MeshServingService.enabled(app)||tree.captureEpoch()!=epoch)return;
+            write(client,response);
+            if(!persistent)return;
+            first=false;
+            // A transfer can keep the socket open without keeping the CPU
+            // awake between requests. The idle timeout releases unused slots.
+            if(requestLock!=null&&requestLock.isHeld())requestLock.release();
+            client.setSoTimeout(SESSION_IDLE_MS);
+            request=read(client);
+            if(requestLock!=null)requestLock.acquire(30000L);
+            }
         }catch(Exception error){
             if(!handshaken&&active==server){
                 Check failed=failure("TLS",error,android.os.SystemClock.elapsedRealtime()-handshakeStarted);
@@ -586,15 +603,36 @@ final class MeshPeer {
         RetryTls12(Check first){super(first.detail());this.first=first;}
     }
     private JSONObject exchange(Network network,Invite invite,JSONObject request,long deadline,Trace suppliedTrace)throws Exception{
+        return exchange(network,invite,request,deadline,suppliedTrace,null);
+    }
+    private JSONObject exchange(Network network,Invite invite,JSONObject request,long deadline,Trace suppliedTrace,TransferSessions sessions)throws Exception{
         Trace trace=suppliedTrace==null?trace(invite,null):suppliedTrace;
-        long stopAt=deadline==0?android.os.SystemClock.elapsedRealtime()+8000L:deadline;
-        try{return exchangeOnce(network,invite,request,stopAt,trace,false);}
+        if(sessions!=null){
+            sessions.check(invite);
+            SSLSocket existing=sessions.sockets.get(invite);
+            if(existing!=null){
+                try{return sessions.request(invite,existing,request,trace);}
+                catch(Failure rejected){sessions.drop(invite);throw rejected;}
+                catch(IOException broken){
+                    sessions.drop(invite);
+                    sessions.check(invite);
+                    trace.add(check("Session recovery",WARN,"Connection interrupted; reconnecting to the same pinned peer.",""));
+                }
+            }
+            request.put("session",true);
+        }
+        long stopAt=deadline==0?android.os.SystemClock.elapsedRealtime()+(sessions==null?8000L:TRANSFER_TIMEOUT_MS):deadline;
+        try{return exchangeOnce(network,invite,request,stopAt,trace,false,sessions);}
         catch(RetryTls12 retry){
             trace.add(check("TLS compatibility",WARN,"Initial TLS negotiation failed: "+retry.first.detail()+" Retrying with TLS 1.2 and the same certificate pin.",""));
-            return exchangeOnce(network,invite,request,stopAt,trace,true);
+            return exchangeOnce(network,invite,request,stopAt,trace,true,sessions);
         }
     }
-    private JSONObject exchangeOnce(Network network,Invite invite,JSONObject request,long stopAt,Trace trace,boolean tls12Only)throws Exception{
+    private static int exchangeRemaining(long stopAt,TransferSessions sessions){
+        long now=android.os.SystemClock.elapsedRealtime();
+        return sessions==null?RuntimeNeed.remaining(stopAt,now):(int)Math.max(0,Math.min(TRANSFER_TIMEOUT_MS,stopAt-now));
+    }
+    private JSONObject exchangeOnce(Network network,Invite invite,JSONObject request,long stopAt,Trace trace,boolean tls12Only,TransferSessions sessions)throws Exception{
         trace.prepare();trace.begin("Subnet",android.os.SystemClock.elapsedRealtime());
         MeshTlsPin pin=null;
         try{
@@ -607,8 +645,10 @@ final class MeshPeer {
                 "Connect both devices to the same Wi-Fi subnet and copy the peer's current invitation.");
             trace.pass("Subnet","Peer is another device on the current Wi-Fi IPv4 subnet.",android.os.SystemClock.elapsedRealtime());
             trace.begin("TCP",android.os.SystemClock.elapsedRealtime());
-            try(Socket plain=network.getSocketFactory().createSocket()){
-                int remaining=RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime());
+            Socket plain=network.getSocketFactory().createSocket();
+            boolean retained=false;
+            try{
+                int remaining=exchangeRemaining(stopAt,sessions);
                 if(remaining<=0)throw new java.net.SocketTimeoutException();
                 java.util.concurrent.ScheduledFuture<?> expiry=DEADLINES.schedule(()->{try{plain.close();}catch(IOException ignored){}},remaining,TimeUnit.MILLISECONDS);
                 try{
@@ -617,8 +657,9 @@ final class MeshPeer {
                     trace.begin("TLS",android.os.SystemClock.elapsedRealtime());
                     pin=new MeshTlsPin(invite.pin());
                     SSLContext tls=SSLContext.getInstance("TLS");tls.init(null,new javax.net.ssl.TrustManager[]{pin},random);
-                    try(SSLSocket socket=(SSLSocket)tls.getSocketFactory().createSocket(plain,invite.host(),PORT,true)){
-                        remaining=RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime());if(remaining<=0)throw new java.net.SocketTimeoutException();
+                    SSLSocket socket=(SSLSocket)tls.getSocketFactory().createSocket(plain,invite.host(),PORT,true);
+                    try{
+                        remaining=exchangeRemaining(stopAt,sessions);if(remaining<=0)throw new java.net.SocketTimeoutException();
                         socket.setUseClientMode(true);
                         socket.setEnabledProtocols(tls12Only?new String[]{"TLSv1.2"}:protocols(socket.getSupportedProtocols()));
                         socket.setSoTimeout(remaining);socket.startHandshake();
@@ -668,19 +709,24 @@ final class MeshPeer {
                                 trace.add(check("Member grant",WARN,"Member access received but could not be saved.","Retry the connection check."));
                             }
                         }
-                        if(RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime())<=0)throw new java.net.SocketTimeoutException();
+                        if(exchangeRemaining(stopAt,sessions)<=0)throw new java.net.SocketTimeoutException();
                         trace.pass("Authentication",memberVerified?"Member identity and derived network access accepted.":"The peer accepted the invitation and returned a response.",android.os.SystemClock.elapsedRealtime());
+                        if(sessions!=null&&memberVerified&&response.optBoolean("session",false)){
+                            sessions.check(invite);
+                            sessions.sockets.put(invite,socket);retained=true;
+                            trace.add(check("Transfer session",PASS,"Authenticated session reused across inventory and graph batches.",""));
+                        }
                         return response;
-                    }
+                    }finally{if(!retained)try{socket.close();}catch(IOException ignored){}}
                 }finally{expiry.cancel(false);}
-            }
+            }finally{if(!retained)try{plain.close();}catch(IOException ignored){}}
         }catch(Exception e){
             Exception failure=e;
-            if(!(e instanceof Failure)&&RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime())<=0)failure=new java.net.SocketTimeoutException();
+            if(!(e instanceof Failure)&&exchangeRemaining(stopAt,sessions)<=0)failure=new java.net.SocketTimeoutException();
             if("TLS".equals(trace.currentStage())&&pin!=null){
                 trace.add(pin.observation());
                 if(pin.rejected())failure=new Failure("TLS",pin.observation().detail(),pin.observation().nextStep());
-                else if(!tls12Only&&MeshConnectionDiagnostics.canRetryTls12(failure)&&RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime())>=1000)
+                else if(!tls12Only&&MeshConnectionDiagnostics.canRetryTls12(failure)&&exchangeRemaining(stopAt,sessions)>=1000)
                     throw new RetryTls12(MeshConnectionDiagnostics.failure("TLS",failure,0));
             }
             trace.fail(failure,android.os.SystemClock.elapsedRealtime());
@@ -688,11 +734,53 @@ final class MeshPeer {
             throw failure instanceof Failure?failure:new Failure(safe.stage(),safe.detail(),safe.nextStep());
         }
     }
+    private final class TransferSessions implements AutoCloseable {
+        final Network network;
+        final AxonSubscription binding;
+        final long epoch;
+        final Map<Invite,SSLSocket> sockets=new HashMap<>();
+        TransferSessions(Network network,AxonSubscription binding,long epoch){this.network=network;this.binding=binding;this.epoch=epoch;}
+        void check(Invite invite)throws Exception{
+            if(Thread.currentThread().isInterrupted()||tree.captureEpoch()!=epoch||!network.equals(wifi()))
+                throw new IOException("Transfer interrupted by local Tree or network change.");
+            if(!sameSubnet(network,InetAddress.getByName(invite.host())))throw new Failure("Subnet","The peer is no longer on this Wi-Fi subnet.","Reconnect to the peer's Wi-Fi.");
+            if(binding!=null){
+                AxonSubscription current=AxonSubscription.load(app);
+                if(current==null||!current.pins.equals(binding.pins)||!current.pins.contains(invite.pin()))
+                    throw new Failure("Axon binding","The saved binding changed during transfer.","Restart Receive with the current binding.");
+            }
+        }
+        JSONObject request(Invite invite,SSLSocket socket,JSONObject request,Trace trace)throws Exception{
+            check(invite);
+            trace.begin("Transfer session",android.os.SystemClock.elapsedRealtime());
+            socket.setSoTimeout(TRANSFER_TIMEOUT_MS);
+            java.util.concurrent.ScheduledFuture<?> expiry=DEADLINES.schedule(()->{
+                try{socket.close();}catch(IOException ignored){}
+            },TRANSFER_TIMEOUT_MS,TimeUnit.MILLISECONDS);
+            try{
+                request.put("version",1).put("graph",true);
+                request.remove("token");request.remove("member");request.remove("session");
+                write(socket,request);
+                JSONObject response=read(socket);
+                if(response.optInt("version")!=1)throw new Failure("Protocol","Unsupported Mesh protocol version.","Update both Roots installations.");
+                if(response.has("error"))throw protocolFailure(response.optString("error"));
+                check(invite);
+                trace.pass("Transfer session","Reused authenticated peer connection.",android.os.SystemClock.elapsedRealtime());
+                return response;
+            }finally{expiry.cancel(false);}
+        }
+        void drop(Invite peer){SSLSocket socket=sockets.remove(peer);if(socket!=null)try{socket.close();}catch(IOException ignored){}}
+        @Override public void close(){for(Invite peer:new ArrayList<>(sockets.keySet()))drop(peer);}
+    }
+
     record InventoryPage(JSONArray items,String next,boolean graph,int total){
         InventoryPage(JSONArray items,String next){this(items,next,false,items.length());}
     }
     private InventoryPage inventory(Network network,Invite invite,String after,long deadline,Trace trace)throws Exception{
-        JSONObject response=exchange(network,invite,new JSONObject().put("op","inventory").put("after",after),deadline,trace);
+        return inventory(network,invite,after,deadline,trace,null);
+    }
+    private InventoryPage inventory(Network network,Invite invite,String after,long deadline,Trace trace,TransferSessions sessions)throws Exception{
+        JSONObject response=exchange(network,invite,new JSONObject().put("op","inventory").put("after",after),deadline,trace,sessions);
         trace.begin("Inventory",android.os.SystemClock.elapsedRealtime());
         try{
             InventoryPage page=validateInventory(response,after);
@@ -746,13 +834,13 @@ final class MeshPeer {
             throw new IOException("Inventory does not match verified content.");
         return item;
     }
-    private List<MeshItem> fetchGraphBatch(Network network,Invite peer,List<Offer> offers,Trace trace)throws Exception{
+    private List<MeshItem> fetchGraphBatch(Network network,Invite peer,List<Offer> offers,Trace trace,TransferSessions sessions)throws Exception{
         List<MeshItem> delivered=new ArrayList<>();
         int offset=0;
         while(offset<offers.size()){
             JSONArray ids=new JSONArray();
             for(int i=offset;i<offers.size();i++)ids.put(offers.get(i).id);
-            JSONObject answer=exchange(network,peer,new JSONObject().put("op","want_batch").put("ids",ids),0,trace);
+            JSONObject answer=exchange(network,peer,new JSONObject().put("op","want_batch").put("ids",ids),0,trace,sessions);
             trace.begin("Receive",android.os.SystemClock.elapsedRealtime());
             int processed=answer.getInt("processed");
             if(processed<1||processed>offers.size()-offset)throw new IOException("Invalid graph batch cursor");
@@ -824,6 +912,7 @@ final class MeshPeer {
         try{network=wifi();}catch(RuntimeException e){local.add(failure("Wi-Fi",e,0));network=null;}
         if(network==null)throw new IOException(failureSummary(remember(checkedAt,local,traces)));
         final long epoch=tree.captureEpoch();
+        try(TransferSessions sessions=new TransferSessions(network,axon,epoch)){
         Map<String,Offer> offers=new HashMap<>();Set<Invite> graphPeers=new HashSet<>();int peers=0,failed=0;
         // Read all inventory pages. Receiver preferences affect order, not eligibility.
         for(int peerIndex=0;peerIndex<invites.size();peerIndex++){
@@ -833,7 +922,7 @@ final class MeshPeer {
                 Set<String> seen=new HashSet<>();String after="";
                 for(int page=0;;page++){
                     if(Thread.currentThread().isInterrupted()||!network.equals(wifi())||tree.captureEpoch()!=epoch)throw new IOException("Receive interrupted");
-                    InventoryPage inventoryPage=inventory(network,invite,after,0,trace);
+                    InventoryPage inventoryPage=inventory(network,invite,after,0,trace,sessions);
                     if(inventoryPage.graph())graphPeers.add(invite);
                     JSONArray inventory=inventoryPage.items();
                     if(page==0)peers++;
@@ -911,7 +1000,7 @@ final class MeshPeer {
                     Trace trace=traces.get(invites.indexOf(source));
                     if(graphPeers.contains(source)){
                         List<MeshItem> items;
-                        try{items=fetchGraphBatch(network,source,batch,trace);}
+                        try{items=fetchGraphBatch(network,source,batch,trace,sessions);}
                         catch(Exception e){
                             if(trace.currentStage().equals("Receive"))trace.fail(e,android.os.SystemClock.elapsedRealtime());
                             unavailable.add(source);continue;
@@ -925,7 +1014,7 @@ final class MeshPeer {
                         for(Offer offer:batch){
                             if(Thread.currentThread().isInterrupted()||!network.equals(wifi())||tree.captureEpoch()!=epoch)break;
                             try{
-                                JSONObject answer=exchange(network,source,new JSONObject().put("op","want").put("id",offer.id),0,trace);
+                                JSONObject answer=exchange(network,source,new JSONObject().put("op","want").put("id",offer.id),0,trace,sessions);
                                 trace.begin("Receive",android.os.SystemClock.elapsedRealtime());
                                 MeshItem item=verifyOffer(answer.getJSONObject("item"),offer);
                                 if(item.store(tree,epoch)>0)received++;
@@ -947,6 +1036,7 @@ final class MeshPeer {
                 "Check local storage space and the Native Tree installation, then retry Receive."));
             remember(checkedAt,local,traces);
             throw new IOException("Local receive processing failed. See connection details.");
+        }
         }
     }
 }
