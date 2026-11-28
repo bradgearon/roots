@@ -20,6 +20,11 @@ try
         if (!File.Exists(database)) { Console.WriteLine("No private Experience Tree yet."); return 0; }
         using var tree = new NativeTree(database);
         Console.WriteLine($"Private Experience Tree: {tree.Count()} fragments.");
+        if(args[0]=="--status"){
+            var diagnostic=Path.Combine(directory,"surface-diagnostics.txt");
+            if(File.Exists(diagnostic))Console.WriteLine(SafeConsole(File.ReadAllText(diagnostic)));
+            Console.WriteLine("Database: "+database);
+        }
         if (args[0] == "--search")
         {
             foreach (var record in tree.RecordsByTime(args[1], limit: 50).GroupBy(x => x.MasterSequence))
@@ -34,10 +39,11 @@ try
     }
     if (args[0] != "--capture" || Console.IsInputRedirected || Console.IsOutputRedirected) return Usage();
     var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    bool noOcr = false;
+    bool noOcr = false, diagnostics = false;
     for (int i = 1; i < args.Length; i++)
     {
-        if (args[i] == "--no-ocr") noOcr = true;
+        if (args[i] == "--diagnostics") diagnostics = true;
+        else if (args[i] == "--no-ocr") noOcr = true;
         else if (args[i] == "--ocr") noOcr = false;
         else if (args[i] == "--exclude" && i + 1 < args.Length && SurfaceObservation.ValidProcess(args[i + 1]))
             excluded.Add(args[++i]);
@@ -57,12 +63,15 @@ try
     if (!File.Exists(devicePath)) File.WriteAllText(devicePath, Guid.NewGuid().ToString("N"), Encoding.ASCII);
     var device = Guid.Parse(File.ReadAllText(devicePath));
     var run = Guid.NewGuid();
+    // This descriptor is usable by the host only while the OS-held lease is live.
+    File.WriteAllText(Path.Combine(directory,"capture.session.json"),JsonSerializer.Serialize(new {Run=run.ToString("N"),Excluded=excluded.ToArray()}));
     using var privateTree = new NativeTree(database);
     Console.WriteLine("Roots Surface — LOCAL CAPTURE ACTIVE. Ctrl+C stops capture.");
     Console.WriteLine("Automatically following foreground applications. No application is launched or controlled.");
     if (excluded.Count > 0) Console.WriteLine("Additional exclusions: " + string.Join(", ", excluded));
     Console.WriteLine(noOcr ? "UI Automation static text only." : "UI Automation and window OCR where available.");
     Console.WriteLine("Only semantic text and activity enter the private Tree. No media file or network upload.");
+    Console.WriteLine("Coverage diagnostics are recorded separately. Use --status or --diagnostics to inspect them.");
     using var cancellation = new CancellationTokenSource();
     using var shutdown = new ConsoleShutdown(cancellation, "Roots Surface", TimeSpan.FromSeconds(5));
     using var childJob = ChildProcessJob.Create();
@@ -74,7 +83,7 @@ try
     if (noOcr) start.ArgumentList.Add("--no-ocr");
     foreach (var name in excluded) { start.ArgumentList.Add("--exclude"); start.ArgumentList.Add(name); }
     using var child = Process.Start(start) ?? throw new InvalidOperationException("Cannot start Surface agent.");
-    long sequence = 0;
+    long sequence = 0, textEvents = 0, activityEvents = 0;
     try
     {
         childJob.Attach(child);
@@ -83,7 +92,11 @@ try
         child.ErrorDataReceived += (_, e) =>
         {
             if (e.Data is { } line && line.StartsWith("Surface: ", StringComparison.Ordinal))
-                Console.Error.WriteLine(line.Length <= 512 ? line : line[..512]);
+            {
+                var message=line.Length<=512?line:line[..512];
+                try { File.WriteAllText(Path.Combine(directory,"surface-diagnostics.txt"),message); } catch(IOException) { }
+                if(diagnostics) Console.Error.WriteLine(message);
+            }
         };
         child.BeginErrorReadLine();
         Console.WriteLine($"Surface receiver PID {Environment.ProcessId}; native agent PID {child.Id}.");
@@ -95,10 +108,14 @@ try
             if (line == null) break;
             var observation = SurfaceObservation.Parse(line, excluded);
             if (cancellation.IsCancellationRequested) break;
+            // Do not turn our changing counters into new knowledge. Ordinary
+            // terminal text remains eligible; only recognizable own diagnostics are skipped.
+            if (observation.IsOwnDiagnostic()) continue;
             var rows = observation.ToRows(device, run, ++sequence);
             privateTree.Observe(rows);
-            if (sequence == 1 || sequence % 100 == 0)
-                Console.WriteLine($"Surface: {sequence} events accepted into private Tree (latest source: {SafeConsole(observation.ProcessName)}). ");
+            if(observation.Kind is "uia" or "ocr")textEvents++;else activityEvents++;
+            if(diagnostics&&(sequence==1||sequence%100==0))
+                Console.WriteLine($"Surface: {textEvents} text events, {activityEvents} activity intervals committed.");
         }
         if (!cancellation.IsCancellationRequested)
         {
@@ -128,7 +145,7 @@ try
         }
         if (!child.WaitForExit(1000))
             Console.Error.WriteLine($"Surface agent PID {child.Id} did not confirm exit.");
-        Console.WriteLine($"Capture stopped. {sequence} semantic events accepted.");
+        Console.WriteLine($"Capture stopped. {textEvents} text events, {activityEvents} activity intervals committed.");
     }
     return 0;
 }
@@ -142,7 +159,7 @@ catch (Exception e)
 static string SafeConsole(string s) => string.Concat(s.Select(c => char.IsControl(c) ? ' ' : c));
 static int Usage()
 {
-    Console.WriteLine("launch-surface.cmd [--capture [--no-ocr] [--exclude app.exe]]");
+    Console.WriteLine("launch-surface.cmd [--capture [--no-ocr] [--diagnostics] [--exclude app.exe]]");
     Console.WriteLine("launch-surface.cmd --status");
     Console.WriteLine("launch-surface.cmd --search \"text\"");
     return 2;
@@ -180,6 +197,17 @@ internal sealed record SurfaceObservation(string Kind, ulong Session, uint Pid, 
             (!activity && (start != end || startMono != endMono)))
             throw new InvalidDataException("Invalid Surface event.");
         return new(p[0], session, pid, created, window, start, end, startMono, endMono, process, bounds, text);
+    }
+    internal bool IsOwnDiagnostic()
+    {
+        if(Kind is not ("uia" or "ocr"))return false;
+        string text=Text.Trim();
+        return text.StartsWith("Surface: process ",StringComparison.OrdinalIgnoreCase)||
+            text.StartsWith("Surface: OCR backend ",StringComparison.OrdinalIgnoreCase)||
+            text.StartsWith("Surface: no OCR engine",StringComparison.OrdinalIgnoreCase)||
+            text.Contains("events accepted into private Tree",StringComparison.OrdinalIgnoreCase)||
+            text.Contains("activity intervals committed.",StringComparison.OrdinalIgnoreCase)||
+            text.Contains("safety-query-unavailable",StringComparison.OrdinalIgnoreCase)&&text.Contains("OCR",StringComparison.OrdinalIgnoreCase);
     }
     public IReadOnlyList<Observation> ToRows(Guid device, Guid run, long sequence)
     {
