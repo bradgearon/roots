@@ -64,6 +64,13 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
         }
         return result;
     }
+    java.util.Set<String> pendingSet(){
+        java.util.Set<String> ids=new java.util.HashSet<>();
+        try(Cursor cur=getReadableDatabase().rawQuery("SELECT id FROM publications WHERE promoted=0",null)){
+            while(cur.moveToNext())ids.add(cur.getString(0));
+        }
+        return ids;
+    }
     java.util.List<String> pendingIds(String after,int limit){
         if(limit<1||limit>100)throw new IllegalArgumentException("Invalid pending page");
         java.util.List<String> ids=new java.util.ArrayList<>();

@@ -148,6 +148,7 @@ public final class EncounterService extends Service {
         private volatile boolean closed,scanning,advertisingReady;
         private volatile BluetoothServerSocket listener;
         private volatile BluetoothSocket incomingSocket,outgoingSocket,sessionSocket;
+        private volatile java.io.Closeable bulkSocket;
         private volatile BluetoothGattServer gattServer;
         private volatile BluetoothGatt clientGatt;
         private volatile BluetoothLeAdvertiser advertiser;
@@ -252,7 +253,7 @@ public final class EncounterService extends Service {
                 try{
                     if(active()){
                         int count=connect(device);
-                        if(count>=0||count==-2)synchronized(cooldown){cooldown.put(address,SystemClock.elapsedRealtime()+EncounterArbitration.cooldownMs(count)+jitter.nextInt(15000));}
+                        if(count>=0||count==-2||count==EncounterArbitration.MORE_PENDING)synchronized(cooldown){cooldown.put(address,SystemClock.elapsedRealtime()+EncounterArbitration.cooldownMs(count)+(count==EncounterArbitration.MORE_PENDING?jitter.nextInt(1500):jitter.nextInt(15000)));}
                     }
                 }catch(Exception|LinkageError failure){if(active())lastResult="Nearby attempt interrupted · retrying automatically";}
                 finally{busy.set(false);idleStatus();}
@@ -323,7 +324,8 @@ public final class EncounterService extends Service {
             sessionSocket=connection;String peer="",result="Interrupted";EncounterSync sync=null;
             ScheduledFuture<?> deadline=null;
             try{
-                deadline=timer.schedule(()->closeResource(connection),25,TimeUnit.SECONDS);
+                // Bound time and explicit cancellation, not a tiny fixed item count.
+                deadline=timer.schedule(()->{closeResource(connection);closeResource(bulkSocket);},120,TimeUnit.SECONDS);
                 status="Authenticating nearby Axon";
                 EncounterChannel channel=EncounterChannel.open(connection.getInputStream(),connection.getOutputStream(),key,client);
                 peer=channel.peerId;
@@ -331,11 +333,14 @@ public final class EncounterService extends Service {
                 if(EncounterBindings.get(EncounterService.this).blocked(peer)){result="Blocked or stopped";return -2;}
                 activePeer=peer;
                 status="Exchanging published Axons";
-                sync=new EncounterSync(EncounterService.this,channel,this::active);
-                sync.exchange(client);result=(sync.firstEncounter()?"New binding":"Binding refreshed")+" · "+sync.summary();return Math.max(sync.sent()+sync.received(),sync.pending()?1:0);
-            }catch(Exception|LinkageError failure){result="Interrupted · "+(sync==null?"authentication or catalog setup":sync.stage())+" ("+failure.getClass().getSimpleName()+")";return -1;}
+                final String authenticatedPeer=peer;
+                sync=new EncounterSync(EncounterService.this,channel,this::active,key,
+                    message->{if(radio==this){status=message;AxonReceiveCoordinator.progress(authenticatedPeer,message);}},socket->{bulkSocket=socket;if(!active()||EncounterBindings.get(EncounterService.this).blocked(authenticatedPeer))closeResource(socket);});
+                sync.exchange(client);result=(sync.firstEncounter()?"New binding":"Binding refreshed")+" · "+sync.transport()+" · "+sync.summary();return sync.pending()?EncounterArbitration.MORE_PENDING:Math.max(sync.sent()+sync.received(),0);
+            }catch(Exception|LinkageError failure){result="Interrupted · "+(sync==null?"authentication or catalog setup":sync.stage())+" ("+failure.getClass().getSimpleName()+")";return sync!=null&&sync.received()>0?EncounterArbitration.MORE_PENDING:-1;}
             finally{
                 if(deadline!=null)deadline.cancel(false);
+                if(sync!=null)sync.close();closeResource(bulkSocket);bulkSocket=null;
                 ExternalTreeImport.schedule(EncounterService.this);
                 int sent=sync==null?0:sync.sent(),received=sync==null?0:sync.received();
                 // Don't build a persistent tracking record of repeatedly rejected blocked encounters.
@@ -344,16 +349,17 @@ public final class EncounterService extends Service {
                     catch(Exception failure){result+=" · history not saved";}
                 }
                 if(radio==this){lastResult=result+" · "+sent+" sent · "+received+" received";activePeer="";}
+                if(!peer.isEmpty()&&!"Blocked or stopped".equals(result))AxonReceiveCoordinator.completed(peer,received,sent,sync!=null&&sync.completedSweep()&&!result.startsWith("Interrupted"),result);
                 sessionSocket=null;
             }
         }
         void clearCooldown(){synchronized(cooldown){cooldown.clear();}}
-        void interruptSession(String peer){if(peer.equals(activePeer))closeResource(sessionSocket);}
+        void interruptSession(String peer){if(peer.equals(activePeer)){closeResource(sessionSocket);closeResource(bulkSocket);}}
         void close(){
             closed=true;scanning=false;advertisingReady=false;
             if(scanner!=null)try{scanner.stopScan(scanCallback);}catch(Exception ignored){}
             if(advertiser!=null)try{advertiser.stopAdvertising(advertising);}catch(Exception ignored){}
-            closeResource(listener);closeResource(incomingSocket);closeResource(outgoingSocket);closeResource(sessionSocket);
+            closeResource(listener);closeResource(incomingSocket);closeResource(outgoingSocket);closeResource(sessionSocket);closeResource(bulkSocket);
             closeGatt(clientGatt);closeGattServer(gattServer);
             inbound.shutdownNow();outbound.shutdownNow();timer.shutdownNow();
         }

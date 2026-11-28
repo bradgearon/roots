@@ -13,7 +13,19 @@ import java.util.function.BooleanSupplier;
  * One client pull, then one publisher pull; full Root graph requires explicit publication scope. */
 final class EncounterSync {
     static final int PAGE=32,MAX_ITEMS=8,MAX_IDS=64;
-    private final EncounterChannel channel;
+    private EncounterChannel channel;
+    private final java.security.KeyPair identity;
+    private EncounterLanUpgrade.Upgrade upgrade;
+    private final java.util.function.Consumer<String> progress;
+    private final java.util.function.Consumer<java.io.Closeable> trackTransport;
+    private String transport="Bluetooth";
+    private boolean peerBulk;
+    private int maxPages=3;
+    String transport(){return transport;}
+    void close(){if(upgrade!=null)try{upgrade.close();}catch(java.io.IOException ignored){}}
+    boolean completedSweep(){return complete&&!peerMore;}
+    int remoteTotal(){return remoteTotal;}
+    private void report(){progress.accept("Receiving knowledge · "+transport+" · "+received+" received · "+sent+" sent · "+examined+" checked"+(remoteTotal<0?"":" · "+remoteTotal+" offered"));}
     private final EncounterBindings bindings;
     private final TreeRuntime tree;
     private final ExternalKnowledgeStore external;
@@ -22,6 +34,7 @@ final class EncounterSync {
     private final Context context;
     private final boolean automaticScope,fullScope;
     private final NavigableMap<String,MeshItem> catalog;
+    private java.util.Set<String> pendingReceipts=java.util.Collections.emptySet();
     private String root;
     private boolean peerGraph;
     private int maxItems=8,maxIds=64;
@@ -41,8 +54,10 @@ final class EncounterSync {
     int sent(){return sent;}
     boolean firstEncounter(){return binding.encounters()==1;}
 
-    EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active)throws Exception{
+    EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active,java.security.KeyPair identity,
+                  java.util.function.Consumer<String> progress,java.util.function.Consumer<java.io.Closeable> trackTransport)throws Exception{
         this.context=context.getApplicationContext();this.channel=channel;this.active=active;bindings=EncounterBindings.get(context);
+        this.identity=identity;this.progress=progress;this.trackTransport=trackTransport;
         automaticScope=EncounterSettings.automaticPublication(context);fullScope=EncounterSettings.fullRootGraph(context);
         tree=TreeRuntime.get(context);epoch=tree.captureEpoch();check();
         external=ExternalKnowledgeStore.get(context);
@@ -75,19 +90,33 @@ final class EncounterSync {
         // Both peers have proved their key and persisted a binding before exchange.
         stage="Binding handshake";
         if(client){
-            send(message("bind").put("root_graph",true));JSONObject reply=read();expect(reply,"bound");
-            binding=bindings.bind(channel.peerId);negotiate(reply);pull();serve();
+            send(capabilities("bind"));JSONObject reply=read();expect(reply,"bound");
+            binding=bindings.bind(channel.peerId);negotiate(reply,true);pull();serve();
         }else{
             JSONObject request=read();expect(request,"bind");binding=bindings.bind(channel.peerId);
-            send(message("bound").put("root_graph",true));negotiate(request);serve();pull();
+            send(capabilities("bound"));negotiate(request,false);serve();pull();
         }
         return received;
     }
-    private void negotiate(JSONObject hello)throws Exception{
+    private JSONObject capabilities(String op)throws JSONException{
+        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("lan_upgrade_v1",true);
+    }
+    private void negotiate(JSONObject hello,boolean client)throws Exception{
         peerGraph=hello.optBoolean("root_graph",false);
-        if(peerGraph){maxItems=32;maxIds=256;}
+        peerBulk=peerGraph&&hello.optBoolean("bulk_receive_v1",false);
+        if(peerGraph){maxItems=32;maxIds=256;maxPages=9;}
+        if(peerBulk){maxItems=128;maxIds=2048;maxPages=65;}
+        if(peerBulk&&hello.optBoolean("lan_upgrade_v1",false)){
+            stage="Negotiating local bulk connection";
+            progress.accept("Axon bound · negotiating Wi-Fi transfer");
+            upgrade=EncounterLanUpgrade.negotiate(context,channel,identity,client,active);
+            if(upgrade!=null){
+                channel=upgrade.channel();trackTransport.accept(upgrade);transport="Wi-Fi";
+                maxItems=4096;maxIds=65536;maxPages=2049;
+            }
+        }
         stage="Preparing Root inventory";
-        catalog.putAll(external.catalog());
+        catalog.putAll(external.catalog());pendingReceipts=external.pendingSet();
         catalog.putAll(MeshPeer.get(context).encounterCatalog());
         if(!peerGraph)catalog.values().removeIf(item->item.graph()!=null);
         root=inventoryRoot(catalog.navigableKeySet());
@@ -118,7 +147,7 @@ final class EncounterSync {
             if(ids.length()>PAGE)throw new IOException("Invalid inventory size");
             int total=answer.optInt("total",-1);
             if(total!=-1&&total<ids.length())throw new IOException("Invalid inventory total");
-            remoteTotal=total;
+            remoteTotal=total;report();
             // Validate the entire page before committing any cursor.
             List<String> page=new ArrayList<>();String previous=start;
             for(int i=0;i<ids.length();i++){
@@ -144,9 +173,13 @@ final class EncounterSync {
                     stage="Retaining external reference in main Tree";
                     check();external.promote(item.id(),tree,epoch);
                     if(added)received++;
+                    if((received&7)==0||received==1)report();
                     // Acknowledge only after both durable external receipt and main Tree commit.
                     checkpoint(remoteRoot,id);send(message("ack").put("id",id));transferred++;
-                }else known++;
+                }else{
+                    if(pendingReceipts.remove(id))external.promote(id,tree,epoch);
+                    known++;
+                }
                 after=id;processed++;inspected++;examined++;stage="Receiving inventory";
             }
             if(processed==page.size()&&!more){checkpoint(remoteRoot,"");complete=true;break;}
@@ -164,7 +197,7 @@ final class EncounterSync {
             JSONObject request=read();String op=request.getString("op");
             if("release".equals(op)){peerMore=request.optBoolean("more_pending",false);return;}
             if("inventory".equals(op)){
-                if(++pages>(peerGraph?9:3))throw new IOException("Inventory budget exceeded");
+                if(++pages>maxPages)throw new IOException("Inventory budget exceeded");
                 String after=request.getString("after"),knownRoot=request.getString("root");
                 if((!after.isEmpty()&&!EncounterBindings.digest(after))||(!knownRoot.isEmpty()&&!EncounterBindings.digest(knownRoot)))
                     throw new IOException("Invalid inventory cursor");
@@ -179,7 +212,7 @@ final class EncounterSync {
                 String id=request.getString("id");
                 if(++items>maxItems||!offered.remove(id)||!catalog.containsKey(id))throw new IOException("Invalid or excessive want");
                 send(message("data").put("item",catalog.get(id).json()));
-                JSONObject ack=read();expect(ack,"ack");if(!id.equals(ack.getString("id")))throw new IOException("Invalid receipt");sent++;
+                JSONObject ack=read();expect(ack,"ack");if(!id.equals(ack.getString("id")))throw new IOException("Invalid receipt");sent++;if((sent&7)==0||sent==1)report();
             }else throw new IOException("Unsupported encounter operation");
         }
     }
