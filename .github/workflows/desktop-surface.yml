@@ -51,6 +51,7 @@ jobs:
           node --check chrome-extension/roots-translate/tree.js
           node --check chrome-extension/roots-translate/background.js
           node --check chrome-extension/roots-translate/experience-dom.js
+          node --check chrome-extension/roots-translate/experience-control.js
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
