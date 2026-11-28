@@ -11,7 +11,7 @@ namespace Wds.Roots.Tree;
 public sealed record MeshGraphItem(string Id, string Kind, string Source, string Key,
     string ObservedLanguage, long At, string Text, string Language, string Topic, string Link, string Digest)
 {
-    public static bool IsHash(string? s) => s is not null && Regex.IsMatch(s, "^[0-9a-f]{64}$", RegexOptions.CultureInvariant);
+    public static bool IsHash(string? s) => s is { Length:64 } && Regex.IsMatch(s, "^[0-9a-f]{64}$", RegexOptions.CultureInvariant);
     public static string Hash(string s) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
     static string Field(string s) => Encoding.UTF8.GetByteCount(s).ToString(CultureInfo.InvariantCulture) + ":" + s;
     static bool Bounded(string? s, int max, bool required = false) =>
