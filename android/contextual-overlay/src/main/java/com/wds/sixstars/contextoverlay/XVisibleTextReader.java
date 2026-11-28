@@ -18,7 +18,7 @@ import java.util.Map;
  * viewport geometry. No screenshot, persistence or non-X application reading.
  */
 public final class XVisibleTextReader {
-    private record ScanNode(AccessibilityNodeInfo node, boolean sourceAllowed){}
+    private record ScanNode(AccessibilityNodeInfo node, boolean sourceAllowed,String path){}
     public static final String X_PACKAGE = "com.twitter.android";
     private static final int MAX_VISITED_NODES = 850;
     private static final int MAX_DETAIL_NODES = 1400;
@@ -62,6 +62,11 @@ public final class XVisibleTextReader {
 
     public List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
             boolean retainKnowledge) {
+        return find(root,width,height,scaledDensity,retainKnowledge,null);
+    }
+
+    List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
+            boolean retainKnowledge,XAccessibilityInspector.Scan inspector) {
         Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> observations=new LinkedHashMap<>();
         List<XKnowledgeRecords.Sample> knowledgeSamples=new ArrayList<>();
         long observedAt=System.currentTimeMillis();
@@ -83,7 +88,7 @@ public final class XVisibleTextReader {
                 || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
 
         ArrayDeque<ScanNode> queue = new ArrayDeque<>();
-        queue.add(new ScanNode(root,true));
+        queue.add(new ScanNode(root,true,inspector==null?null:"0"));
         boolean detailScreen = false;
 
         while (!queue.isEmpty()
@@ -105,7 +110,14 @@ public final class XVisibleTextReader {
                 if(node.getChildCount()>childCount)lastKnowledgeBounded=true;
                 for (int i = 0; i < childCount; i++) {
                     AccessibilityNodeInfo child = node.getChild(i);
-                    if (child != null) queue.add(new ScanNode(child,sourceAllowed));
+                    if (child != null) queue.add(new ScanNode(child,sourceAllowed,inspector==null?null:entry.path()+"/"+i));
+                }
+                if(inspector!=null&&!inspector.truncated&&node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())){
+                    try{
+                        Rect bounds=new Rect();node.getBoundsInScreen(bounds);
+                        if(node.isVisibleToUser()||XPostSpatialAnalyzer.onScreen(bounds,width,height)||order==1)
+                            inspector.node(node,entry.path(),bounds);
+                    }catch(RuntimeException ignored){/* A transient or unsupported inspector property must not interrupt capture. */}
                 }
                 if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
                 if (node.getPackageName() != null && !X_PACKAGE.contentEquals(node.getPackageName()))
