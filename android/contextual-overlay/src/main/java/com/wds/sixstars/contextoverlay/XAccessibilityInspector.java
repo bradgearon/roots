@@ -12,47 +12,65 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** Explicit one-shot diagnostic of the foreground X accessibility tree.
- * Independent of graph capture. No persistence, inference, or network export.
- * Never retains live AccessibilityNodeInfo objects or reads editable content. */
+/** Rolling read-only diagnostic, sampled during ordinary foreground X capture.
+ * Only recent snapshots are kept in memory; nothing is added to the Tree.
+ * Never retains live accessibility nodes or reads editable content. */
 final class XAccessibilityInspector {
-    private static final long WINDOW_MS=90000;
-    private static final int MAX_REPORT=180000,MAX_VALUE=1200;
-    private static long request,deadline;
-    private static String report="";
+    private static final long WINDOW_MS=90000, SAMPLE_MS=1500;
+    private static final int MAX_REPORT=180000,MAX_VALUE=1200,MAX_HISTORY=360000,MAX_FRAMES=6;
+    private static long request,deadline,nextSample,accepted;
+    private static int totalChars;
+    private static final java.util.ArrayDeque<Frame> frames=new java.util.ArrayDeque<>();
+    private record Frame(String header,String body){}
+    record Snapshot(String status,String latest,String report){}
     private XAccessibilityInspector(){}
 
     static synchronized void arm(){
-        request++;deadline=SystemClock.elapsedRealtime()+WINDOW_MS;report="";
+        request++;deadline=SystemClock.elapsedRealtime()+WINDOW_MS;nextSample=0;
     }
-    static synchronized void cancel(){request++;deadline=0;report="";}
+    static synchronized void cancel(){request++;deadline=0;nextSample=0;accepted=0;totalChars=0;frames.clear();}
     static synchronized boolean armed(){return deadline>SystemClock.elapsedRealtime();}
-    static synchronized String report(){return report;}
-    static synchronized String status(){
-        if(armed())return "Inspector armed. Return to the X post you want to inspect.";
-        return report.isEmpty()?"No inspection captured.":"X node report captured. View or copy it.";
+    static synchronized Snapshot snapshot(){
+        if(frames.isEmpty())return new Snapshot(armed()?"Recording the next 90 seconds of X browsing.":"No timeline samples yet.","","");
+        String status=frames.size()+" recent timeline sample(s) · "+accepted+" distinct samples recorded";
+        StringBuilder report=new StringBuilder("X accessibility scrolling trace · newest sample first\n"+
+            "Node paths and Compose semantics IDs are local UI identifiers, not remote post IDs.\n"+
+            "Read-only metadata probes; no clicks or external lookup.\n");
+        for(Frame frame:frames)report.append("\n").append(frame.header()).append(frame.body()).append("\n");
+        Frame latest=frames.getFirst();
+        return new Snapshot(status,latest.header()+latest.body(),report.toString());
     }
-    static synchronized Scan begin(){return armed()?new Scan(request):null;}
+    static synchronized Scan begin(boolean captureEnabled){
+        long now=SystemClock.elapsedRealtime();
+        if((!captureEnabled&&!armed())||now<nextSample)return null;
+        nextSample=now+SAMPLE_MS;
+        return new Scan(request,captureEnabled);
+    }
     static synchronized void finish(Scan scan,boolean stillForeground,boolean bounded){
-        if(scan==null||scan.request!=request||!armed()||!stillForeground||scan.count==0)return;
-        report="X accessibility inspector · "+java.time.Instant.now()+"\n"+
-            "Nodes inspected: "+scan.count+(bounded||scan.truncated?" · report bounded":"")+
-            "\nPaths are accessibility-tree child indexes, not remote post IDs.\n"+
-            "Extra-data keys are advertised by X; unrequested data may be absent.\n"+
-            scan.text;
-        deadline=0;
+        if(scan==null||scan.request!=request||(!scan.automatic&&!armed())||!stillForeground||scan.count==0)return;
+        String body=scan.text.toString();
+        Frame previous=frames.peekFirst();
+        if(previous!=null&&previous.body().equals(body))return;
+        String header="Snapshot "+(++accepted)+" · "+java.time.Instant.now()+"\n"+
+            "Nodes inspected: "+scan.count+(bounded||scan.truncated?" · report bounded":"")+"\n";
+        frames.addFirst(new Frame(header,body));totalChars+=header.length()+body.length();
+        while(frames.size()>MAX_FRAMES||totalChars>MAX_HISTORY){
+            Frame old=frames.removeLast();totalChars-=old.header().length()+old.body().length();
+        }
     }
 
     static final class Scan {
         final long request;
+        final boolean automatic;
         final StringBuilder text=new StringBuilder();
-        final XPostMetadata.Probe metadataProbe=new XPostMetadata.Probe(24);
+        final XPostMetadata.Probe metadataProbe=new XPostMetadata.Probe(12);
         int count;
         boolean truncated;
-        Scan(long request){this.request=request;}
+        Scan(long request,boolean automatic){this.request=request;this.automatic=automatic;}
 
-        void node(AccessibilityNodeInfo node,String path,Rect bounds){
-            if(truncated)return;
+        Bundle node(AccessibilityNodeInfo node,String path,Rect bounds){
+            if(truncated)return null;
+            Bundle requested=null;
             StringBuilder line=new StringBuilder();
             line.append("\n# ").append(path).append(" ").append(bounds.toShortString());
             field(line,"resource",node.getViewIdResourceName());
@@ -78,10 +96,15 @@ final class XAccessibilityInspector {
             List<String> available=node.getAvailableExtraData();
             if(available!=null&&!available.isEmpty())field(line,"availableExtraData",String.join(", ",available));
             extras(line,"extras",node.getExtras(),0);
-            if(XPostMetadata.conversationCard(node)||XPostMetadata.timelineHeader(node.getViewIdResourceName())||XKnowledgeRecords.hasPostMetadataRole(node.getViewIdResourceName()))
-                extras(line,"requested",metadataProbe.read(node,true),0);
-            if(text.length()+line.length()>MAX_REPORT){truncated=true;return;}
+            if(XPostMetadata.conversationCard(node)||XPostMetadata.timelineHeader(node.getViewIdResourceName())||XKnowledgeRecords.hasPostMetadataRole(node.getViewIdResourceName())){
+                Bundle outcomes=new Bundle();
+                requested=metadataProbe.read(node,true,outcomes);
+                extras(line,"requested",requested,0);
+                extras(line,"probe",outcomes,0);
+            }
+            if(text.length()+line.length()>MAX_REPORT){truncated=true;return requested;}
             text.append(line).append('\n');count++;
+            return requested;
         }
     }
 
@@ -121,12 +144,12 @@ final class XAccessibilityInspector {
                 else if(value instanceof CharSequence)field(line,name,(CharSequence)value);
                 else if(value instanceof Number||value instanceof Boolean||value instanceof android.net.Uri)
                     field(line,name,value.toString());
-                else if(value.getClass().isArray()){
-                    int size=java.lang.reflect.Array.getLength(value);
+                else if(value.getClass().isArray()||value instanceof java.util.List){
+                    int size=value instanceof java.util.List?((java.util.List<?>)value).size():java.lang.reflect.Array.getLength(value);
                     StringBuilder values=new StringBuilder("[");
                     for(int j=0;j<Math.min(24,size);j++){
                         if(j>0)values.append(", ");
-                        Object item=java.lang.reflect.Array.get(value,j);
+                        Object item=value instanceof java.util.List?((java.util.List<?>)value).get(j):java.lang.reflect.Array.get(value,j);
                         if(item==null)values.append("null");
                         else if(item instanceof Number||item instanceof Boolean||item instanceof CharSequence||item instanceof android.net.Uri){
                             String s=item.toString();values.append(s,0,Math.min(160,s.length()));
