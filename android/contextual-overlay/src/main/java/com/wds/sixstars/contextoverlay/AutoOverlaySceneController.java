@@ -102,10 +102,10 @@ final class AutoOverlaySceneController {
     }
 
     /** Only the verified foreground X application window may host our surface. */
-    void setTargetWindow(int windowId, Rect bounds) {
+    void setTargetWindow(int windowId, Rect bounds,XOverlayOrigin.Offset origin) {
         if (destroyed) return;
         boolean changed = surfaces.setTarget(
-                bounds == null ? null : new AutoWindowTarget(windowId, bounds));
+                bounds == null ? null : new AutoWindowTarget(windowId, bounds,origin));
         // A moved/resized X window changes our screen-to-window transform.
         if (changed) frames.request();
     }
