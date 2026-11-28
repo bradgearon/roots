@@ -17,6 +17,7 @@ final class DesktopIntelligenceProtocol {
     static final class Failure extends IOException { Failure(String message){super(message);} }
 
     static String baseUrl(String value){
+        if(DesktopWhirlwind.remote(value))return DesktopWhirlwind.route(value).canonical();
         try{
             URI uri=new URI(value==null?"":value.trim());
             String host=uri.getHost();
@@ -32,7 +33,7 @@ final class DesktopIntelligenceProtocol {
                 if(numeric.isLoopbackAddress()||numeric.isAnyLocalAddress()||numeric.isMulticastAddress())throw new IllegalArgumentException();
             }
             return new URI("https",null,host.toLowerCase(Locale.ROOT),PORT,null,null,null).toASCIIString();
-        }catch(Exception error){throw new IllegalArgumentException("Enter the PC's intelligence address, for example https://192.168.1.100:8221.");}
+        }catch(Exception error){throw new IllegalArgumentException("Enter the PC's HTTPS address on port 8221 or its roots+iroh:// address.");}
     }
     static String pairedKey(String value){
         String normalized=value==null?"":value.trim().toLowerCase(Locale.ROOT);

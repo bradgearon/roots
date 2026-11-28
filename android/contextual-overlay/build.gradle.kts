@@ -75,6 +75,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    // Optional independently built Rust transport; does not invalidate the brain cache.
+    sourceSets { named("main").configure { jniLibs.srcDir(rootProject.file(".roots-whirlwind/jniLibs")) } }
     if (usePrebuiltBrain) {
         // AGP 9.2+ getter exposes a legacy source-set type (Google issue 550220873).
         sourceSets {

@@ -16,9 +16,10 @@ internal static class IntelligenceHost
         HostInstanceLease? lease = null;
         try
         {
-            if (args.Any(arg => arg is not ("--intelligence" or "--lan" or "--local-only")))
-                throw new ArgumentException("Intelligence launch accepts --lan or --local-only. Translation has its own launch.cmd.");
-            bool lan = args.Contains("--lan") && !args.Contains("--local-only");
+            if (args.Any(arg => arg is not ("--intelligence" or "--lan" or "--local-only" or "--whirlwind")))
+                throw new ArgumentException("Intelligence launch accepts --lan, --local-only or --whirlwind. Translation has its own launch.cmd.");
+            bool remote = args.Contains("--whirlwind");
+            bool lan = args.Contains("--lan") && !args.Contains("--local-only") && !remote;
             string root = Directory.GetCurrentDirectory(), aiRoot = AiRuntimeRoot.Resolve();
             string data = IntelligenceProtocol.DataDirectory();
             lease = HostInstanceLease.Acquire(Path.Combine(data, "intelligence-host.lock"), "Roots intelligence host", "8082 and 8221");
@@ -66,8 +67,11 @@ internal static class IntelligenceHost
             await engine.WaitUntilReadyAsync(backend.ReadyAsync, TimeSpan.FromMinutes(3), quit.Token);
             await using var gateway = new IntelligenceGateway(backend, lan);
             await gateway.StartAsync(quit.Token);
+            await using var whirlwind = remote ? StartWhirlwind(root, data) : null;
             Task shutdown = Task.Delay(Timeout.Infinite, quit.Token);
-            await Task.WhenAny(shutdown, engine.ExitTask);
+            if (whirlwind != null) await Task.WhenAny(shutdown, engine.ExitTask, whirlwind.ExitTask);
+            else await Task.WhenAny(shutdown, engine.ExitTask);
+            if (!quit.IsCancellationRequested && whirlwind != null) await whirlwind.ThrowIfExitedAsync();
             if (!quit.IsCancellationRequested) await engine.ThrowIfExitedAsync();
             await shutdown;
             return 0;
@@ -85,5 +89,20 @@ internal static class IntelligenceHost
             try { if (engine != null) await engine.DisposeAsync(); }
             finally { lease?.Dispose(); Console.CancelKeyPress -= cancel; }
         }
+    }
+    private static ManagedModelProcess StartWhirlwind(string root, string data)
+    {
+        string executable = Path.Combine(root, "native", "whirlwind", "target", "release", "roots-whirlwind.exe");
+        if (!File.Exists(executable)) throw new FileNotFoundException("Build the Whirlwind host using build-whirlwind.cmd desktop.", executable);
+        string internalDir = Path.Combine(data, "internal-mesh");
+        Directory.CreateDirectory(internalDir);
+        string grants = Path.Combine(internalDir, "allowed-devices.txt");
+        if (!File.Exists(grants)) File.WriteAllText(grants, "");
+        var start = new ProcessStartInfo(executable) { WorkingDirectory = internalDir };
+        foreach (string argument in new[] { "serve", Path.Combine(internalDir, "identity.key"), grants }) start.ArgumentList.Add(argument);
+        string? relay = Environment.GetEnvironmentVariable("ROOTS_INTERNAL_LIBP2P_RELAY");
+        if (!string.IsNullOrWhiteSpace(relay)) start.ArgumentList.Add(relay.Trim());
+        Console.WriteLine("Internal Mesh compute only · allow devices with allow-internal-device.cmd.");
+        return ManagedModelProcess.Start(start, line => Console.WriteLine("[Whirlwind] " + line), "Whirlwind");
     }
 }
