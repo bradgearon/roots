@@ -53,12 +53,16 @@ final class AutoSceneSurfaceManager {
         if (!changed) return false;
         if (next == null) {
             releaseAttached();
+            removeFallback();
+            lastPaint=Collections.emptyList();
             target = null;
             attachFailed = false;
             return true;
         }
         if (target == null || !target.sameSurface(next)) {
             releaseAttached();
+            removeFallback();
+            lastPaint=Collections.emptyList();
             attachFailed = false;
         }
         target = next;
@@ -66,6 +70,7 @@ final class AutoSceneSurfaceManager {
     }
 
     void present(List<AutoOverlaySceneView.TextItem> items) {
+        if(target==null){releaseAttached();removeFallback();lastPaint=Collections.emptyList();return;}
         lastPaint = Collections.unmodifiableList(new ArrayList<>(items));
         if (attached != null) {
             try {
@@ -143,6 +148,8 @@ final class AutoSceneSurfaceManager {
     /** A resumed/recreated X window can reuse size and an old window ID. */
     void resetAttachment() {
         releaseAttached();
+        removeFallback();
+        lastPaint=Collections.emptyList();
         attachFailed = false;
         target = null;
     }
