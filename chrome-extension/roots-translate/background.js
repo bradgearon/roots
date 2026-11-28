@@ -217,13 +217,14 @@ async function treeCall(path, method="GET", body, timeout=10000) {
   const settings=await chrome.storage.local.get(["token"]);
   if(!validToken(settings.token))return {ok:false,error:"configure_token"};
   try{
+    const signal=AbortSignal.timeout(timeout);
     const response=await fetch(TREE_BASE+path,{
       method,headers:{"Content-Type":"application/json","X-SixStars-Token":settings.token},
-      body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)
+      body:body===undefined?undefined:JSON.stringify(body),signal
     });
     const result=await response.json().catch(()=>({}));
     return {...result,ok:response.ok&&result.ok!==false,error:response.ok?result.error:(result.error||"HTTP "+response.status)};
-  }catch{return {ok:false,error:"tree_service_unavailable"};}
+  }catch(e){return {ok:false,error:e?.name==="TimeoutError"?"tree_query_timeout":"tree_service_unavailable"};}
 }
 function allowedTreePage(sender) {
   return sender.id===chrome.runtime.id&&
@@ -269,7 +270,7 @@ async function treeCommand(request){
             beforeMs:String(positive(request.beforeMs)),beforeSequence:String(positive(request.beforeSequence)),
             agent:String(positive(request.agent)),limit:request.operation==="viewScreens"?"12":"30"});
           const endpoint=request.operation==="viewScreens"?"/screens":request.operation==="viewRecords"?"/records":"/feed";
-          return treeCall(path+endpoint+"?"+params);
+          return treeCall(path+endpoint+"?"+params,"GET",undefined,20000);
         }
         case "viewWeights":return positive(request.sequence)?treeCall(path+"/weights/"+request.sequence):{ok:false,error:"invalid_sequence"};
         case "viewCompile":return treeCall(path+"/compile","POST",{language:String(request.language||"en").slice(0,3)},60000);
