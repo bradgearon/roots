@@ -41,6 +41,8 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private boolean scanScheduled;
     private boolean scrollSinceLastScan;
     private long lastTimelineScrollAt=-1L;
+    private final XSceneGeometryClock geometryClock=new XSceneGeometryClock();
+    private int sceneWindowId=-1;
     // Event-driven normal scans. A low-frequency, foreground-only recovery
     // repairs a stale scene when X stops emitting scroll/content events.
     private static final long CAPTURE_RECOVERY_MS=4000L, SCENE_RECOVERY_MS=900L;
@@ -106,8 +108,28 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         if(!captureRecoveryScheduled&&recoveryEnabled()&&screenAllowsCapture())
             captureRecoveryScheduled=main.postDelayed(captureRecovery,recoveryInterval());
     }
+    private final Runnable staleGeometry=()->{
+        if(!sceneRecoveryEnabled()||!geometryClock.expired(SystemClock.uptimeMillis()))return;
+        // An actual movement still has no replacement geometry. Hide once
+        // rather than allowing old text to remain over unrelated posts.
+        coordinator.noteUncertainScroll();renderer.uncertainScroll();
+        scheduleScan();
+    };
+    private void awaitGeometry(long eventTime){
+        long now=SystemClock.uptimeMillis();
+        if(!geometryClock.motion(eventTime,now))return;
+        if(!scrollSinceLastScan&&scanScheduled){
+            main.removeCallbacks(scan);scanScheduled=false;
+        }
+        scrollSinceLastScan=true;
+        if(sceneRecoveryEnabled()){
+            main.removeCallbacks(staleGeometry);
+            main.postAtTime(staleGeometry,geometryClock.deadline());
+        }
+    }
     private void stopCaptureRecovery(){
         main.removeCallbacks(captureRecovery);captureRecoveryScheduled=false;unknownRootChecks=0;
+        main.removeCallbacks(staleGeometry);geometryClock.reset();sceneWindowId=-1;
     }
     private void recoverCapture(){
         captureRecoveryScheduled=false;
@@ -248,12 +270,12 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             }catch(RuntimeException ignored){}
         }
         if (kind == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
-            lastTimelineScrollAt=SystemClock.uptimeMillis();
-            if(!scrollSinceLastScan && scanScheduled){
-                main.removeCallbacks(scan);scanScheduled=false;
-            }
-            scrollSinceLastScan = true;
-            if (preferences.autoPreview() && renderer != null) {
+            long now=SystemClock.uptimeMillis();
+            long eventTime=event.getEventTime()>0?Math.min(now,event.getEventTime()):now;
+            lastTimelineScrollAt=Math.max(lastTimelineScrollAt,eventTime);
+            boolean alreadyMeasured=geometryClock.covers(eventTime);
+            if(!alreadyMeasured)awaitGeometry(eventTime);
+            if (!alreadyMeasured&&preferences.autoPreview() && renderer != null) {
                 // Direct pixel delta on API 28+, or actual scrollY offset
                 // difference from the SAME window/class as a fallback.
                 // Neither source is extrapolated from time or gesture speed.
@@ -277,25 +299,28 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 }
                 XMeasuredScrollTracker.Result movement = scrollTracker.observe(
                         origin, directY, absoluteY);
+                // Motion events are hints for work priority, not positions.
+                // Unknown/zero deltas do not toggle the painted surface.
                 if (movement.measured && movement.deltaY != 0) {
-                    coordinator.noteMeasuredScroll(movement.deltaY,android.os.SystemClock.uptimeMillis());
-                    if (movement.deltaY != 0)
-                        renderer.measuredScroll(0, movement.deltaY);
-                } else {
-                    // X supplied no reliable vertical pixel displacement.
-                    // Hide rather than let old labels hover until rescanning.
+                    coordinator.noteMeasuredScroll(movement.deltaY,eventTime);
+                    renderer.measuredScroll(0,movement.deltaY);
+                } else if(!movement.measured) {
                     coordinator.noteUncertainScroll();
-                    renderer.uncertainScroll();
                 }
             }
         } else if (kind == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
                 preferences.autoPreview() && renderer != null) {
-            // A new X page invalidates the last scroll source and geometry.
-            scrollTracker.reset();
-            coordinator.noteSceneChanged();
-            scrollSinceLastScan = true;
-            renderer.uncertainScroll();
-            renderer.resetAutoWindowAttachment();
+            // Compose may announce a state change for the SAME application
+            // window during recomposition. Do not tear down the compositor.
+            AccessibilityWindowInfo window=foregroundApplicationWindow();
+            if(window!=null&&isXRoot(window.getRoot())&&sceneWindowId>=0&&window.getId()!=sceneWindowId){
+                scrollTracker.reset();
+                coordinator.noteSceneChanged();
+                renderer.uncertainScroll();
+                renderer.resetAutoWindowAttachment();
+                geometryClock.reset();
+            }
+            awaitGeometry(event.getEventTime());
         }
         scheduleScan();
         scheduleSettledScan();
@@ -319,12 +344,14 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         if (renderer == null || preferences == null || !preferences.autoPreview()) return;
         AccessibilityWindowInfo xWindow = foregroundApplicationWindow();
         if (xWindow == null || !isXRoot(xWindow.getRoot())) {
+            sceneWindowId=-1;
             renderer.setAutoTargetWindow(-1, null);
             return;
         }
         Rect bounds = new Rect();
         xWindow.getBoundsInScreen(bounds);
-        renderer.setAutoTargetWindow(xWindow.getId(), bounds);
+        sceneWindowId=xWindow.getId();
+        renderer.setAutoTargetWindow(sceneWindowId, bounds);
     }
 
     /** Only application windows count; keyboards and our overlays do not. */
@@ -356,13 +383,13 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         // windows are never eligible SurfaceControl parents.
         // Retain the verified snapshot before touching the renderer. A compositor
         // failure must not prevent Tree intake.
+        long readStarted=SystemClock.uptimeMillis();
         List<TextCandidate> candidates = captureFresh();
         if(!readerStatus.startsWith("X active;")){
             // A failed/absent root cannot authorize replay of old geometry.
             if(preferences.autoPreview()){coordinator.noteUncertainScroll();renderer.uncertainScroll();}
             if(isNonXApplicationForeground()){hideOutsideX();return;}
         }
-        publishAutoWindowTarget();
         boolean scrolling = scrollSinceLastScan;
         scrollSinceLastScan = false;
         // Never treat a single empty accessibility snapshot as app exit.
@@ -371,7 +398,14 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         coordinator.refresh(candidates,
                 readerStatus.startsWith("X active;") ? reader.lastDiscovered() : Collections.emptyList(),
                 scrolling);
-        if(readerStatus.startsWith("X active;"))lastSceneScanUptime=SystemClock.uptimeMillis();
+        // Mode/target changes can clear the surface inside refresh. Attach
+        // AFTER publishing that scene, before the next vsync paints it.
+        publishAutoWindowTarget();
+        if(readerStatus.startsWith("X active;")){
+            lastSceneScanUptime=SystemClock.uptimeMillis();
+            geometryClock.snapshot(readStarted);
+            main.removeCallbacks(staleGeometry);
+        }
         boolean scannedX = readerStatus.startsWith("X");
         OverlayDiagnostics.record(this, readerStatus,
                 scannedX ? reader.lastVisitedNodes() : 0,
