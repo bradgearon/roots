@@ -36,7 +36,7 @@ struct reader {
     std::string str(){auto n=u64();need(n<100000,"unbounded metadata");std::string s;for(uint64_t i=0;i<n;++i)s+=static_cast<char>(byte());return s;}
 };
 void check_gguf(const std::filesystem::path &path,size_t n,int64_t revision,
-                const std::vector<item> &expected,bool structured=false){
+                const std::vector<item> &expected,bool structured=false,roots_tree *tree=nullptr){
     reader r(path);
     need(r.byte()=='G'&&r.byte()=='G'&&r.byte()=='U'&&r.byte()=='F',"GGUF magic");
     need(r.u32()==3&&r.u64()==1,"GGUF version/count");
@@ -91,7 +91,21 @@ void check_gguf(const std::filesystem::path &path,size_t n,int64_t revision,
     }
     need(r.str()=="node.embedding"&&r.u32()==2&&r.u64()==128&&r.u64()==n&&r.u32()==0&&r.u64()==0,"tensor descriptor");
     while(static_cast<uint64_t>(r.f.tellg())%32)need(r.byte()==0,"padding");
-    for(size_t i=0;i<n;++i){double norm=0;for(unsigned j=0;j<128;++j){auto b=r.u32();float v;std::memcpy(&v,&b,4);need(std::isfinite(v),"finite tensor");norm+=double(v)*v;}need(std::abs(norm-1.0)<1e-4,"vector norm");}
+    for(size_t i=0;i<n;++i){
+        float weights[128]{};
+        if(tree){
+            const auto &key=arrays["roots.node.keys"][i];
+            need(key.rfind("fragment:",0)==0,"fragment key");
+            ok(roots_tree_fragment_weights(tree,std::stoll(key.substr(9)),weights,128));
+        }
+        double norm=0;
+        for(unsigned j=0;j<128;++j){
+            auto b=r.u32();float v;std::memcpy(&v,&b,4);
+            need(std::isfinite(v),"finite tensor");norm+=double(v)*v;
+            if(tree)need(v==weights[j],"displayed weight must match GGUF tensor");
+        }
+        need(std::abs(norm-1.0)<1e-4,"vector norm");
+    }
     need(r.f.get()==EOF,"unexpected tensor bytes");
 }
 }
@@ -117,7 +131,41 @@ int main(){
             need(records.size()==2&&records[0].first<cursor,"whole master paging");
             auto path=dir/"structured.gguf";int64_t revision=0;
             ok(roots_tree_compile(t,path.u8string().c_str(),&revision));
-            check_gguf(path,4,revision,query(t),true);
+            check_gguf(path,4,revision,query(t),true,t);
+            ok(roots_tree_clear(t));
+        }
+        {
+            // Ingestion order is deliberately different from capture time.
+            roots_observation timed[]={
+                {"record.experience.body","local:experience:newer","same text","",30},
+                {"record.experience.process","local:experience:newer","app.exe","",30},
+                {"record.experience.body","local:experience:older","old text","",10},
+                {"record.experience.body","local:experience:tie","same text","",30}};
+            size_t n=0;ok(roots_tree_observe(t,timed,4,&n));need(n==4,"timed rows");
+            auto tie=query(t,"same text").front().seq;
+            std::vector<std::pair<int64_t,std::string>> records;
+            ok(roots_tree_records_time(t,"",0,0,0,1,record_member,&records));
+            need(records.size()==1&&records[0].first==tie,"time tie-breaker");
+            records.clear();
+            ok(roots_tree_records_time(t,"",0,30,tie,1,record_member,&records));
+            need(records.size()==2&&records[0].second=="same text","second time page contains whole record");
+            auto newer=records[0].first;records.clear();
+            ok(roots_tree_records_time(t,"",0,30,newer,1,record_member,&records));
+            need(records.size()==1&&records[0].second=="old text","out-of-order observation is last");
+            std::vector<item> rows;
+            ok(roots_tree_query_time(t,"",0,0,0,2,collect,&rows));
+            need(rows.size()==2&&rows[0].seq==tie&&rows[1].body=="app.exe","raw timestamp order");
+            auto cursor=rows.back().seq;rows.clear();
+            ok(roots_tree_query_time(t,"",0,30,cursor,2,collect,&rows));
+            need(rows.size()==2&&rows[0].seq==newer&&rows[1].body=="old text","raw time cursor");
+            float a[128]{},b[128]{};
+            ok(roots_tree_fragment_weights(t,tie,a,128));ok(roots_tree_fragment_weights(t,newer,b,128));
+            double norm=0;for(size_t k=0;k<128;++k){need(a[k]==b[k],"same text has same weights");norm+=double(a[k])*a[k];}
+            need(std::abs(norm-1.0)<1e-4,"normalized weights");
+            need(roots_tree_fragment_weights(t,tie,a,127)==ROOTS_TREE_INVALID,"weight buffer size");
+            int64_t branch=0;ok(roots_tree_agent_create(t,"Same","same",&branch));records.clear();
+            ok(roots_tree_records_time(t,"",branch,0,0,10,record_member,&records));
+            need(records.size()==3,"branch matches grouped records");
             ok(roots_tree_clear(t));
         }
         {
