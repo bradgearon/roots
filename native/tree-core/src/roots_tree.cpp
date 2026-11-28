@@ -191,6 +191,7 @@ roots_tree_result roots_tree_open(const char *path,roots_tree **out){
                    "CREATE INDEX IF NOT EXISTS fragment_master ON fragments(external_id,seq) WHERE source GLOB 'record.*';"
                    "CREATE INDEX IF NOT EXISTS fragment_master_language ON fragments(external_id,language,seq) WHERE source GLOB 'record.*';"
                    "CREATE INDEX IF NOT EXISTS fragment_experience_member ON fragments(external_id,source,seq) WHERE source GLOB 'record.experience.*';"
+                   "CREATE INDEX IF NOT EXISTS fragment_experience_text ON fragments(body) WHERE source='record.experience.body';"
                    "CREATE TABLE IF NOT EXISTS work_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,fragment INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,operation TEXT NOT NULL,profile TEXT NOT NULL,priority INTEGER NOT NULL,deadline INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,state INTEGER NOT NULL DEFAULT 0,worker TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,token INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,output TEXT NOT NULL DEFAULT '',UNIQUE(fragment,operation,profile));"
                    "CREATE INDEX IF NOT EXISTS work_dispatch ON work_jobs(operation,state,priority DESC,deadline,id);"
                    "PRAGMA user_version=1;");
@@ -356,6 +357,61 @@ roots_tree_result roots_tree_fragment_weights(roots_tree *t,int64_t sequence,flo
         }
         const auto values=lexical_vector(body);
         std::copy(values.begin(),values.end(),weights);
+    });
+}
+roots_tree_result roots_tree_text_occurrences(roots_tree *t,int64_t sequence,int64_t *out){
+    if(out)*out=0;
+    return guard([&]{
+        require(t&&out&&sequence>0);
+        std::lock_guard<std::mutex> lock(t->mutex);
+        statement s(t->db,
+            "SELECT count(*) FROM fragments f WHERE f.source='record.experience.body' "
+            "AND f.body=(SELECT body FROM fragments WHERE seq=? AND source='record.experience.body') "
+            "AND EXISTS(SELECT 1 FROM fragments k WHERE k.source='record.experience.kind' "
+            "AND k.external_id=f.external_id AND k.body='observation')");
+        s.number(1,sequence);require(s.next());*out=s.integer(0);
+    });
+}
+roots_tree_result roots_tree_backup(roots_tree *t,const char *path,int64_t *out){
+    if(out)*out=0;
+    return guard([&]{
+        require(t&&out);bounded(path,32768,true);
+        const auto dest=std::filesystem::u8path(path);
+        require(!std::filesystem::exists(dest));
+        try{
+            sqlite3 *raw=nullptr;
+            const int opened=sqlite3_open_v2(path,&raw,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX,nullptr);
+            std::unique_ptr<sqlite3,decltype(&sqlite3_close)> copy(raw,&sqlite3_close);
+            check(opened);
+            {
+                std::lock_guard<std::mutex> lock(t->mutex);
+                sqlite3_backup *backup=sqlite3_backup_init(copy.get(),"main",t->db,"main");
+                if(!backup)throw std::runtime_error("Could not initialize SQLite backup");
+                int rc=SQLITE_BUSY;
+                for(int attempt=0;attempt<40;++attempt){
+                    rc=sqlite3_backup_step(backup,-1);
+                    if(rc!=SQLITE_BUSY&&rc!=SQLITE_LOCKED)break;
+                    sqlite3_sleep(50);
+                }
+                const int finished=sqlite3_backup_finish(backup);
+                if(rc!=SQLITE_DONE)throw std::runtime_error("SQLite backup did not complete");
+                check(finished);
+            }
+            exec(copy.get(),"PRAGMA journal_mode=DELETE");
+            {
+                statement integrity(copy.get(),"PRAGMA quick_check");
+                if(!integrity.next()||integrity.str(0)!="ok"||integrity.next())
+                    throw std::runtime_error("SQLite backup integrity check failed");
+            }
+            *out=revision_of(copy.get());
+            copy.reset();
+        }catch(...){
+            std::error_code ec;std::filesystem::remove(dest,ec);
+            std::filesystem::remove(std::filesystem::u8path(std::string(path)+"-wal"),ec);
+            std::filesystem::remove(std::filesystem::u8path(std::string(path)+"-shm"),ec);
+            std::filesystem::remove(std::filesystem::u8path(std::string(path)+"-journal"),ec);
+            throw;
+        }
     });
 }
 roots_tree_result roots_tree_count(roots_tree *t,int64_t *out){return guard([&]{require(t&&out);std::lock_guard<std::mutex> lock(t->mutex);*out=scalar(t->db,"SELECT count(*) FROM fragments");});}
