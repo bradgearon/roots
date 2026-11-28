@@ -22,3 +22,25 @@ el("ping").addEventListener("click", () => {
           : "Service online; using HTTP fallback (update/restart launcher for WebSocket).")
       : "Service unavailable. Start Roots and check port 8224."));
 });
+
+async function treeCommand(operation, values={}) {
+  try{return await chrome.runtime.sendMessage({type:"rootsTreeCommand",operation,...values});}
+  catch{return {ok:false,error:"Tree unavailable"};}
+}
+async function refreshTree(){
+  const answer=await treeCommand("status");
+  el("capture").disabled=!answer?.ok;
+  el("capture").checked=answer?.ok&&answer.capture===true;
+  el("treeStatus").textContent=answer?.ok
+    ? answer.count+" fragments · "+(answer.mesh?.listening?"Mesh listening":"Mesh off")
+    : "Tree unavailable. Start the updated Roots host.";
+}
+el("capture").addEventListener("change",async()=>{
+  const enabled=el("capture").checked;
+  el("capture").disabled=true;
+  const answer=await treeCommand("capture",{enabled});
+  if(!answer?.ok)status("Could not change capture. Check the host connection.");
+  await refreshTree();
+});
+el("tree").addEventListener("click",()=>chrome.tabs.create({url:chrome.runtime.getURL("tree.html")}));
+refreshTree();
