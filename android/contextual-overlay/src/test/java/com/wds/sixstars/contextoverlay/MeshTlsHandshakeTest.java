@@ -48,6 +48,44 @@ public class MeshTlsHandshakeTest {
         assertTrue(pin.observation().detail().contains(server.pin().substring(0,12)));
     }
 
+    @Test public void axonArchiveUsesExactlyTheTlsConnection()throws Exception{
+        Server server=server();
+        java.security.KeyPair a=EncounterChannel.newEcKey(),b=EncounterChannel.newEcKey();
+        String aid=EncounterChannel.identityId(a.getPublic()),bid=EncounterChannel.identityId(b.getPublic());
+        byte[] archive=new byte[2*1024*1024];new java.util.Random(42).nextBytes(archive);
+        byte[] certHash=java.util.HexFormat.of().parseHex(server.pin());
+        java.util.concurrent.ExecutorService worker=java.util.concurrent.Executors.newSingleThreadExecutor();
+        try(javax.net.ssl.SSLServerSocket listener=(javax.net.ssl.SSLServerSocket)server.context().getServerSocketFactory().createServerSocket(0,1,java.net.InetAddress.getLoopbackAddress())){
+            listener.setEnabledProtocols(new String[]{"TLSv1.2"});
+            var answer=worker.submit(()->{
+                try(javax.net.ssl.SSLSocket socket=(javax.net.ssl.SSLSocket)listener.accept()){
+                    socket.setSoTimeout(10000);socket.startHandshake();
+                    EncounterChannel channel=EncounterChannel.openOverTls(socket.getInputStream(),socket.getOutputStream(),b,false,aid,certHash);
+                    assertTrue(channel.overTls());
+                    byte[] received=channel.receivePublicBytes(archive.length,8*1024*1024);
+                    channel.send(new byte[]{42});return java.util.Arrays.equals(archive,received);
+                }
+            });
+            try(javax.net.ssl.SSLSocket socket=(javax.net.ssl.SSLSocket)client(new MeshTlsPin(server.pin())).getSocketFactory().createSocket(java.net.InetAddress.getLoopbackAddress(),listener.getLocalPort())){
+                socket.setEnabledProtocols(new String[]{"TLSv1.2"});socket.setSoTimeout(10000);socket.startHandshake();
+                class Inspect extends java.io.FilterOutputStream {
+                    boolean active,seenArchive;
+                    Inspect(java.io.OutputStream out){super(out);}
+                    @Override public void write(byte[] data,int offset,int count)throws IOException{
+                        if(active&&count==archive.length)seenArchive=Arrays.equals(archive,Arrays.copyOfRange(data,offset,offset+count));
+                        out.write(data,offset,count);
+                    }
+                    @Override public void write(int value)throws IOException{out.write(value);}
+                }
+                Inspect output=new Inspect(socket.getOutputStream());
+                EncounterChannel channel=EncounterChannel.openOverTls(socket.getInputStream(),output,a,true,bid,certHash);
+                assertTrue(channel.overTls());output.active=true;
+                channel.sendPublicBytes(archive,8*1024*1024);
+                assertArrayEquals(new byte[]{42},channel.receive());assertTrue(output.seenArchive);
+                assertTrue(answer.get(10,java.util.concurrent.TimeUnit.SECONDS));
+            }
+        }finally{worker.shutdownNow();}
+    }
     @Test public void memberProofUsesTheExactCertificateAndChallenge()throws Exception{
         KeyStore store=KeyStore.getInstance("PKCS12");
         char[] password="roots-test-only".toCharArray();
