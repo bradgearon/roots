@@ -220,8 +220,6 @@ struct OcrLane::Impl {
     bool read(HWND hwnd,std::vector<SurfaceText>& output,RECT& desktopBounds,const std::vector<RECT>& masks) {
         desktopBounds={};output.clear();
         if(window!=hwnd&&!begin(hwnd))return false;
-        RECT before=screenBounds(hwnd);
-        if(IsRectEmpty(&before)){state="unverified-window-geometry";return false;}
         // Consume the newest available capture; drain both buffers and wait
         // briefly for a fresh frame if they contain old images. Never reuse
         // an old screenshot with newly measured sensitive-control bounds.
@@ -252,6 +250,8 @@ struct OcrLane::Impl {
             size=actual;pool.Recreate(device,DirectXPixelFormat::B8G8R8A8UIntNormalized,2,size);
             haveFingerprint=false;state="resized";return false;
         }
+        RECT before=screenBounds(hwnd);
+        if(IsRectEmpty(&before)){frame.Close();state="unverified-window-geometry";return false;}
         if(GetForegroundWindow()!=hwnd){frame.Close();state="source-changed";return false;}
         auto bitmap=SoftwareBitmap::CreateCopyFromSurfaceAsync(frame.Surface()).get();
         frame.Close();
@@ -279,7 +279,7 @@ struct OcrLane::Impl {
             if(maximum>0)limit=std::min(limit,static_cast<int>(maximum));
         }
         if(limit<256){state="unsupported-ocr-dimension";return false;}
-        bool anyBackend=false,allTiles=true;
+        bool anyBackend=false,allTiles=true,usedPortable=false,usedWindows=false;
         // Full-resolution overlapping tiles keep 4K/ultrawide windows
         // readable instead of silently rejecting them at the OCR size limit.
         for(int y:starts(pixels.height,limit))for(int x:starts(pixels.width,limit)){
@@ -292,9 +292,10 @@ struct OcrLane::Impl {
             const auto* src=tilePixels.data();
             std::vector<SurfaceText> rows;
             bool ok=portable.available()&&portable.recognize(src,width,height,width,rows);
+            if(ok)usedPortable=true;
             if(!ok&&engine){
                 rows.clear();
-                try{ok=windowsRecognize(src,width,height,width,rows);}
+                try{ok=windowsRecognize(src,width,height,width,rows);if(ok)usedWindows=true;}
                 catch(...){engine=nullptr;rows.clear();}
             }
             if(!ok){allTiles=false;continue;}
@@ -313,7 +314,7 @@ struct OcrLane::Impl {
         if(!anyBackend){state="ocr-engine-failed";return false;}
         if(allTiles){haveFingerprint=true;lastFingerprint=hash;}
         desktopBounds=before;
-        state=allTiles?(portable.available()?"tesseract":"windows-ocr"):"partial-ocr";
+        state=allTiles?(usedPortable?(usedWindows?"mixed-ocr":"tesseract"):"windows-ocr"):"partial-ocr";
         return true;
     }
 };
