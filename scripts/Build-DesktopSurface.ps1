@@ -22,4 +22,4 @@ if($LASTEXITCODE -ne 0){throw 'Surface build failed.'}
 if($LASTEXITCODE -ne 0){throw 'Private Tree library build failed.'}
 & dotnet build (Join-Path $root 'src\Wds.Roots.Experience') -c Release
 if($LASTEXITCODE -ne 0){throw 'Experience receiver build failed.'}
-Write-Host 'Surface build complete. Use launch-surface.cmd --capture app.exe [--ocr].'
+Write-Host 'Surface build complete. Use launch-surface.cmd to watch the foreground desktop.'
