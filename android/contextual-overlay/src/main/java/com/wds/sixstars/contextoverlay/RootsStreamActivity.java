@@ -105,7 +105,7 @@ public final class RootsStreamActivity extends Activity {
         }
     }
 
-    @Override protected void onResume(){super.onResume();resumed=true;if(runtime!=null){runtime.addWaveListener(waveListener);reset();}}
+    @Override protected void onResume(){super.onResume();resumed=true;MeshServingService.restore(this);if(runtime!=null){runtime.addWaveListener(waveListener);reset();}}
     @Override protected void onPause(){resumed=false;if(runtime!=null)runtime.removeWaveListener(waveListener);super.onPause();}
     @Override protected void onDestroy(){closed=true;generation++;reader.shutdownNow();super.onDestroy();}
     private int dp(int n){return RootsUi.dp(this,n);}
