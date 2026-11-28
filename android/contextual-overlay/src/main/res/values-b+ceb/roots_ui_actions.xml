@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Sulayi ang paghubad sa PLaMo</string>
+    <string name="roots_ui_save_connection">Tipigi ang koneksiyon sa paghubad</string>
+    <string name="roots_ui_clear_key">Papasa ang yawe sa paghubad</string>
+    <string name="roots_ui_branches">Mga sanga</string>
+    <string name="roots_ui_agent">Bag-ong ahente</string>
+    <string name="roots_ui_back">Balik</string>
+    <string name="roots_ui_refresh">I-refresh</string>
+    <string name="roots_ui_cancel">Kansela</string>
+    <string name="roots_ui_close">Sirado</string>
+    <string name="roots_ui_save">Tipigi</string>
+    <string name="roots_ui_remove">Tangtanga</string>
+    <string name="roots_ui_clear">Papasa</string>
+    <string name="roots_ui_receive">Dawata ang kahibalo</string>
+    <string name="roots_ui_nearby">Pagbayloay sa duol</string>
+    <string name="roots_ui_connection">Mga detalye sa koneksiyon</string>
+    <string name="roots_ui_listen_start">Sugdi ang pagpaminaw sa koneksiyon</string>
+    <string name="roots_ui_listen_stop">Hunonga ang pagpaminaw</string>
+    <string name="roots_ui_network">Eksplorador sa network</string>
+    <string name="roots_ui_external">Eksternal nga kahibalo</string>
+    <string name="roots_ui_history">Kasaysayan sa inference</string>
+    <string name="roots_ui_poetic">Balaknong lihok</string>
+    <string name="roots_ui_later">Dili karon</string>
+    <string name="roots_ui_home">Home</string>
+    <string name="roots_ui_stream_sub">Kahoy sa Kinabuhi · agos sa kahibalo</string>
+    <string name="roots_ui_settings_sub">Roots · paghubad ug kahibalo</string>
+    <string name="roots_ui_scheduling">Pinulongan, paagi ug iskedyul</string>
+    <string name="roots_ui_consent_accessibility">Miuyon ko — ablihi ang mga setting sa accessibility</string>
+</resources>

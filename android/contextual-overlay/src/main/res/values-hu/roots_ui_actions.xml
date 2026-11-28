@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo-fordítás tesztelése</string>
+    <string name="roots_ui_save_connection">Fordítási kapcsolat mentése</string>
+    <string name="roots_ui_clear_key">Fordítási kulcs törlése</string>
+    <string name="roots_ui_branches">Ágak</string>
+    <string name="roots_ui_agent">Új ügynök</string>
+    <string name="roots_ui_back">Vissza</string>
+    <string name="roots_ui_refresh">Frissítés</string>
+    <string name="roots_ui_cancel">Mégse</string>
+    <string name="roots_ui_close">Bezárás</string>
+    <string name="roots_ui_save">Mentés</string>
+    <string name="roots_ui_remove">Eltávolítás</string>
+    <string name="roots_ui_clear">Törlés</string>
+    <string name="roots_ui_receive">Tudás fogadása</string>
+    <string name="roots_ui_nearby">Közeli adatcsere</string>
+    <string name="roots_ui_connection">Kapcsolat részletei</string>
+    <string name="roots_ui_listen_start">Kapcsolatok figyelésének indítása</string>
+    <string name="roots_ui_listen_stop">Kapcsolatok figyelésének leállítása</string>
+    <string name="roots_ui_network">Hálózatböngésző</string>
+    <string name="roots_ui_external">Külső tudás</string>
+    <string name="roots_ui_history">Inferenciaelőzmények</string>
+    <string name="roots_ui_poetic">Költői mozgás</string>
+    <string name="roots_ui_later">Most nem</string>
+    <string name="roots_ui_home">Kezdőlap</string>
+    <string name="roots_ui_stream_sub">Életfa · tudásfolyam</string>
+    <string name="roots_ui_settings_sub">Roots · fordítás és tudás</string>
+    <string name="roots_ui_scheduling">Nyelv, mód és ütemezés</string>
+    <string name="roots_ui_consent_accessibility">Hozzájárulok — akadálymentesítési beállítások megnyitása</string>
+</resources>

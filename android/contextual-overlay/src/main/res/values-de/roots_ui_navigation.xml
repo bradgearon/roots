@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Einstellungen</string>
+    <string name="roots_ui_stream">Stream</string>
+    <string name="roots_ui_tree">Baum des Lebens</string>
+    <string name="roots_ui_local_knowledge">Lokales Wissen</string>
+    <string name="roots_ui_search">Gespeicherten Text durchsuchen</string>
+    <string name="roots_ui_rank">Sortieren / aktualisieren</string>
+    <string name="roots_ui_inference">Inferenz</string>
+    <string name="roots_ui_axons">Axon-Abonnements</string>
+    <string name="roots_ui_capture_on">Lokale Erfassung aktivieren</string>
+    <string name="roots_ui_capture_pause">Lokale Erfassung pausieren</string>
+    <string name="roots_ui_more">Mehr Wissen anzeigen</string>
+    <string name="roots_ui_empty">Noch keine Beobachtungen.</string>
+    <string name="roots_ui_translation">Übersetzung</string>
+    <string name="roots_ui_follow_system">Android-Sprache übernehmen</string>
+    <string name="roots_ui_translate_into">Übersetzen in (43 Sprachen)</string>
+    <string name="roots_ui_display_mode">Anzeigemodus für Übersetzungen</string>
+    <string name="roots_ui_manual">Manuell — eine ⇄-Schaltfläche pro Beitrag</string>
+    <string name="roots_ui_automatic">Automatisch (experimentell) — Beitragstext beim Scrollen ersetzen</string>
+    <string name="roots_ui_appearance">Darstellung</string>
+    <string name="roots_ui_accessibility">Bedienungshilfen und Berechtigungen</string>
+    <string name="roots_ui_diagnostics">Diagnose</string>
+    <string name="roots_ui_storage">Wissen und Speicher</string>
+    <string name="roots_ui_models">Modelle und Inferenz</string>
+    <string name="roots_ui_desktop">Desktop-Verbindung</string>
+    <string name="roots_ui_intelligence">Intelligenz</string>
+    <string name="roots_ui_open_accessibility">Einstellungen für Bedienungshilfen öffnen</string>
+    <string name="roots_ui_stop_processing">X-Textverarbeitung beenden</string>
+</resources>

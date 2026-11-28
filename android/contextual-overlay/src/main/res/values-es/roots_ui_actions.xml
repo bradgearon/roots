@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Probar la traducción de PLaMo</string>
+    <string name="roots_ui_save_connection">Guardar conexión de traducción</string>
+    <string name="roots_ui_clear_key">Borrar clave de traducción</string>
+    <string name="roots_ui_branches">Ramas</string>
+    <string name="roots_ui_agent">Nuevo agente</string>
+    <string name="roots_ui_back">Atrás</string>
+    <string name="roots_ui_refresh">Actualizar</string>
+    <string name="roots_ui_cancel">Cancelar</string>
+    <string name="roots_ui_close">Cerrar</string>
+    <string name="roots_ui_save">Guardar</string>
+    <string name="roots_ui_remove">Eliminar</string>
+    <string name="roots_ui_clear">Borrar</string>
+    <string name="roots_ui_receive">Recibir conocimiento</string>
+    <string name="roots_ui_nearby">Intercambio cercano</string>
+    <string name="roots_ui_connection">Detalles de conexión</string>
+    <string name="roots_ui_listen_start">Empezar a escuchar conexiones</string>
+    <string name="roots_ui_listen_stop">Dejar de escuchar conexiones</string>
+    <string name="roots_ui_network">Explorador de red</string>
+    <string name="roots_ui_external">Conocimiento externo</string>
+    <string name="roots_ui_history">Historial de inferencia</string>
+    <string name="roots_ui_poetic">Movimiento poético</string>
+    <string name="roots_ui_later">Ahora no</string>
+    <string name="roots_ui_home">Inicio</string>
+    <string name="roots_ui_stream_sub">Árbol de la vida · flujo de conocimiento</string>
+    <string name="roots_ui_settings_sub">Roots · traducción y conocimiento</string>
+    <string name="roots_ui_scheduling">Idioma, modo y programación</string>
+    <string name="roots_ui_consent_accessibility">Doy mi consentimiento — abrir los ajustes de accesibilidad</string>
+</resources>

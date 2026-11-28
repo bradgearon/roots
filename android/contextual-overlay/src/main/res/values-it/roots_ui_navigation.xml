@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Impostazioni</string>
+    <string name="roots_ui_stream">Flusso</string>
+    <string name="roots_ui_tree">Albero della vita</string>
+    <string name="roots_ui_local_knowledge">Conoscenza locale</string>
+    <string name="roots_ui_search">Cerca nel testo conservato</string>
+    <string name="roots_ui_rank">Ordina / aggiorna</string>
+    <string name="roots_ui_inference">Inferenza</string>
+    <string name="roots_ui_axons">Abbonamenti Axon</string>
+    <string name="roots_ui_capture_on">Attiva acquisizione locale</string>
+    <string name="roots_ui_capture_pause">Sospendi acquisizione locale</string>
+    <string name="roots_ui_more">Mostra altre conoscenze</string>
+    <string name="roots_ui_empty">Nessuna osservazione per ora.</string>
+    <string name="roots_ui_translation">Traduzione</string>
+    <string name="roots_ui_follow_system">Segui la lingua di Android</string>
+    <string name="roots_ui_translate_into">Traduci in (43 lingue)</string>
+    <string name="roots_ui_display_mode">Modalità di visualizzazione della traduzione</string>
+    <string name="roots_ui_manual">Manuale — un pulsante ⇄ per post</string>
+    <string name="roots_ui_automatic">Automatico (sperimentale) — sostituisci il testo dei post durante lo scorrimento</string>
+    <string name="roots_ui_appearance">Aspetto</string>
+    <string name="roots_ui_accessibility">Accessibilità e autorizzazioni</string>
+    <string name="roots_ui_diagnostics">Diagnostica</string>
+    <string name="roots_ui_storage">Conoscenza e archiviazione</string>
+    <string name="roots_ui_models">Modelli e inferenza</string>
+    <string name="roots_ui_desktop">Connessione al computer</string>
+    <string name="roots_ui_intelligence">Intelligenza</string>
+    <string name="roots_ui_open_accessibility">Apri le impostazioni di accessibilità</string>
+    <string name="roots_ui_stop_processing">Interrompi l\'elaborazione del testo di X</string>
+</resources>

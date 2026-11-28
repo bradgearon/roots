@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">اختبار ترجمة PLaMo</string>
+    <string name="roots_ui_save_connection">حفظ اتصال الترجمة</string>
+    <string name="roots_ui_clear_key">مسح مفتاح الترجمة</string>
+    <string name="roots_ui_branches">الفروع</string>
+    <string name="roots_ui_agent">وكيل جديد</string>
+    <string name="roots_ui_back">رجوع</string>
+    <string name="roots_ui_refresh">تحديث</string>
+    <string name="roots_ui_cancel">إلغاء</string>
+    <string name="roots_ui_close">إغلاق</string>
+    <string name="roots_ui_save">حفظ</string>
+    <string name="roots_ui_remove">إزالة</string>
+    <string name="roots_ui_clear">مسح</string>
+    <string name="roots_ui_receive">استقبال المعرفة</string>
+    <string name="roots_ui_nearby">التبادل مع الأجهزة القريبة</string>
+    <string name="roots_ui_connection">تفاصيل الاتصال</string>
+    <string name="roots_ui_listen_start">بدء الاستماع</string>
+    <string name="roots_ui_listen_stop">إيقاف الاستماع</string>
+    <string name="roots_ui_network">مستكشف الشبكة</string>
+    <string name="roots_ui_external">المعرفة الخارجية</string>
+    <string name="roots_ui_history">سجل الاستدلال</string>
+    <string name="roots_ui_poetic">الحركة الشعرية</string>
+    <string name="roots_ui_later">ليس الآن</string>
+    <string name="roots_ui_home">الرئيسية</string>
+    <string name="roots_ui_stream_sub">شجرة الحياة · تدفق المعرفة</string>
+    <string name="roots_ui_settings_sub">Roots · الترجمة والمعرفة</string>
+    <string name="roots_ui_scheduling">اللغة والوضع والجدولة</string>
+    <string name="roots_ui_consent_accessibility">أوافق — افتح إعدادات إمكانية الوصول</string>
+</resources>

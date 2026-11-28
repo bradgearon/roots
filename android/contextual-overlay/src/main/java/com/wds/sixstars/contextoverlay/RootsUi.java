@@ -130,7 +130,7 @@ public final class RootsUi {
         for(int j=0;j<2;j++){
             final boolean isSettings=j==1;
             boolean selected=isSettings==settings;
-            TextView item=text(a,isSettings?"⚙  Settings":"⌂  Stream",15,selected?ACCENT:MUTED,true);
+            TextView item=text(a,isSettings?"⚙  "+a.getString(R.string.roots_ui_settings):"⌂  "+a.getString(R.string.roots_ui_stream),15,selected?ACCENT:MUTED,true);
             item.setGravity(Gravity.CENTER);item.setMinHeight(dp(a,52));
             item.setBackground(rounded(a,selected?0xFF123C40:0xFF0C2025,12,0));
             row.addView(item,new LinearLayout.LayoutParams(0,-2,1));

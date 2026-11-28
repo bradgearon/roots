@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">الإعدادات</string>
+    <string name="roots_ui_stream">التدفق</string>
+    <string name="roots_ui_tree">شجرة الحياة</string>
+    <string name="roots_ui_local_knowledge">المعرفة المحلية</string>
+    <string name="roots_ui_search">البحث في النص المحفوظ</string>
+    <string name="roots_ui_rank">ترتيب / تحديث</string>
+    <string name="roots_ui_inference">الاستدلال</string>
+    <string name="roots_ui_axons">اشتراكات Axon</string>
+    <string name="roots_ui_capture_on">تمكين الالتقاط المحلي</string>
+    <string name="roots_ui_capture_pause">إيقاف الالتقاط المحلي مؤقتًا</string>
+    <string name="roots_ui_more">عرض المزيد من المعرفة</string>
+    <string name="roots_ui_empty">لا توجد ملاحظات بعد.</string>
+    <string name="roots_ui_translation">الترجمة</string>
+    <string name="roots_ui_follow_system">اتباع لغة Android</string>
+    <string name="roots_ui_translate_into">الترجمة إلى (43 لغة)</string>
+    <string name="roots_ui_display_mode">وضع عرض الترجمة</string>
+    <string name="roots_ui_manual">يدوي — زر ⇄ لكل منشور</string>
+    <string name="roots_ui_automatic">تلقائي (تجريبي) — استبدال نص المنشور أثناء التمرير</string>
+    <string name="roots_ui_appearance">المظهر</string>
+    <string name="roots_ui_accessibility">إمكانية الوصول والأذونات</string>
+    <string name="roots_ui_diagnostics">التشخيص</string>
+    <string name="roots_ui_storage">المعرفة والتخزين</string>
+    <string name="roots_ui_models">النماذج والاستدلال</string>
+    <string name="roots_ui_desktop">ربط الحاسوب</string>
+    <string name="roots_ui_intelligence">الذكاء</string>
+    <string name="roots_ui_open_accessibility">فتح إعدادات إمكانية الوصول</string>
+    <string name="roots_ui_stop_processing">إيقاف معالجة نص X</string>
+</resources>

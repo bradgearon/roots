@@ -12,8 +12,8 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <application>
-        <activity android:name="com.wds.sixstars.contextoverlay.NetworkExplorerActivity" android:exported="false" android:label="Network Explorer" android:theme="@style/RootsTheme" />
-        <activity android:name="com.wds.sixstars.contextoverlay.ExternalKnowledgeActivity" android:exported="false" android:label="External knowledge" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.NetworkExplorerActivity" android:exported="false" android:label="@string/roots_ui_network" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.ExternalKnowledgeActivity" android:exported="false" android:label="@string/roots_ui_external" android:theme="@style/RootsTheme" />
         <receiver android:name="com.wds.sixstars.contextoverlay.EncounterBootReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
         </receiver>
@@ -35,10 +35,10 @@
                 <data android:scheme="roots" android:host="mesh" android:path="/v1"/>
             </intent-filter>
         </activity>
-        <activity android:name="com.wds.sixstars.contextoverlay.InferenceHistoryActivity" android:exported="false" android:label="Inference history" android:theme="@style/RootsTheme" />
-        <activity android:name="com.wds.sixstars.contextoverlay.PoeticMovementActivity" android:exported="false" android:label="Poetic Movement" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.InferenceHistoryActivity" android:exported="false" android:label="@string/roots_ui_history" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.PoeticMovementActivity" android:exported="false" android:label="@string/roots_ui_poetic" android:theme="@style/RootsTheme" />
         <activity android:name="com.wds.sixstars.contextoverlay.RootsStreamActivity" android:exported="false" android:label="Roots" android:theme="@style/RootsTheme" />
-        <activity android:name="com.wds.sixstars.contextoverlay.tree.TreeActivity" android:exported="false" android:label="Tree of Life" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.tree.TreeActivity" android:exported="false" android:label="@string/roots_ui_tree" android:theme="@style/RootsTheme" />
         <activity
             android:name="com.wds.sixstars.contextoverlay.OverlayTranslationSettingsActivity"
             android:exported="false"

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">設定</string>
+    <string name="roots_ui_stream">ストリーム</string>
+    <string name="roots_ui_tree">生命の樹</string>
+    <string name="roots_ui_local_knowledge">ローカル知識</string>
+    <string name="roots_ui_search">保存したテキストを検索</string>
+    <string name="roots_ui_rank">順位付け / 更新</string>
+    <string name="roots_ui_inference">推論</string>
+    <string name="roots_ui_axons">Axon 購読</string>
+    <string name="roots_ui_capture_on">ローカル収集を有効にする</string>
+    <string name="roots_ui_capture_pause">ローカル収集を一時停止</string>
+    <string name="roots_ui_more">さらに知識を表示</string>
+    <string name="roots_ui_empty">観測記録はまだありません。</string>
+    <string name="roots_ui_translation">翻訳</string>
+    <string name="roots_ui_follow_system">Android の言語設定に従う</string>
+    <string name="roots_ui_translate_into">翻訳先の言語（43 言語）</string>
+    <string name="roots_ui_display_mode">翻訳の表示モード</string>
+    <string name="roots_ui_manual">手動 — 投稿ごとに ⇄ ボタンを表示</string>
+    <string name="roots_ui_automatic">自動（試験的）— スクロール中に投稿テキストを置き換える</string>
+    <string name="roots_ui_appearance">外観</string>
+    <string name="roots_ui_accessibility">ユーザー補助と権限</string>
+    <string name="roots_ui_diagnostics">診断</string>
+    <string name="roots_ui_storage">知識とストレージ</string>
+    <string name="roots_ui_models">モデルと推論</string>
+    <string name="roots_ui_desktop">デスクトップ接続</string>
+    <string name="roots_ui_intelligence">知能</string>
+    <string name="roots_ui_open_accessibility">ユーザー補助設定を開く</string>
+    <string name="roots_ui_stop_processing">X のテキスト処理を停止</string>
+</resources>

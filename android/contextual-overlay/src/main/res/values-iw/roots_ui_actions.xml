@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">בדיקת תרגום PLaMo</string>
+    <string name="roots_ui_save_connection">שמירת חיבור התרגום</string>
+    <string name="roots_ui_clear_key">מחיקת מפתח התרגום</string>
+    <string name="roots_ui_branches">ענפים</string>
+    <string name="roots_ui_agent">סוכן חדש</string>
+    <string name="roots_ui_back">חזרה</string>
+    <string name="roots_ui_refresh">רענון</string>
+    <string name="roots_ui_cancel">ביטול</string>
+    <string name="roots_ui_close">סגירה</string>
+    <string name="roots_ui_save">שמירה</string>
+    <string name="roots_ui_remove">הסרה</string>
+    <string name="roots_ui_clear">ניקוי</string>
+    <string name="roots_ui_receive">קבלת ידע</string>
+    <string name="roots_ui_nearby">חילופי ידע בקרבת מקום</string>
+    <string name="roots_ui_connection">פרטי חיבור</string>
+    <string name="roots_ui_listen_start">התחלת האזנה לחיבורים</string>
+    <string name="roots_ui_listen_stop">הפסקת האזנה לחיבורים</string>
+    <string name="roots_ui_network">סייר הרשת</string>
+    <string name="roots_ui_external">ידע חיצוני</string>
+    <string name="roots_ui_history">היסטוריית הסקה</string>
+    <string name="roots_ui_poetic">תנועה פואטית</string>
+    <string name="roots_ui_later">לא עכשיו</string>
+    <string name="roots_ui_home">בית</string>
+    <string name="roots_ui_stream_sub">עץ החיים · זרם ידע</string>
+    <string name="roots_ui_settings_sub">Roots · תרגום וידע</string>
+    <string name="roots_ui_scheduling">שפה, מצב ותזמון</string>
+    <string name="roots_ui_consent_accessibility">אני מסכים — פתיחת הגדרות נגישות</string>
+</resources>

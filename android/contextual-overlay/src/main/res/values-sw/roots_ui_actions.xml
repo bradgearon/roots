@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Jaribu tafsiri ya PLaMo</string>
+    <string name="roots_ui_save_connection">Hifadhi muunganisho wa tafsiri</string>
+    <string name="roots_ui_clear_key">Futa ufunguo wa tafsiri</string>
+    <string name="roots_ui_branches">Matawi</string>
+    <string name="roots_ui_agent">Wakala mpya</string>
+    <string name="roots_ui_back">Rudi</string>
+    <string name="roots_ui_refresh">Onyesha upya</string>
+    <string name="roots_ui_cancel">Ghairi</string>
+    <string name="roots_ui_close">Funga</string>
+    <string name="roots_ui_save">Hifadhi</string>
+    <string name="roots_ui_remove">Ondoa</string>
+    <string name="roots_ui_clear">Futa</string>
+    <string name="roots_ui_receive">Pokea maarifa</string>
+    <string name="roots_ui_nearby">Ubadilishanaji wa karibu</string>
+    <string name="roots_ui_connection">Maelezo ya muunganisho</string>
+    <string name="roots_ui_listen_start">Anza kusikiliza miunganisho</string>
+    <string name="roots_ui_listen_stop">Acha kusikiliza miunganisho</string>
+    <string name="roots_ui_network">Kivinjari cha mtandao</string>
+    <string name="roots_ui_external">Maarifa ya nje</string>
+    <string name="roots_ui_history">Historia ya ukokotoaji</string>
+    <string name="roots_ui_poetic">Mwendo wa kishairi</string>
+    <string name="roots_ui_later">Si sasa</string>
+    <string name="roots_ui_home">Mwanzo</string>
+    <string name="roots_ui_stream_sub">Mti wa Uzima · mtiririko wa maarifa</string>
+    <string name="roots_ui_settings_sub">Roots · tafsiri na maarifa</string>
+    <string name="roots_ui_scheduling">Lugha, hali na ratiba</string>
+    <string name="roots_ui_consent_accessibility">Ninakubali — fungua mipangilio ya ufikivu</string>
+</resources>

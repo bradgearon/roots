@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">הגדרות</string>
+    <string name="roots_ui_stream">זרם</string>
+    <string name="roots_ui_tree">עץ החיים</string>
+    <string name="roots_ui_local_knowledge">ידע מקומי</string>
+    <string name="roots_ui_search">חיפוש בטקסט שנשמר</string>
+    <string name="roots_ui_rank">דירוג / רענון</string>
+    <string name="roots_ui_inference">הסקה</string>
+    <string name="roots_ui_axons">מינויי Axon</string>
+    <string name="roots_ui_capture_on">הפעלת איסוף מקומי</string>
+    <string name="roots_ui_capture_pause">השהיית איסוף מקומי</string>
+    <string name="roots_ui_more">הצגת ידע נוסף</string>
+    <string name="roots_ui_empty">אין עדיין תצפיות.</string>
+    <string name="roots_ui_translation">תרגום</string>
+    <string name="roots_ui_follow_system">לפי שפת Android</string>
+    <string name="roots_ui_translate_into">תרגום לשפה (43 שפות)</string>
+    <string name="roots_ui_display_mode">מצב הצגת התרגום</string>
+    <string name="roots_ui_manual">ידני — לחצן ⇄ אחד לכל פוסט</string>
+    <string name="roots_ui_automatic">אוטומטי (ניסיוני) — החלפת טקסט הפוסט בזמן גלילה</string>
+    <string name="roots_ui_appearance">מראה</string>
+    <string name="roots_ui_accessibility">נגישות והרשאות</string>
+    <string name="roots_ui_diagnostics">אבחון</string>
+    <string name="roots_ui_storage">ידע ואחסון</string>
+    <string name="roots_ui_models">מודלים והסקה</string>
+    <string name="roots_ui_desktop">חיבור למחשב</string>
+    <string name="roots_ui_intelligence">בינה</string>
+    <string name="roots_ui_open_accessibility">פתיחת הגדרות נגישות</string>
+    <string name="roots_ui_stop_processing">הפסקת עיבוד טקסט מ-X</string>
+</resources>

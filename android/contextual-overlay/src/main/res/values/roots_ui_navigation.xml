@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Settings</string>
+    <string name="roots_ui_stream">Stream</string>
+    <string name="roots_ui_tree">Tree of Life</string>
+    <string name="roots_ui_local_knowledge">Local knowledge</string>
+    <string name="roots_ui_search">Search retained text</string>
+    <string name="roots_ui_rank">Rank / refresh</string>
+    <string name="roots_ui_inference">Inference</string>
+    <string name="roots_ui_axons">Axon subscriptions</string>
+    <string name="roots_ui_capture_on">Enable local capture</string>
+    <string name="roots_ui_capture_pause">Pause local capture</string>
+    <string name="roots_ui_more">Show more knowledge</string>
+    <string name="roots_ui_empty">No observations yet.</string>
+    <string name="roots_ui_translation">Translation</string>
+    <string name="roots_ui_follow_system">Follow Android language</string>
+    <string name="roots_ui_translate_into">Translate into (43 languages)</string>
+    <string name="roots_ui_display_mode">Translation display mode</string>
+    <string name="roots_ui_manual">Manual — one ⇄ button per post</string>
+    <string name="roots_ui_automatic">Automatic (experimental) — replace post text as I scroll</string>
+    <string name="roots_ui_appearance">Appearance</string>
+    <string name="roots_ui_accessibility">Accessibility &amp; permissions</string>
+    <string name="roots_ui_diagnostics">Diagnostics</string>
+    <string name="roots_ui_storage">Knowledge &amp; storage</string>
+    <string name="roots_ui_models">Models &amp; inference</string>
+    <string name="roots_ui_desktop">Desktop bridge</string>
+    <string name="roots_ui_intelligence">Intelligence</string>
+    <string name="roots_ui_open_accessibility">Open Accessibility settings</string>
+    <string name="roots_ui_stop_processing">Stop X text processing</string>
+</resources>

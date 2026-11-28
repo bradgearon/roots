@@ -22,7 +22,7 @@ public final class PoeticMovementActivity extends Activity {
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
         LinearLayout shell=RootsUi.shell(this);
-        shell.addView(RootsUi.header(this,"Poetic Movement","Forge lab · two local inference requests"));
+        shell.addView(RootsUi.header(this,getString(R.string.roots_ui_poetic),"Forge lab · two local inference requests"));
         ScrollView scroll=new ScrollView(this);
         LinearLayout content=RootsUi.column(this);int pad=RootsUi.dp(this,16);
         content.setPadding(pad,0,pad,pad);scroll.addView(content);
@@ -58,7 +58,7 @@ public final class PoeticMovementActivity extends Activity {
         second.addView(RootsUi.text(this,"Independent request 2 input",13,RootsUi.MUTED,true));
         resolutionInput=RootsUi.text(this,"Not prepared",13,RootsUi.MUTED,false);resolutionInput.setTextIsSelectable(true);second.addView(resolutionInput);
         resolved=RootsUi.text(this,"Not run",15,RootsUi.TEXT,false);resolved.setTextIsSelectable(true);second.addView(resolved);
-        shell.addView(RootsUi.action(this,"‹ Back",this::finish));
+        shell.addView(RootsUi.action(this,getString(R.string.roots_ui_back),this::finish));
         RootsUi.styleInputs(this,shell);setContentView(shell);generateWords();
     }
     private Button button(String title,Runnable action){
@@ -72,7 +72,7 @@ public final class PoeticMovementActivity extends Activity {
         new android.app.AlertDialog.Builder(this).setTitle(chosen.label)
             .setMessage("Download verified model weights over unmetered network. Model terms: "+chosen.terms()+". Inference remains on-device.")
             .setNeutralButton("Review terms",(d,w)->startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(chosen.terms()))))
-            .setNegativeButton("Cancel",null).setPositiveButton("Agree and download",(d,w)->{
+            .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton("Agree and download",(d,w)->{
                 download.setEnabled(false);
                 LocalIntelligenceProvider.download(this,chosen,(message,error)->runOnUiThread(()->{
                     if(closed)return;download.setEnabled(true);status.setText(error==null?message:error);

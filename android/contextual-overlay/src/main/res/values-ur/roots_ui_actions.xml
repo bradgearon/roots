@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo ترجمہ آزمائیں</string>
+    <string name="roots_ui_save_connection">ترجمے کا کنکشن محفوظ کریں</string>
+    <string name="roots_ui_clear_key">ترجمے کی کلید مٹائیں</string>
+    <string name="roots_ui_branches">شاخیں</string>
+    <string name="roots_ui_agent">نیا ایجنٹ</string>
+    <string name="roots_ui_back">واپس</string>
+    <string name="roots_ui_refresh">تازہ کریں</string>
+    <string name="roots_ui_cancel">منسوخ کریں</string>
+    <string name="roots_ui_close">بند کریں</string>
+    <string name="roots_ui_save">محفوظ کریں</string>
+    <string name="roots_ui_remove">ہٹائیں</string>
+    <string name="roots_ui_clear">صاف کریں</string>
+    <string name="roots_ui_receive">علم وصول کریں</string>
+    <string name="roots_ui_nearby">قریبی آلات سے تبادلہ</string>
+    <string name="roots_ui_connection">کنکشن کی تفصیلات</string>
+    <string name="roots_ui_listen_start">کنکشنز سننا شروع کریں</string>
+    <string name="roots_ui_listen_stop">کنکشنز سننا بند کریں</string>
+    <string name="roots_ui_network">نیٹ ورک ایکسپلورر</string>
+    <string name="roots_ui_external">بیرونی علم</string>
+    <string name="roots_ui_history">استنباط کی تاریخ</string>
+    <string name="roots_ui_poetic">شاعرانہ حرکت</string>
+    <string name="roots_ui_later">ابھی نہیں</string>
+    <string name="roots_ui_home">ہوم</string>
+    <string name="roots_ui_stream_sub">زندگی کا درخت · علم کی روانی</string>
+    <string name="roots_ui_settings_sub">Roots · ترجمہ اور علم</string>
+    <string name="roots_ui_scheduling">زبان، طریقہ اور شیڈول</string>
+    <string name="roots_ui_consent_accessibility">میں رضامند ہوں — رسائی پذیری کی ترتیبات کھولیں</string>
+</resources>

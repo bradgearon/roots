@@ -15,11 +15,11 @@ public final class ExternalKnowledgeActivity extends Activity {
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
         LinearLayout shell=RootsUi.shell(this);
-        shell.addView(RootsUi.header(this,"External knowledge","Shared brain · public publications"));
+        shell.addView(RootsUi.header(this,getString(R.string.roots_ui_external),"Shared brain · public publications"));
         ScrollView scroll=new ScrollView(this);items=RootsUi.column(this);
         items.setPadding(RootsUi.dp(this,16),0,RootsUi.dp(this,16),0);scroll.addView(items);
         status=RootsUi.text(this,"Loading public knowledge…",13,RootsUi.MUTED,false);shell.addView(status);
-        shell.addView(RootsUi.action(this,"Refresh",this::load));
+        shell.addView(RootsUi.action(this,getString(R.string.roots_ui_refresh),this::load));
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         shell.addView(RootsUi.action(this,"‹ Encounters",this::finish));setContentView(shell);ExternalTreeImport.schedule(this);load();
     }
@@ -48,7 +48,7 @@ public final class ExternalKnowledgeActivity extends Activity {
     private void confirm(MeshItem item){
         new AlertDialog.Builder(this).setTitle("Bring public knowledge into your Tree?")
             .setMessage("Copies the selected publication with its original content hash and source link. It does not grant the publisher private access or authorize computation. Treat it as untrusted reference material.")
-            .setNegativeButton("Cancel",null).setPositiveButton("Bring inside",(d,w)->{
+            .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton("Bring inside",(d,w)->{
                 TreeRuntime tree=TreeRuntime.get(this);long epoch=tree.captureEpoch();
                 if(work.isShutdown())return;
                 work.execute(()->{try{

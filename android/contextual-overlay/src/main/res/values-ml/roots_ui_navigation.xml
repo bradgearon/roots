@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">ക്രമീകരണങ്ങൾ</string>
+    <string name="roots_ui_stream">സ്ട്രീം</string>
+    <string name="roots_ui_tree">ജീവവൃക്ഷം</string>
+    <string name="roots_ui_local_knowledge">പ്രാദേശിക അറിവ്</string>
+    <string name="roots_ui_search">സൂക്ഷിച്ച വാചകം തിരയുക</string>
+    <string name="roots_ui_rank">ക്രമപ്പെടുത്തുക / പുതുക്കുക</string>
+    <string name="roots_ui_inference">ഇൻഫറൻസ്</string>
+    <string name="roots_ui_axons">Axon സബ്‌സ്‌ക്രിപ്‌ഷനുകൾ</string>
+    <string name="roots_ui_capture_on">പ്രാദേശിക ശേഖരണം പ്രവർത്തനക്ഷമമാക്കുക</string>
+    <string name="roots_ui_capture_pause">പ്രാദേശിക ശേഖരണം താൽക്കാലികമായി നിർത്തുക</string>
+    <string name="roots_ui_more">കൂടുതൽ അറിവ് കാണിക്കുക</string>
+    <string name="roots_ui_empty">ഇതുവരെ നിരീക്ഷണങ്ങളില്ല.</string>
+    <string name="roots_ui_translation">വിവർത്തനം</string>
+    <string name="roots_ui_follow_system">Android ഭാഷ പിന്തുടരുക</string>
+    <string name="roots_ui_translate_into">വിവർത്തന ഭാഷ (43 ഭാഷകൾ)</string>
+    <string name="roots_ui_display_mode">വിവർത്തനം പ്രദർശിപ്പിക്കുന്ന രീതി</string>
+    <string name="roots_ui_manual">മാനുവൽ — ഓരോ പോസ്റ്റിനും ഒരു ⇄ ബട്ടൺ</string>
+    <string name="roots_ui_automatic">സ്വയമേവ (പരീക്ഷണാത്മകം) — സ്ക്രോൾ ചെയ്യുമ്പോൾ പോസ്റ്റിലെ വാചകം മാറ്റുക</string>
+    <string name="roots_ui_appearance">രൂപഭാവം</string>
+    <string name="roots_ui_accessibility">പ്രവേശനക്ഷമതയും അനുമതികളും</string>
+    <string name="roots_ui_diagnostics">രോഗനിർണയം</string>
+    <string name="roots_ui_storage">അറിവും സംഭരണവും</string>
+    <string name="roots_ui_models">മോഡലുകളും ഇൻഫറൻസും</string>
+    <string name="roots_ui_desktop">ഡെസ്‌ക്‌ടോപ്പ് കണക്ഷൻ</string>
+    <string name="roots_ui_intelligence">ബുദ്ധിശക്തി</string>
+    <string name="roots_ui_open_accessibility">പ്രവേശനക്ഷമതാ ക്രമീകരണങ്ങൾ തുറക്കുക</string>
+    <string name="roots_ui_stop_processing">X വാചക പ്രോസസ്സിംഗ് നിർത്തുക</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">设置</string>
+    <string name="roots_ui_stream">信息流</string>
+    <string name="roots_ui_tree">生命之树</string>
+    <string name="roots_ui_local_knowledge">本地知识</string>
+    <string name="roots_ui_search">搜索已保存文本</string>
+    <string name="roots_ui_rank">排序 / 刷新</string>
+    <string name="roots_ui_inference">推理</string>
+    <string name="roots_ui_axons">Axon 订阅</string>
+    <string name="roots_ui_capture_on">启用本地采集</string>
+    <string name="roots_ui_capture_pause">暂停本地采集</string>
+    <string name="roots_ui_more">显示更多知识</string>
+    <string name="roots_ui_empty">暂无观察记录。</string>
+    <string name="roots_ui_translation">翻译</string>
+    <string name="roots_ui_follow_system">跟随 Android 系统语言</string>
+    <string name="roots_ui_translate_into">翻译为（43 种语言）</string>
+    <string name="roots_ui_display_mode">翻译显示模式</string>
+    <string name="roots_ui_manual">手动 — 每篇帖子一个 ⇄ 按钮</string>
+    <string name="roots_ui_automatic">自动（实验性）— 滚动时替换帖子文本</string>
+    <string name="roots_ui_appearance">外观</string>
+    <string name="roots_ui_accessibility">无障碍功能与权限</string>
+    <string name="roots_ui_diagnostics">诊断</string>
+    <string name="roots_ui_storage">知识与存储</string>
+    <string name="roots_ui_models">模型与推理</string>
+    <string name="roots_ui_desktop">桌面连接</string>
+    <string name="roots_ui_intelligence">智能</string>
+    <string name="roots_ui_open_accessibility">打开无障碍设置</string>
+    <string name="roots_ui_stop_processing">停止处理 X 文本</string>
+</resources>

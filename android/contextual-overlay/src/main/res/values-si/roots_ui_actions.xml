@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo පරිවර්තනය පරීක්ෂා කරන්න</string>
+    <string name="roots_ui_save_connection">පරිවර්තන සම්බන්ධතාව සුරකින්න</string>
+    <string name="roots_ui_clear_key">පරිවර්තන යතුර මකන්න</string>
+    <string name="roots_ui_branches">ශාඛා</string>
+    <string name="roots_ui_agent">නව නියෝජිතයා</string>
+    <string name="roots_ui_back">ආපසු</string>
+    <string name="roots_ui_refresh">නැවුම් කරන්න</string>
+    <string name="roots_ui_cancel">අවලංගු කරන්න</string>
+    <string name="roots_ui_close">වසන්න</string>
+    <string name="roots_ui_save">සුරකින්න</string>
+    <string name="roots_ui_remove">ඉවත් කරන්න</string>
+    <string name="roots_ui_clear">මකන්න</string>
+    <string name="roots_ui_receive">දැනුම ලබාගන්න</string>
+    <string name="roots_ui_nearby">ආසන්න හුවමාරුව</string>
+    <string name="roots_ui_connection">සම්බන්ධතා විස්තර</string>
+    <string name="roots_ui_listen_start">සම්බන්ධතා සඳහා සවන්දීම අරඹන්න</string>
+    <string name="roots_ui_listen_stop">සම්බන්ධතා සඳහා සවන්දීම නවත්වන්න</string>
+    <string name="roots_ui_network">ජාල ගවේෂකය</string>
+    <string name="roots_ui_external">බාහිර දැනුම</string>
+    <string name="roots_ui_history">අනුමාන ඉතිහාසය</string>
+    <string name="roots_ui_poetic">කාව්‍යමය චලනය</string>
+    <string name="roots_ui_later">දැන් නොවේ</string>
+    <string name="roots_ui_home">මුල් පිටුව</string>
+    <string name="roots_ui_stream_sub">ජීවන වෘක්ෂය · දැනුම් ප්‍රවාහය</string>
+    <string name="roots_ui_settings_sub">Roots · පරිවර්තනය සහ දැනුම</string>
+    <string name="roots_ui_scheduling">භාෂාව, මාදිලිය සහ උපලේඛනය</string>
+    <string name="roots_ui_consent_accessibility">මම එකඟ වෙමි — ප්‍රවේශ්‍යතා සැකසුම් විවෘත කරන්න</string>
+</resources>

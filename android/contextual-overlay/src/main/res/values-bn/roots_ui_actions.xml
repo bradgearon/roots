@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo অনুবাদ পরীক্ষা করুন</string>
+    <string name="roots_ui_save_connection">অনুবাদ সংযোগ সংরক্ষণ করুন</string>
+    <string name="roots_ui_clear_key">অনুবাদ কী মুছুন</string>
+    <string name="roots_ui_branches">শাখা</string>
+    <string name="roots_ui_agent">নতুন এজেন্ট</string>
+    <string name="roots_ui_back">ফিরুন</string>
+    <string name="roots_ui_refresh">রিফ্রেশ</string>
+    <string name="roots_ui_cancel">বাতিল</string>
+    <string name="roots_ui_close">বন্ধ করুন</string>
+    <string name="roots_ui_save">সংরক্ষণ</string>
+    <string name="roots_ui_remove">সরান</string>
+    <string name="roots_ui_clear">মুছুন</string>
+    <string name="roots_ui_receive">জ্ঞান গ্রহণ করুন</string>
+    <string name="roots_ui_nearby">কাছাকাছি বিনিময়</string>
+    <string name="roots_ui_connection">সংযোগের বিবরণ</string>
+    <string name="roots_ui_listen_start">শোনা শুরু করুন</string>
+    <string name="roots_ui_listen_stop">শোনা বন্ধ করুন</string>
+    <string name="roots_ui_network">নেটওয়ার্ক এক্সপ্লোরার</string>
+    <string name="roots_ui_external">বাহ্যিক জ্ঞান</string>
+    <string name="roots_ui_history">ইনফারেন্সের ইতিহাস</string>
+    <string name="roots_ui_poetic">কাব্যিক গতি</string>
+    <string name="roots_ui_later">এখন নয়</string>
+    <string name="roots_ui_home">হোম</string>
+    <string name="roots_ui_stream_sub">জীবনের বৃক্ষ · জ্ঞানের প্রবাহ</string>
+    <string name="roots_ui_settings_sub">Roots · অনুবাদ ও জ্ঞান</string>
+    <string name="roots_ui_scheduling">ভাষা, মোড ও সময়সূচি</string>
+    <string name="roots_ui_consent_accessibility">আমি সম্মত — অ্যাক্সেসিবিলিটি সেটিংস খুলুন</string>
+</resources>

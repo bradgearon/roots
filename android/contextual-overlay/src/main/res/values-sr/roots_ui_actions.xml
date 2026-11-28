@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Тестирај PLaMo превод</string>
+    <string name="roots_ui_save_connection">Сачувај везу за превођење</string>
+    <string name="roots_ui_clear_key">Обриши кључ за превођење</string>
+    <string name="roots_ui_branches">Гране</string>
+    <string name="roots_ui_agent">Нови агент</string>
+    <string name="roots_ui_back">Назад</string>
+    <string name="roots_ui_refresh">Освежи</string>
+    <string name="roots_ui_cancel">Откажи</string>
+    <string name="roots_ui_close">Затвори</string>
+    <string name="roots_ui_save">Сачувај</string>
+    <string name="roots_ui_remove">Уклони</string>
+    <string name="roots_ui_clear">Очисти</string>
+    <string name="roots_ui_receive">Прими знање</string>
+    <string name="roots_ui_nearby">Размена са уређајима у близини</string>
+    <string name="roots_ui_connection">Детаљи везе</string>
+    <string name="roots_ui_listen_start">Покрени ослушкивање веза</string>
+    <string name="roots_ui_listen_stop">Заустави ослушкивање</string>
+    <string name="roots_ui_network">Истраживач мреже</string>
+    <string name="roots_ui_external">Спољно знање</string>
+    <string name="roots_ui_history">Историја инференције</string>
+    <string name="roots_ui_poetic">Поетски покрет</string>
+    <string name="roots_ui_later">Не сада</string>
+    <string name="roots_ui_home">Почетна</string>
+    <string name="roots_ui_stream_sub">Дрво живота · ток знања</string>
+    <string name="roots_ui_settings_sub">Roots · превод и знање</string>
+    <string name="roots_ui_scheduling">Језик, режим и распоред</string>
+    <string name="roots_ui_consent_accessibility">Пристајем — отвори подешавања приступачности</string>
+</resources>

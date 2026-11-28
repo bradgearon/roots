@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">ਸੈਟਿੰਗਾਂ</string>
+    <string name="roots_ui_stream">ਸਟ੍ਰੀਮ</string>
+    <string name="roots_ui_tree">ਜੀਵਨ ਦਾ ਰੁੱਖ</string>
+    <string name="roots_ui_local_knowledge">ਸਥਾਨਕ ਗਿਆਨ</string>
+    <string name="roots_ui_search">ਸੰਭਾਲਿਆ ਟੈਕਸਟ ਖੋਜੋ</string>
+    <string name="roots_ui_rank">ਤਰਤੀਬ / ਰਿਫ੍ਰੈਸ਼</string>
+    <string name="roots_ui_inference">ਇਨਫਰੈਂਸ</string>
+    <string name="roots_ui_axons">Axon ਗਾਹਕੀਆਂ</string>
+    <string name="roots_ui_capture_on">ਸਥਾਨਕ ਸੰਗ੍ਰਹਿ ਚਾਲੂ ਕਰੋ</string>
+    <string name="roots_ui_capture_pause">ਸਥਾਨਕ ਸੰਗ੍ਰਹਿ ਰੋਕੋ</string>
+    <string name="roots_ui_more">ਹੋਰ ਗਿਆਨ ਦਿਖਾਓ</string>
+    <string name="roots_ui_empty">ਹਾਲੇ ਕੋਈ ਨਿਰੀਖਣ ਨਹੀਂ।</string>
+    <string name="roots_ui_translation">ਅਨੁਵਾਦ</string>
+    <string name="roots_ui_follow_system">Android ਦੀ ਭਾਸ਼ਾ ਵਰਤੋ</string>
+    <string name="roots_ui_translate_into">ਅਨੁਵਾਦ ਦੀ ਭਾਸ਼ਾ (43 ਭਾਸ਼ਾਵਾਂ)</string>
+    <string name="roots_ui_display_mode">ਅਨੁਵਾਦ ਦਿਖਾਉਣ ਦਾ ਢੰਗ</string>
+    <string name="roots_ui_manual">ਮੈਨੂਅਲ — ਹਰ ਪੋਸਟ ਲਈ ਇੱਕ ⇄ ਬਟਨ</string>
+    <string name="roots_ui_automatic">ਆਟੋਮੈਟਿਕ (ਪ੍ਰਯੋਗਾਤਮਕ) — ਸਕ੍ਰੋਲ ਕਰਨ ਵੇਲੇ ਪੋਸਟ ਦਾ ਟੈਕਸਟ ਬਦਲੋ</string>
+    <string name="roots_ui_appearance">ਦਿੱਖ</string>
+    <string name="roots_ui_accessibility">ਪਹੁੰਚਯੋਗਤਾ ਅਤੇ ਇਜਾਜ਼ਤਾਂ</string>
+    <string name="roots_ui_diagnostics">ਨਿਦਾਨ</string>
+    <string name="roots_ui_storage">ਗਿਆਨ ਅਤੇ ਸਟੋਰੇਜ</string>
+    <string name="roots_ui_models">ਮਾਡਲ ਅਤੇ ਇਨਫਰੈਂਸ</string>
+    <string name="roots_ui_desktop">ਡੈਸਕਟਾਪ ਕਨੈਕਸ਼ਨ</string>
+    <string name="roots_ui_intelligence">ਬੁੱਧੀ</string>
+    <string name="roots_ui_open_accessibility">ਪਹੁੰਚਯੋਗਤਾ ਸੈਟਿੰਗਾਂ ਖੋਲ੍ਹੋ</string>
+    <string name="roots_ui_stop_processing">X ਟੈਕਸਟ ਦੀ ਪ੍ਰਕਿਰਿਆ ਬੰਦ ਕਰੋ</string>
+</resources>

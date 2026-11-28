@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo tarjimasini sinash</string>
+    <string name="roots_ui_save_connection">Tarjima ulanishini saqlash</string>
+    <string name="roots_ui_clear_key">Tarjima kalitini o‘chirish</string>
+    <string name="roots_ui_branches">Shoxlar</string>
+    <string name="roots_ui_agent">Yangi agent</string>
+    <string name="roots_ui_back">Orqaga</string>
+    <string name="roots_ui_refresh">Yangilash</string>
+    <string name="roots_ui_cancel">Bekor qilish</string>
+    <string name="roots_ui_close">Yopish</string>
+    <string name="roots_ui_save">Saqlash</string>
+    <string name="roots_ui_remove">Olib tashlash</string>
+    <string name="roots_ui_clear">Tozalash</string>
+    <string name="roots_ui_receive">Bilim olish</string>
+    <string name="roots_ui_nearby">Yaqin qurilmalar bilan almashish</string>
+    <string name="roots_ui_connection">Ulanish tafsilotlari</string>
+    <string name="roots_ui_listen_start">Ulanishlarni tinglashni boshlash</string>
+    <string name="roots_ui_listen_stop">Ulanishlarni tinglashni to‘xtatish</string>
+    <string name="roots_ui_network">Tarmoq ko‘ruvchisi</string>
+    <string name="roots_ui_external">Tashqi bilim</string>
+    <string name="roots_ui_history">Inferensiya tarixi</string>
+    <string name="roots_ui_poetic">She’riy harakat</string>
+    <string name="roots_ui_later">Hozir emas</string>
+    <string name="roots_ui_home">Bosh sahifa</string>
+    <string name="roots_ui_stream_sub">Hayot daraxti · bilim oqimi</string>
+    <string name="roots_ui_settings_sub">Roots · tarjima va bilim</string>
+    <string name="roots_ui_scheduling">Til, rejim va jadval</string>
+    <string name="roots_ui_consent_accessibility">Roziman — maxsus imkoniyatlar sozlamalarini ochish</string>
+</resources>

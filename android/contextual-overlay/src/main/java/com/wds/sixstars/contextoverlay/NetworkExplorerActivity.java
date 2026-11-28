@@ -19,7 +19,7 @@ public final class NetworkExplorerActivity extends Activity {
     private boolean busy,closed,initialBrowse;
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
-        LinearLayout shell=RootsUi.shell(this);shell.addView(RootsUi.header(this,"Network Explorer","External Mesh · shared brain"));
+        LinearLayout shell=RootsUi.shell(this);shell.addView(RootsUi.header(this,getString(R.string.roots_ui_network),"External Mesh · shared brain"));
         ScrollView scroll=new ScrollView(this);LinearLayout content=RootsUi.column(this);
         content.setPadding(RootsUi.dp(this,16),0,RootsUi.dp(this,16),0);scroll.addView(content);shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout controls=RootsUi.card(this,content);
@@ -53,7 +53,7 @@ public final class NetworkExplorerActivity extends Activity {
         EditText field=new EditText(this);field.setText(ExternalDirectory.seeds(this));field.setHint("/ip4/…/tcp/8240/p2p/…");field.setMinLines(3);
         field.setFilters(new InputFilter[]{new InputFilter.LengthFilter(4096)});
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("External bootstrap nodes").setMessage("Enter one public External Mesh multiaddress per line (up to eight). Never paste an Internal Mesh address or key.").setView(field)
-            .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
+            .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton(R.string.roots_ui_save,null).create();
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
             try{ExternalDirectory.saveSeeds(this,field.getText().toString());dialog.dismiss();status.setText("External bootstrap settings saved.");}
             catch(IllegalArgumentException failure){field.setError(failure.getMessage());}

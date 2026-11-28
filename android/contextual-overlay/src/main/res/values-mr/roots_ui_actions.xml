@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo भाषांतर तपासा</string>
+    <string name="roots_ui_save_connection">भाषांतर जोडणी जतन करा</string>
+    <string name="roots_ui_clear_key">भाषांतर की पुसा</string>
+    <string name="roots_ui_branches">शाखा</string>
+    <string name="roots_ui_agent">नवीन एजंट</string>
+    <string name="roots_ui_back">मागे</string>
+    <string name="roots_ui_refresh">रिफ्रेश करा</string>
+    <string name="roots_ui_cancel">रद्द करा</string>
+    <string name="roots_ui_close">बंद करा</string>
+    <string name="roots_ui_save">जतन करा</string>
+    <string name="roots_ui_remove">काढा</string>
+    <string name="roots_ui_clear">पुसा</string>
+    <string name="roots_ui_receive">ज्ञान प्राप्त करा</string>
+    <string name="roots_ui_nearby">जवळपासची देवाणघेवाण</string>
+    <string name="roots_ui_connection">जोडणी तपशील</string>
+    <string name="roots_ui_listen_start">जोडण्यांसाठी ऐकणे सुरू करा</string>
+    <string name="roots_ui_listen_stop">ऐकणे थांबवा</string>
+    <string name="roots_ui_network">नेटवर्क एक्सप्लोरर</string>
+    <string name="roots_ui_external">बाह्य ज्ञान</string>
+    <string name="roots_ui_history">इन्फरन्स इतिहास</string>
+    <string name="roots_ui_poetic">काव्यात्मक हालचाल</string>
+    <string name="roots_ui_later">आत्ता नको</string>
+    <string name="roots_ui_home">मुख्यपृष्ठ</string>
+    <string name="roots_ui_stream_sub">जीवनवृक्ष · ज्ञानाचा प्रवाह</string>
+    <string name="roots_ui_settings_sub">Roots · भाषांतर आणि ज्ञान</string>
+    <string name="roots_ui_scheduling">भाषा, मोड आणि वेळापत्रक</string>
+    <string name="roots_ui_consent_accessibility">मी सहमत आहे — सुलभता सेटिंग्ज उघडा</string>
+</resources>

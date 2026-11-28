@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Sozlamalar</string>
+    <string name="roots_ui_stream">Oqim</string>
+    <string name="roots_ui_tree">Hayot daraxti</string>
+    <string name="roots_ui_local_knowledge">Mahalliy bilim</string>
+    <string name="roots_ui_search">Saqlangan matnni qidirish</string>
+    <string name="roots_ui_rank">Tartiblash / yangilash</string>
+    <string name="roots_ui_inference">Inferensiya</string>
+    <string name="roots_ui_axons">Axon obunalari</string>
+    <string name="roots_ui_capture_on">Mahalliy yig‘ishni yoqish</string>
+    <string name="roots_ui_capture_pause">Mahalliy yig‘ishni vaqtincha to‘xtatish</string>
+    <string name="roots_ui_more">Ko‘proq bilim ko‘rsatish</string>
+    <string name="roots_ui_empty">Hali kuzatuvlar yo‘q.</string>
+    <string name="roots_ui_translation">Tarjima</string>
+    <string name="roots_ui_follow_system">Android tiliga moslash</string>
+    <string name="roots_ui_translate_into">Tarjima tili (43 til)</string>
+    <string name="roots_ui_display_mode">Tarjimani ko‘rsatish rejimi</string>
+    <string name="roots_ui_manual">Qo‘lda — har bir postga bitta ⇄ tugmasi</string>
+    <string name="roots_ui_automatic">Avtomatik (tajriba) — aylantirganda post matnini almashtirish</string>
+    <string name="roots_ui_appearance">Ko‘rinish</string>
+    <string name="roots_ui_accessibility">Maxsus imkoniyatlar va ruxsatlar</string>
+    <string name="roots_ui_diagnostics">Diagnostika</string>
+    <string name="roots_ui_storage">Bilim va xotira</string>
+    <string name="roots_ui_models">Modellar va inferensiya</string>
+    <string name="roots_ui_desktop">Kompyuterga ulanish</string>
+    <string name="roots_ui_intelligence">Intellekt</string>
+    <string name="roots_ui_open_accessibility">Maxsus imkoniyatlar sozlamalarini ochish</string>
+    <string name="roots_ui_stop_processing">X matnini qayta ishlashni to‘xtatish</string>
+</resources>

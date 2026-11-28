@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Test PLaMo translation</string>
+    <string name="roots_ui_save_connection">Save translation connection</string>
+    <string name="roots_ui_clear_key">Clear translation key</string>
+    <string name="roots_ui_branches">Branches</string>
+    <string name="roots_ui_agent">New agent</string>
+    <string name="roots_ui_back">Back</string>
+    <string name="roots_ui_refresh">Refresh</string>
+    <string name="roots_ui_cancel">Cancel</string>
+    <string name="roots_ui_close">Close</string>
+    <string name="roots_ui_save">Save</string>
+    <string name="roots_ui_remove">Remove</string>
+    <string name="roots_ui_clear">Clear</string>
+    <string name="roots_ui_receive">Receive knowledge</string>
+    <string name="roots_ui_nearby">Nearby exchange</string>
+    <string name="roots_ui_connection">Connection details</string>
+    <string name="roots_ui_listen_start">Start listening</string>
+    <string name="roots_ui_listen_stop">Stop listening</string>
+    <string name="roots_ui_network">Network Explorer</string>
+    <string name="roots_ui_external">External knowledge</string>
+    <string name="roots_ui_history">Inference history</string>
+    <string name="roots_ui_poetic">Poetic Movement</string>
+    <string name="roots_ui_later">Not now</string>
+    <string name="roots_ui_home">Home</string>
+    <string name="roots_ui_stream_sub">Tree of Life · knowledge stream</string>
+    <string name="roots_ui_settings_sub">Roots · translation and knowledge</string>
+    <string name="roots_ui_scheduling">Language, mode and scheduling</string>
+    <string name="roots_ui_consent_accessibility">I consent — open Accessibility settings</string>
+</resources>

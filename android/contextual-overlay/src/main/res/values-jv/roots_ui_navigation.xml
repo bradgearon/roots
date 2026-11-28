@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Setelan</string>
+    <string name="roots_ui_stream">Aliran</string>
+    <string name="roots_ui_tree">Wit Panguripan</string>
+    <string name="roots_ui_local_knowledge">Kawruh lokal</string>
+    <string name="roots_ui_search">Goleki teks sing disimpen</string>
+    <string name="roots_ui_rank">Urutake / segerake</string>
+    <string name="roots_ui_inference">Inferensi</string>
+    <string name="roots_ui_axons">Langganan Axon</string>
+    <string name="roots_ui_capture_on">Aktifake pangumpulan lokal</string>
+    <string name="roots_ui_capture_pause">Ngaso pangumpulan lokal</string>
+    <string name="roots_ui_more">Tampilake kawruh liyane</string>
+    <string name="roots_ui_empty">Durung ana pengamatan.</string>
+    <string name="roots_ui_translation">Terjemahan</string>
+    <string name="roots_ui_follow_system">Tindakake basa Android</string>
+    <string name="roots_ui_translate_into">Terjemahake menyang (43 basa)</string>
+    <string name="roots_ui_display_mode">Mode tampilan terjemahan</string>
+    <string name="roots_ui_manual">Manual — siji tombol ⇄ saben kiriman</string>
+    <string name="roots_ui_automatic">Otomatis (eksperimental) — ganti teks kiriman nalika nggulung</string>
+    <string name="roots_ui_appearance">Tampilan</string>
+    <string name="roots_ui_accessibility">Aksesibilitas lan idin</string>
+    <string name="roots_ui_diagnostics">Diagnostik</string>
+    <string name="roots_ui_storage">Kawruh lan panyimpenan</string>
+    <string name="roots_ui_models">Model lan inferensi</string>
+    <string name="roots_ui_desktop">Sambungan desktop</string>
+    <string name="roots_ui_intelligence">Kacerdhasan</string>
+    <string name="roots_ui_open_accessibility">Bukak setelan aksesibilitas</string>
+    <string name="roots_ui_stop_processing">Mandhegake pangolahan teks X</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo ਅਨੁਵਾਦ ਦੀ ਜਾਂਚ ਕਰੋ</string>
+    <string name="roots_ui_save_connection">ਅਨੁਵਾਦ ਕਨੈਕਸ਼ਨ ਸੰਭਾਲੋ</string>
+    <string name="roots_ui_clear_key">ਅਨੁਵਾਦ ਕੁੰਜੀ ਮਿਟਾਓ</string>
+    <string name="roots_ui_branches">ਸ਼ਾਖਾਵਾਂ</string>
+    <string name="roots_ui_agent">ਨਵਾਂ ਏਜੰਟ</string>
+    <string name="roots_ui_back">ਪਿੱਛੇ</string>
+    <string name="roots_ui_refresh">ਰਿਫ੍ਰੈਸ਼</string>
+    <string name="roots_ui_cancel">ਰੱਦ ਕਰੋ</string>
+    <string name="roots_ui_close">ਬੰਦ ਕਰੋ</string>
+    <string name="roots_ui_save">ਸੰਭਾਲੋ</string>
+    <string name="roots_ui_remove">ਹਟਾਓ</string>
+    <string name="roots_ui_clear">ਸਾਫ਼ ਕਰੋ</string>
+    <string name="roots_ui_receive">ਗਿਆਨ ਪ੍ਰਾਪਤ ਕਰੋ</string>
+    <string name="roots_ui_nearby">ਨੇੜਲੇ ਜੰਤਰਾਂ ਨਾਲ ਅਦਲਾ-ਬਦਲੀ</string>
+    <string name="roots_ui_connection">ਕਨੈਕਸ਼ਨ ਵੇਰਵੇ</string>
+    <string name="roots_ui_listen_start">ਕਨੈਕਸ਼ਨਾਂ ਦੀ ਉਡੀਕ ਸ਼ੁਰੂ ਕਰੋ</string>
+    <string name="roots_ui_listen_stop">ਕਨੈਕਸ਼ਨਾਂ ਦੀ ਉਡੀਕ ਬੰਦ ਕਰੋ</string>
+    <string name="roots_ui_network">ਨੈੱਟਵਰਕ ਐਕਸਪਲੋਰਰ</string>
+    <string name="roots_ui_external">ਬਾਹਰੀ ਗਿਆਨ</string>
+    <string name="roots_ui_history">ਇਨਫਰੈਂਸ ਇਤਿਹਾਸ</string>
+    <string name="roots_ui_poetic">ਕਾਵਿਕ ਗਤੀ</string>
+    <string name="roots_ui_later">ਹੁਣ ਨਹੀਂ</string>
+    <string name="roots_ui_home">ਹੋਮ</string>
+    <string name="roots_ui_stream_sub">ਜੀਵਨ ਦਾ ਰੁੱਖ · ਗਿਆਨ ਦਾ ਪ੍ਰਵਾਹ</string>
+    <string name="roots_ui_settings_sub">Roots · ਅਨੁਵਾਦ ਅਤੇ ਗਿਆਨ</string>
+    <string name="roots_ui_scheduling">ਭਾਸ਼ਾ, ਢੰਗ ਅਤੇ ਸਮਾਂ-ਸਾਰਣੀ</string>
+    <string name="roots_ui_consent_accessibility">ਮੈਂ ਸਹਿਮਤ ਹਾਂ — ਪਹੁੰਚਯੋਗਤਾ ਸੈਟਿੰਗਾਂ ਖੋਲ੍ਹੋ</string>
+</resources>

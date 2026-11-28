@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Mga setting</string>
+    <string name="roots_ui_stream">Daloy</string>
+    <string name="roots_ui_tree">Puno ng Buhay</string>
+    <string name="roots_ui_local_knowledge">Lokal na kaalaman</string>
+    <string name="roots_ui_search">Hanapin ang naka-save na teksto</string>
+    <string name="roots_ui_rank">Ayusin / i-refresh</string>
+    <string name="roots_ui_inference">Inference</string>
+    <string name="roots_ui_axons">Mga subscription sa Axon</string>
+    <string name="roots_ui_capture_on">Paganahin ang lokal na pagkuha</string>
+    <string name="roots_ui_capture_pause">I-pause ang lokal na pagkuha</string>
+    <string name="roots_ui_more">Magpakita ng higit pang kaalaman</string>
+    <string name="roots_ui_empty">Wala pang obserbasyon.</string>
+    <string name="roots_ui_translation">Pagsasalin</string>
+    <string name="roots_ui_follow_system">Sundin ang wika ng Android</string>
+    <string name="roots_ui_translate_into">Isalin sa (43 wika)</string>
+    <string name="roots_ui_display_mode">Paraan ng pagpapakita ng salin</string>
+    <string name="roots_ui_manual">Manwal — isang ⇄ button bawat post</string>
+    <string name="roots_ui_automatic">Awtomatiko (eksperimental) — palitan ang teksto ng post habang nag-scroll</string>
+    <string name="roots_ui_appearance">Hitsura</string>
+    <string name="roots_ui_accessibility">Accessibility at mga pahintulot</string>
+    <string name="roots_ui_diagnostics">Diagnostics</string>
+    <string name="roots_ui_storage">Kaalaman at imbakan</string>
+    <string name="roots_ui_models">Mga modelo at inference</string>
+    <string name="roots_ui_desktop">Koneksiyon sa desktop</string>
+    <string name="roots_ui_intelligence">Intelihensiya</string>
+    <string name="roots_ui_open_accessibility">Buksan ang mga setting ng accessibility</string>
+    <string name="roots_ui_stop_processing">Ihinto ang pagproseso ng teksto ng X</string>
+</resources>

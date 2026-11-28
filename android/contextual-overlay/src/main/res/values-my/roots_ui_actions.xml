@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo ဘာသာပြန် စမ်းသပ်ရန်</string>
+    <string name="roots_ui_save_connection">ဘာသာပြန် ချိတ်ဆက်မှု သိမ်းရန်</string>
+    <string name="roots_ui_clear_key">ဘာသာပြန် ကီး ဖျက်ရန်</string>
+    <string name="roots_ui_branches">အကိုင်းအခက်များ</string>
+    <string name="roots_ui_agent">အေးဂျင့်အသစ်</string>
+    <string name="roots_ui_back">နောက်သို့</string>
+    <string name="roots_ui_refresh">ပြန်လည်ဖွင့်ရန်</string>
+    <string name="roots_ui_cancel">ပယ်ဖျက်ရန်</string>
+    <string name="roots_ui_close">ပိတ်ရန်</string>
+    <string name="roots_ui_save">သိမ်းရန်</string>
+    <string name="roots_ui_remove">ဖယ်ရှားရန်</string>
+    <string name="roots_ui_clear">ရှင်းရန်</string>
+    <string name="roots_ui_receive">အသိပညာ လက်ခံရန်</string>
+    <string name="roots_ui_nearby">အနီးအနား ဖလှယ်မှု</string>
+    <string name="roots_ui_connection">ချိတ်ဆက်မှု အသေးစိတ်</string>
+    <string name="roots_ui_listen_start">ချိတ်ဆက်မှုများ စောင့်ဆိုင်းရန်</string>
+    <string name="roots_ui_listen_stop">စောင့်ဆိုင်းမှု ရပ်ရန်</string>
+    <string name="roots_ui_network">ကွန်ရက် ရှာဖွေမှု</string>
+    <string name="roots_ui_external">ပြင်ပ အသိပညာ</string>
+    <string name="roots_ui_history">မော်ဒယ်တွက်ချက်မှု မှတ်တမ်း</string>
+    <string name="roots_ui_poetic">ကဗျာဆန်သော လှုပ်ရှားမှု</string>
+    <string name="roots_ui_later">ယခု မဟုတ်သေးပါ</string>
+    <string name="roots_ui_home">ပင်မ</string>
+    <string name="roots_ui_stream_sub">ဘဝသစ်ပင် · အသိပညာစီးကြောင်း</string>
+    <string name="roots_ui_settings_sub">Roots · ဘာသာပြန်နှင့် အသိပညာ</string>
+    <string name="roots_ui_scheduling">ဘာသာစကား၊ ပုံစံနှင့် အစီအစဉ်</string>
+    <string name="roots_ui_consent_accessibility">သဘောတူသည် — အသုံးပြုနိုင်မှု ဆက်တင်များ ဖွင့်ရန်</string>
+</resources>

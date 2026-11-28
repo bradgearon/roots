@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo అనువాదాన్ని పరీక్షించండి</string>
+    <string name="roots_ui_save_connection">అనువాద కనెక్షన్‌ను సేవ్ చేయండి</string>
+    <string name="roots_ui_clear_key">అనువాద కీని తొలగించండి</string>
+    <string name="roots_ui_branches">శాఖలు</string>
+    <string name="roots_ui_agent">కొత్త ఏజెంట్</string>
+    <string name="roots_ui_back">వెనుకకు</string>
+    <string name="roots_ui_refresh">రిఫ్రెష్</string>
+    <string name="roots_ui_cancel">రద్దు చేయండి</string>
+    <string name="roots_ui_close">మూసివేయండి</string>
+    <string name="roots_ui_save">సేవ్ చేయండి</string>
+    <string name="roots_ui_remove">తొలగించండి</string>
+    <string name="roots_ui_clear">క్లియర్ చేయండి</string>
+    <string name="roots_ui_receive">జ్ఞానాన్ని స్వీకరించండి</string>
+    <string name="roots_ui_nearby">సమీప పరికరాలతో మార్పిడి</string>
+    <string name="roots_ui_connection">కనెక్షన్ వివరాలు</string>
+    <string name="roots_ui_listen_start">కనెక్షన్‌ల కోసం వేచి ఉండటం ప్రారంభించండి</string>
+    <string name="roots_ui_listen_stop">కనెక్షన్‌ల కోసం వేచి ఉండటం ఆపండి</string>
+    <string name="roots_ui_network">నెట్‌వర్క్ ఎక్స్‌ప్లోరర్</string>
+    <string name="roots_ui_external">బాహ్య జ్ఞానం</string>
+    <string name="roots_ui_history">ఇన్‌ఫరెన్స్ చరిత్ర</string>
+    <string name="roots_ui_poetic">కవితాత్మక కదలిక</string>
+    <string name="roots_ui_later">ఇప్పుడు వద్దు</string>
+    <string name="roots_ui_home">హోమ్</string>
+    <string name="roots_ui_stream_sub">జీవ వృక్షం · జ్ఞాన ప్రవాహం</string>
+    <string name="roots_ui_settings_sub">Roots · అనువాదం మరియు జ్ఞానం</string>
+    <string name="roots_ui_scheduling">భాష, విధానం మరియు షెడ్యూల్</string>
+    <string name="roots_ui_consent_accessibility">నేను అంగీకరిస్తున్నాను — యాక్సెసిబిలిటీ సెట్టింగ్‌లు తెరవండి</string>
+</resources>

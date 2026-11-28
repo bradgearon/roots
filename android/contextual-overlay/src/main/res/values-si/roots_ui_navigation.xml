@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">සැකසුම්</string>
+    <string name="roots_ui_stream">ප්‍රවාහය</string>
+    <string name="roots_ui_tree">ජීවන වෘක්ෂය</string>
+    <string name="roots_ui_local_knowledge">දේශීය දැනුම</string>
+    <string name="roots_ui_search">සුරැකි පෙළ සොයන්න</string>
+    <string name="roots_ui_rank">ශ්‍රේණිගත කරන්න / නැවුම් කරන්න</string>
+    <string name="roots_ui_inference">ආකෘති අනුමානය</string>
+    <string name="roots_ui_axons">Axon දායකත්ව</string>
+    <string name="roots_ui_capture_on">දේශීය එකතු කිරීම සක්‍රිය කරන්න</string>
+    <string name="roots_ui_capture_pause">දේශීය එකතු කිරීම තාවකාලිකව නවත්වන්න</string>
+    <string name="roots_ui_more">තවත් දැනුම පෙන්වන්න</string>
+    <string name="roots_ui_empty">තවම නිරීක්ෂණ නැත.</string>
+    <string name="roots_ui_translation">පරිවර්තනය</string>
+    <string name="roots_ui_follow_system">Android භාෂාව අනුගමනය කරන්න</string>
+    <string name="roots_ui_translate_into">පරිවර්තන භාෂාව (භාෂා 43)</string>
+    <string name="roots_ui_display_mode">පරිවර්තන දර්ශන මාදිලිය</string>
+    <string name="roots_ui_manual">අතින් — පළ කිරීමකට එක් ⇄ බොත්තමක්</string>
+    <string name="roots_ui_automatic">ස්වයංක්‍රීය (පර්යේෂණාත්මක) — අනුචලනයේදී පළ කිරීමේ පෙළ මාරු කරන්න</string>
+    <string name="roots_ui_appearance">පෙනුම</string>
+    <string name="roots_ui_accessibility">ප්‍රවේශ්‍යතාව සහ අවසර</string>
+    <string name="roots_ui_diagnostics">දෝෂ විනිශ්චය</string>
+    <string name="roots_ui_storage">දැනුම සහ ගබඩාව</string>
+    <string name="roots_ui_models">ආකෘති සහ අනුමානය</string>
+    <string name="roots_ui_desktop">පරිගණක සම්බන්ධතාව</string>
+    <string name="roots_ui_intelligence">බුද්ධිය</string>
+    <string name="roots_ui_open_accessibility">ප්‍රවේශ්‍යතා සැකසුම් විවෘත කරන්න</string>
+    <string name="roots_ui_stop_processing">X පෙළ සැකසීම නවත්වන්න</string>
+</resources>

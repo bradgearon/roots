@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo-Übersetzung testen</string>
+    <string name="roots_ui_save_connection">Übersetzungsverbindung speichern</string>
+    <string name="roots_ui_clear_key">Übersetzungsschlüssel löschen</string>
+    <string name="roots_ui_branches">Zweige</string>
+    <string name="roots_ui_agent">Neuer Agent</string>
+    <string name="roots_ui_back">Zurück</string>
+    <string name="roots_ui_refresh">Aktualisieren</string>
+    <string name="roots_ui_cancel">Abbrechen</string>
+    <string name="roots_ui_close">Schließen</string>
+    <string name="roots_ui_save">Speichern</string>
+    <string name="roots_ui_remove">Entfernen</string>
+    <string name="roots_ui_clear">Löschen</string>
+    <string name="roots_ui_receive">Wissen empfangen</string>
+    <string name="roots_ui_nearby">Austausch in der Nähe</string>
+    <string name="roots_ui_connection">Verbindungsdetails</string>
+    <string name="roots_ui_listen_start">Auf Verbindungen warten</string>
+    <string name="roots_ui_listen_stop">Empfang beenden</string>
+    <string name="roots_ui_network">Netzwerk-Explorer</string>
+    <string name="roots_ui_external">Externes Wissen</string>
+    <string name="roots_ui_history">Inferenzverlauf</string>
+    <string name="roots_ui_poetic">Poetische Bewegung</string>
+    <string name="roots_ui_later">Nicht jetzt</string>
+    <string name="roots_ui_home">Startseite</string>
+    <string name="roots_ui_stream_sub">Baum des Lebens · Wissensstrom</string>
+    <string name="roots_ui_settings_sub">Roots · Übersetzung und Wissen</string>
+    <string name="roots_ui_scheduling">Sprache, Modus und Zeitplanung</string>
+    <string name="roots_ui_consent_accessibility">Ich stimme zu — Einstellungen für Bedienungshilfen öffnen</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">ការកំណត់</string>
+    <string name="roots_ui_stream">លំហូរ</string>
+    <string name="roots_ui_tree">ដើមឈើជីវិត</string>
+    <string name="roots_ui_local_knowledge">ចំណេះដឹងក្នុងឧបករណ៍</string>
+    <string name="roots_ui_search">ស្វែងរកអត្ថបទដែលបានរក្សាទុក</string>
+    <string name="roots_ui_rank">តម្រៀប / ធ្វើឱ្យស្រស់</string>
+    <string name="roots_ui_inference">ការសន្និដ្ឋានរបស់ម៉ូដែល</string>
+    <string name="roots_ui_axons">ការជាវ Axon</string>
+    <string name="roots_ui_capture_on">បើកការប្រមូលក្នុងឧបករណ៍</string>
+    <string name="roots_ui_capture_pause">ផ្អាកការប្រមូលក្នុងឧបករណ៍</string>
+    <string name="roots_ui_more">បង្ហាញចំណេះដឹងបន្ថែម</string>
+    <string name="roots_ui_empty">មិនទាន់មានកំណត់ត្រាសង្កេតទេ។</string>
+    <string name="roots_ui_translation">ការបកប្រែ</string>
+    <string name="roots_ui_follow_system">តាមភាសា Android</string>
+    <string name="roots_ui_translate_into">បកប្រែទៅជា (៤៣ ភាសា)</string>
+    <string name="roots_ui_display_mode">របៀបបង្ហាញការបកប្រែ</string>
+    <string name="roots_ui_manual">ដោយដៃ — ប៊ូតុង ⇄ មួយក្នុងមួយប្រកាស</string>
+    <string name="roots_ui_automatic">ស្វ័យប្រវត្តិ (សាកល្បង) — ជំនួសអត្ថបទប្រកាសពេលរំកិល</string>
+    <string name="roots_ui_appearance">រូបរាង</string>
+    <string name="roots_ui_accessibility">ភាពងាយស្រួលប្រើ និងសិទ្ធិ</string>
+    <string name="roots_ui_diagnostics">ការវិនិច្ឆ័យបញ្ហា</string>
+    <string name="roots_ui_storage">ចំណេះដឹង និងទំហំផ្ទុក</string>
+    <string name="roots_ui_models">ម៉ូដែល និងការសន្និដ្ឋាន</string>
+    <string name="roots_ui_desktop">ការតភ្ជាប់កុំព្យូទ័រ</string>
+    <string name="roots_ui_intelligence">បញ្ញា</string>
+    <string name="roots_ui_open_accessibility">បើកការកំណត់ភាពងាយស្រួលប្រើ</string>
+    <string name="roots_ui_stop_processing">បញ្ឈប់ការដំណើរការអត្ថបទ X</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Parametrlər</string>
+    <string name="roots_ui_stream">Axın</string>
+    <string name="roots_ui_tree">Həyat ağacı</string>
+    <string name="roots_ui_local_knowledge">Yerli bilik</string>
+    <string name="roots_ui_search">Saxlanmış mətndə axtar</string>
+    <string name="roots_ui_rank">Sırala / yenilə</string>
+    <string name="roots_ui_inference">Çıxarım</string>
+    <string name="roots_ui_axons">Axon abunəlikləri</string>
+    <string name="roots_ui_capture_on">Yerli qeydi aktiv et</string>
+    <string name="roots_ui_capture_pause">Yerli qeydi dayandır</string>
+    <string name="roots_ui_more">Daha çox bilik göstər</string>
+    <string name="roots_ui_empty">Hələ müşahidə yoxdur.</string>
+    <string name="roots_ui_translation">Tərcümə</string>
+    <string name="roots_ui_follow_system">Android dilini izlə</string>
+    <string name="roots_ui_translate_into">Tərcümə dili (43 dil)</string>
+    <string name="roots_ui_display_mode">Tərcümə göstərmə rejimi</string>
+    <string name="roots_ui_manual">Əl ilə — hər paylaşım üçün bir ⇄ düyməsi</string>
+    <string name="roots_ui_automatic">Avtomatik (sınaq) — sürüşdürərkən paylaşım mətnini əvəz et</string>
+    <string name="roots_ui_appearance">Görünüş</string>
+    <string name="roots_ui_accessibility">Əlçatanlıq və icazələr</string>
+    <string name="roots_ui_diagnostics">Diaqnostika</string>
+    <string name="roots_ui_storage">Bilik və yaddaş</string>
+    <string name="roots_ui_models">Modellər və çıxarım</string>
+    <string name="roots_ui_desktop">Kompüter bağlantısı</string>
+    <string name="roots_ui_intelligence">İntellekt</string>
+    <string name="roots_ui_open_accessibility">Əlçatanlıq parametrlərini aç</string>
+    <string name="roots_ui_stop_processing">X mətninin emalını dayandır</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo വിവർത്തനം പരീക്ഷിക്കുക</string>
+    <string name="roots_ui_save_connection">വിവർത്തന കണക്ഷൻ സൂക്ഷിക്കുക</string>
+    <string name="roots_ui_clear_key">വിവർത്തന കീ മായ്ക്കുക</string>
+    <string name="roots_ui_branches">ശാഖകൾ</string>
+    <string name="roots_ui_agent">പുതിയ ഏജന്റ്</string>
+    <string name="roots_ui_back">പിന്നോട്ട്</string>
+    <string name="roots_ui_refresh">പുതുക്കുക</string>
+    <string name="roots_ui_cancel">റദ്ദാക്കുക</string>
+    <string name="roots_ui_close">അടയ്ക്കുക</string>
+    <string name="roots_ui_save">സൂക്ഷിക്കുക</string>
+    <string name="roots_ui_remove">നീക്കം ചെയ്യുക</string>
+    <string name="roots_ui_clear">മായ്ക്കുക</string>
+    <string name="roots_ui_receive">അറിവ് സ്വീകരിക്കുക</string>
+    <string name="roots_ui_nearby">സമീപത്തുള്ള കൈമാറ്റം</string>
+    <string name="roots_ui_connection">കണക്ഷൻ വിവരങ്ങൾ</string>
+    <string name="roots_ui_listen_start">കണക്ഷനുകൾക്കായി കാത്തിരിപ്പ് തുടങ്ങുക</string>
+    <string name="roots_ui_listen_stop">കണക്ഷനുകൾക്കായി കാത്തിരിപ്പ് നിർത്തുക</string>
+    <string name="roots_ui_network">നെറ്റ്‌വർക്ക് എക്സ്പ്ലോറർ</string>
+    <string name="roots_ui_external">ബാഹ്യ അറിവ്</string>
+    <string name="roots_ui_history">ഇൻഫറൻസ് ചരിത്രം</string>
+    <string name="roots_ui_poetic">കാവ്യാത്മക ചലനം</string>
+    <string name="roots_ui_later">ഇപ്പോൾ വേണ്ട</string>
+    <string name="roots_ui_home">ഹോം</string>
+    <string name="roots_ui_stream_sub">ജീവവൃക്ഷം · അറിവിന്റെ പ്രവാഹം</string>
+    <string name="roots_ui_settings_sub">Roots · വിവർത്തനവും അറിവും</string>
+    <string name="roots_ui_scheduling">ഭാഷ, രീതി, സമയക്രമം</string>
+    <string name="roots_ui_consent_accessibility">സമ്മതിക്കുന്നു — പ്രവേശനക്ഷമതാ ക്രമീകരണങ്ങൾ തുറക്കുക</string>
+</resources>

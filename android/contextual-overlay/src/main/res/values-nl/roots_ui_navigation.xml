@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Instellingen</string>
+    <string name="roots_ui_stream">Stream</string>
+    <string name="roots_ui_tree">Levensboom</string>
+    <string name="roots_ui_local_knowledge">Lokale kennis</string>
+    <string name="roots_ui_search">Zoek in opgeslagen tekst</string>
+    <string name="roots_ui_rank">Rangschik / vernieuw</string>
+    <string name="roots_ui_inference">Inferentie</string>
+    <string name="roots_ui_axons">Axon-abonnementen</string>
+    <string name="roots_ui_capture_on">Lokale vastlegging inschakelen</string>
+    <string name="roots_ui_capture_pause">Lokale vastlegging pauzeren</string>
+    <string name="roots_ui_more">Meer kennis tonen</string>
+    <string name="roots_ui_empty">Nog geen waarnemingen.</string>
+    <string name="roots_ui_translation">Vertaling</string>
+    <string name="roots_ui_follow_system">Android-taal volgen</string>
+    <string name="roots_ui_translate_into">Vertalen naar (43 talen)</string>
+    <string name="roots_ui_display_mode">Weergavemodus voor vertalingen</string>
+    <string name="roots_ui_manual">Handmatig — één ⇄ knop per bericht</string>
+    <string name="roots_ui_automatic">Automatisch (experimenteel) — vervang berichttekst tijdens scrollen</string>
+    <string name="roots_ui_appearance">Uiterlijk</string>
+    <string name="roots_ui_accessibility">Toegankelijkheid en machtigingen</string>
+    <string name="roots_ui_diagnostics">Diagnostiek</string>
+    <string name="roots_ui_storage">Kennis en opslag</string>
+    <string name="roots_ui_models">Modellen en inferentie</string>
+    <string name="roots_ui_desktop">Desktopverbinding</string>
+    <string name="roots_ui_intelligence">Intelligentie</string>
+    <string name="roots_ui_open_accessibility">Toegankelijkheidsinstellingen openen</string>
+    <string name="roots_ui_stop_processing">X-tekstverwerking stoppen</string>
+</resources>

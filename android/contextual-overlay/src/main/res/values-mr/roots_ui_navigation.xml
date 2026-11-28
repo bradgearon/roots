@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">सेटिंग्ज</string>
+    <string name="roots_ui_stream">प्रवाह</string>
+    <string name="roots_ui_tree">जीवनवृक्ष</string>
+    <string name="roots_ui_local_knowledge">स्थानिक ज्ञान</string>
+    <string name="roots_ui_search">जतन केलेला मजकूर शोधा</string>
+    <string name="roots_ui_rank">क्रम लावा / रिफ्रेश करा</string>
+    <string name="roots_ui_inference">इन्फरन्स</string>
+    <string name="roots_ui_axons">Axon सदस्यत्वे</string>
+    <string name="roots_ui_capture_on">स्थानिक संकलन सुरू करा</string>
+    <string name="roots_ui_capture_pause">स्थानिक संकलन थांबवा</string>
+    <string name="roots_ui_more">अधिक ज्ञान दाखवा</string>
+    <string name="roots_ui_empty">अद्याप निरीक्षणे नाहीत.</string>
+    <string name="roots_ui_translation">भाषांतर</string>
+    <string name="roots_ui_follow_system">Android ची भाषा वापरा</string>
+    <string name="roots_ui_translate_into">भाषांतराची भाषा (४३ भाषा)</string>
+    <string name="roots_ui_display_mode">भाषांतर प्रदर्शन मोड</string>
+    <string name="roots_ui_manual">मॅन्युअल — प्रत्येक पोस्टसाठी एक ⇄ बटण</string>
+    <string name="roots_ui_automatic">स्वयंचलित (प्रायोगिक) — स्क्रोल करताना पोस्टचा मजकूर बदला</string>
+    <string name="roots_ui_appearance">देखावा</string>
+    <string name="roots_ui_accessibility">सुलभता आणि परवानग्या</string>
+    <string name="roots_ui_diagnostics">निदान</string>
+    <string name="roots_ui_storage">ज्ञान आणि संचयन</string>
+    <string name="roots_ui_models">मॉडेल आणि इन्फरन्स</string>
+    <string name="roots_ui_desktop">डेस्कटॉप जोडणी</string>
+    <string name="roots_ui_intelligence">बुद्धिमत्ता</string>
+    <string name="roots_ui_open_accessibility">सुलभता सेटिंग्ज उघडा</string>
+    <string name="roots_ui_stop_processing">X मजकूर प्रक्रिया थांबवा</string>
+</resources>

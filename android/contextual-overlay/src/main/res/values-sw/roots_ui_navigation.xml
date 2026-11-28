@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Mipangilio</string>
+    <string name="roots_ui_stream">Mtiririko</string>
+    <string name="roots_ui_tree">Mti wa Uzima</string>
+    <string name="roots_ui_local_knowledge">Maarifa ya ndani</string>
+    <string name="roots_ui_search">Tafuta maandishi yaliyohifadhiwa</string>
+    <string name="roots_ui_rank">Panga / onyesha upya</string>
+    <string name="roots_ui_inference">Ukokotoaji wa modeli</string>
+    <string name="roots_ui_axons">Usajili wa Axon</string>
+    <string name="roots_ui_capture_on">Washa ukusanyaji wa ndani</string>
+    <string name="roots_ui_capture_pause">Sitisha ukusanyaji wa ndani kwa muda</string>
+    <string name="roots_ui_more">Onyesha maarifa zaidi</string>
+    <string name="roots_ui_empty">Bado hakuna uchunguzi.</string>
+    <string name="roots_ui_translation">Tafsiri</string>
+    <string name="roots_ui_follow_system">Fuata lugha ya Android</string>
+    <string name="roots_ui_translate_into">Tafsiri kwenda (lugha 43)</string>
+    <string name="roots_ui_display_mode">Hali ya kuonyesha tafsiri</string>
+    <string name="roots_ui_manual">Kwa mkono — kitufe kimoja ⇄ kwa kila chapisho</string>
+    <string name="roots_ui_automatic">Otomatiki (majaribio) — badilisha maandishi ya chapisho wakati wa kusogeza</string>
+    <string name="roots_ui_appearance">Mwonekano</string>
+    <string name="roots_ui_accessibility">Ufikivu na ruhusa</string>
+    <string name="roots_ui_diagnostics">Uchunguzi wa hitilafu</string>
+    <string name="roots_ui_storage">Maarifa na hifadhi</string>
+    <string name="roots_ui_models">Modeli na ukokotoaji</string>
+    <string name="roots_ui_desktop">Muunganisho wa kompyuta</string>
+    <string name="roots_ui_intelligence">Akili</string>
+    <string name="roots_ui_open_accessibility">Fungua mipangilio ya ufikivu</string>
+    <string name="roots_ui_stop_processing">Acha kuchakata maandishi ya X</string>
+</resources>

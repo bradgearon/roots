@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Tetapan</string>
+    <string name="roots_ui_stream">Strim</string>
+    <string name="roots_ui_tree">Pohon Kehidupan</string>
+    <string name="roots_ui_local_knowledge">Pengetahuan setempat</string>
+    <string name="roots_ui_search">Cari teks yang disimpan</string>
+    <string name="roots_ui_rank">Susun / muat semula</string>
+    <string name="roots_ui_inference">Inferens</string>
+    <string name="roots_ui_axons">Langganan Axon</string>
+    <string name="roots_ui_capture_on">Dayakan pengumpulan setempat</string>
+    <string name="roots_ui_capture_pause">Jeda pengumpulan setempat</string>
+    <string name="roots_ui_more">Tunjukkan lebih banyak pengetahuan</string>
+    <string name="roots_ui_empty">Belum ada pemerhatian.</string>
+    <string name="roots_ui_translation">Terjemahan</string>
+    <string name="roots_ui_follow_system">Ikut bahasa Android</string>
+    <string name="roots_ui_translate_into">Terjemah kepada (43 bahasa)</string>
+    <string name="roots_ui_display_mode">Mod paparan terjemahan</string>
+    <string name="roots_ui_manual">Manual — satu butang ⇄ bagi setiap siaran</string>
+    <string name="roots_ui_automatic">Automatik (eksperimen) — ganti teks siaran semasa menatal</string>
+    <string name="roots_ui_appearance">Penampilan</string>
+    <string name="roots_ui_accessibility">Kebolehcapaian dan kebenaran</string>
+    <string name="roots_ui_diagnostics">Diagnostik</string>
+    <string name="roots_ui_storage">Pengetahuan dan storan</string>
+    <string name="roots_ui_models">Model dan inferens</string>
+    <string name="roots_ui_desktop">Sambungan desktop</string>
+    <string name="roots_ui_intelligence">Kecerdasan</string>
+    <string name="roots_ui_open_accessibility">Buka tetapan kebolehcapaian</string>
+    <string name="roots_ui_stop_processing">Hentikan pemprosesan teks X</string>
+</resources>

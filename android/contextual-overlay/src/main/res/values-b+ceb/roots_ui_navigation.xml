@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Mga setting</string>
+    <string name="roots_ui_stream">Agos</string>
+    <string name="roots_ui_tree">Kahoy sa Kinabuhi</string>
+    <string name="roots_ui_local_knowledge">Lokal nga kahibalo</string>
+    <string name="roots_ui_search">Pangitaa ang gitipig nga teksto</string>
+    <string name="roots_ui_rank">Han-aya / i-refresh</string>
+    <string name="roots_ui_inference">Inference</string>
+    <string name="roots_ui_axons">Mga suskripsiyon sa Axon</string>
+    <string name="roots_ui_capture_on">I-on ang lokal nga pagkuha</string>
+    <string name="roots_ui_capture_pause">Ihunong sa makadiyot ang lokal nga pagkuha</string>
+    <string name="roots_ui_more">Ipakita ang dugang kahibalo</string>
+    <string name="roots_ui_empty">Wala pay mga obserbasyon.</string>
+    <string name="roots_ui_translation">Paghubad</string>
+    <string name="roots_ui_follow_system">Sunda ang pinulongan sa Android</string>
+    <string name="roots_ui_translate_into">Hubara ngadto sa (43 ka pinulongan)</string>
+    <string name="roots_ui_display_mode">Paagi sa pagpakita sa hubad</string>
+    <string name="roots_ui_manual">Manwal — usa ka ⇄ button matag post</string>
+    <string name="roots_ui_automatic">Awtomatiko (eksperimental) — ilisi ang teksto samtang nag-scroll</string>
+    <string name="roots_ui_appearance">Panagway</string>
+    <string name="roots_ui_accessibility">Accessibility ug mga pagtugot</string>
+    <string name="roots_ui_diagnostics">Diyagnostiko</string>
+    <string name="roots_ui_storage">Kahibalo ug pagtipig</string>
+    <string name="roots_ui_models">Mga modelo ug inference</string>
+    <string name="roots_ui_desktop">Koneksiyon sa desktop</string>
+    <string name="roots_ui_intelligence">Intelihensiya</string>
+    <string name="roots_ui_open_accessibility">Ablihi ang mga setting sa accessibility</string>
+    <string name="roots_ui_stop_processing">Hunonga ang pagproseso sa teksto sa X</string>
+</resources>

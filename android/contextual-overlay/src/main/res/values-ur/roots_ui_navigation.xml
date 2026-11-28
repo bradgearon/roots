@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">ترتیبات</string>
+    <string name="roots_ui_stream">روانی</string>
+    <string name="roots_ui_tree">زندگی کا درخت</string>
+    <string name="roots_ui_local_knowledge">مقامی علم</string>
+    <string name="roots_ui_search">محفوظ متن تلاش کریں</string>
+    <string name="roots_ui_rank">ترتیب دیں / تازہ کریں</string>
+    <string name="roots_ui_inference">استنباط</string>
+    <string name="roots_ui_axons">Axon سبسکرپشنز</string>
+    <string name="roots_ui_capture_on">مقامی جمع آوری فعال کریں</string>
+    <string name="roots_ui_capture_pause">مقامی جمع آوری عارضی طور پر روکیں</string>
+    <string name="roots_ui_more">مزید علم دکھائیں</string>
+    <string name="roots_ui_empty">ابھی کوئی مشاہدہ نہیں ہے۔</string>
+    <string name="roots_ui_translation">ترجمہ</string>
+    <string name="roots_ui_follow_system">Android کی زبان استعمال کریں</string>
+    <string name="roots_ui_translate_into">ترجمے کی زبان (43 زبانیں)</string>
+    <string name="roots_ui_display_mode">ترجمہ دکھانے کا طریقہ</string>
+    <string name="roots_ui_manual">دستی — ہر پوسٹ کے لیے ایک ⇄ بٹن</string>
+    <string name="roots_ui_automatic">خودکار (تجرباتی) — اسکرول کرتے وقت پوسٹ کا متن بدلیں</string>
+    <string name="roots_ui_appearance">ظاہری شکل</string>
+    <string name="roots_ui_accessibility">رسائی پذیری اور اجازتیں</string>
+    <string name="roots_ui_diagnostics">تشخیص</string>
+    <string name="roots_ui_storage">علم اور ذخیرہ</string>
+    <string name="roots_ui_models">ماڈلز اور استنباط</string>
+    <string name="roots_ui_desktop">ڈیسک ٹاپ کنکشن</string>
+    <string name="roots_ui_intelligence">ذہانت</string>
+    <string name="roots_ui_open_accessibility">رسائی پذیری کی ترتیبات کھولیں</string>
+    <string name="roots_ui_stop_processing">X متن کی پراسیسنگ روکیں</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">آزمایش ترجمه PLaMo</string>
+    <string name="roots_ui_save_connection">ذخیره اتصال ترجمه</string>
+    <string name="roots_ui_clear_key">پاک کردن کلید ترجمه</string>
+    <string name="roots_ui_branches">شاخه‌ها</string>
+    <string name="roots_ui_agent">عامل جدید</string>
+    <string name="roots_ui_back">بازگشت</string>
+    <string name="roots_ui_refresh">تازه‌سازی</string>
+    <string name="roots_ui_cancel">لغو</string>
+    <string name="roots_ui_close">بستن</string>
+    <string name="roots_ui_save">ذخیره</string>
+    <string name="roots_ui_remove">حذف</string>
+    <string name="roots_ui_clear">پاک کردن</string>
+    <string name="roots_ui_receive">دریافت دانش</string>
+    <string name="roots_ui_nearby">تبادل با دستگاه‌های نزدیک</string>
+    <string name="roots_ui_connection">جزئیات اتصال</string>
+    <string name="roots_ui_listen_start">آغاز گوش دادن به اتصال‌ها</string>
+    <string name="roots_ui_listen_stop">توقف گوش دادن به اتصال‌ها</string>
+    <string name="roots_ui_network">کاوشگر شبکه</string>
+    <string name="roots_ui_external">دانش بیرونی</string>
+    <string name="roots_ui_history">تاریخچه استنتاج</string>
+    <string name="roots_ui_poetic">حرکت شاعرانه</string>
+    <string name="roots_ui_later">فعلاً نه</string>
+    <string name="roots_ui_home">خانه</string>
+    <string name="roots_ui_stream_sub">درخت زندگی · جریان دانش</string>
+    <string name="roots_ui_settings_sub">Roots · ترجمه و دانش</string>
+    <string name="roots_ui_scheduling">زبان، حالت و زمان‌بندی</string>
+    <string name="roots_ui_consent_accessibility">موافقم — تنظیمات دسترس‌پذیری را باز کن</string>
+</resources>

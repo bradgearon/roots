@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Prova la traducció amb PLaMo</string>
+    <string name="roots_ui_save_connection">Desa la connexió de traducció</string>
+    <string name="roots_ui_clear_key">Esborra la clau de traducció</string>
+    <string name="roots_ui_branches">Branques</string>
+    <string name="roots_ui_agent">Agent nou</string>
+    <string name="roots_ui_back">Enrere</string>
+    <string name="roots_ui_refresh">Actualitza</string>
+    <string name="roots_ui_cancel">Cancel·la</string>
+    <string name="roots_ui_close">Tanca</string>
+    <string name="roots_ui_save">Desa</string>
+    <string name="roots_ui_remove">Elimina</string>
+    <string name="roots_ui_clear">Esborra</string>
+    <string name="roots_ui_receive">Rep coneixement</string>
+    <string name="roots_ui_nearby">Intercanvi de proximitat</string>
+    <string name="roots_ui_connection">Detalls de connexió</string>
+    <string name="roots_ui_listen_start">Comença a escoltar connexions</string>
+    <string name="roots_ui_listen_stop">Deixa d\'escoltar connexions</string>
+    <string name="roots_ui_network">Explorador de xarxa</string>
+    <string name="roots_ui_external">Coneixement extern</string>
+    <string name="roots_ui_history">Historial d\'inferència</string>
+    <string name="roots_ui_poetic">Moviment poètic</string>
+    <string name="roots_ui_later">Ara no</string>
+    <string name="roots_ui_home">Inici</string>
+    <string name="roots_ui_stream_sub">Arbre de la vida · flux de coneixement</string>
+    <string name="roots_ui_settings_sub">Roots · traducció i coneixement</string>
+    <string name="roots_ui_scheduling">Llengua, mode i planificació</string>
+    <string name="roots_ui_consent_accessibility">Hi dono el consentiment — obre la configuració d\'accessibilitat</string>
+</resources>

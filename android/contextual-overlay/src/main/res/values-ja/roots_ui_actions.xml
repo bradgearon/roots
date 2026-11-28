@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo 翻訳をテスト</string>
+    <string name="roots_ui_save_connection">翻訳接続を保存</string>
+    <string name="roots_ui_clear_key">翻訳キーを消去</string>
+    <string name="roots_ui_branches">ブランチ</string>
+    <string name="roots_ui_agent">新しいエージェント</string>
+    <string name="roots_ui_back">戻る</string>
+    <string name="roots_ui_refresh">更新</string>
+    <string name="roots_ui_cancel">キャンセル</string>
+    <string name="roots_ui_close">閉じる</string>
+    <string name="roots_ui_save">保存</string>
+    <string name="roots_ui_remove">削除</string>
+    <string name="roots_ui_clear">消去</string>
+    <string name="roots_ui_receive">知識を受信</string>
+    <string name="roots_ui_nearby">近くの端末との交換</string>
+    <string name="roots_ui_connection">接続の詳細</string>
+    <string name="roots_ui_listen_start">接続の待ち受けを開始</string>
+    <string name="roots_ui_listen_stop">接続の待ち受けを停止</string>
+    <string name="roots_ui_network">ネットワークエクスプローラー</string>
+    <string name="roots_ui_external">外部知識</string>
+    <string name="roots_ui_history">推論履歴</string>
+    <string name="roots_ui_poetic">詩的運動</string>
+    <string name="roots_ui_later">後で</string>
+    <string name="roots_ui_home">ホーム</string>
+    <string name="roots_ui_stream_sub">生命の樹 · 知識のストリーム</string>
+    <string name="roots_ui_settings_sub">Roots · 翻訳と知識</string>
+    <string name="roots_ui_scheduling">言語、モード、スケジュール</string>
+    <string name="roots_ui_consent_accessibility">同意する — ユーザー補助設定を開く</string>
+</resources>

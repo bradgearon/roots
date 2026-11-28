@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">సెట్టింగ్‌లు</string>
+    <string name="roots_ui_stream">స్ట్రీమ్</string>
+    <string name="roots_ui_tree">జీవ వృక్షం</string>
+    <string name="roots_ui_local_knowledge">స్థానిక జ్ఞానం</string>
+    <string name="roots_ui_search">భద్రపరిచిన వచనాన్ని వెతకండి</string>
+    <string name="roots_ui_rank">క్రమబద్ధీకరించు / రిఫ్రెష్</string>
+    <string name="roots_ui_inference">ఇన్‌ఫరెన్స్</string>
+    <string name="roots_ui_axons">Axon చందాలు</string>
+    <string name="roots_ui_capture_on">స్థానిక సేకరణను ప్రారంభించండి</string>
+    <string name="roots_ui_capture_pause">స్థానిక సేకరణను తాత్కాలికంగా ఆపండి</string>
+    <string name="roots_ui_more">మరింత జ్ఞానాన్ని చూపండి</string>
+    <string name="roots_ui_empty">ఇంకా పరిశీలనలు లేవు.</string>
+    <string name="roots_ui_translation">అనువాదం</string>
+    <string name="roots_ui_follow_system">Android భాషను అనుసరించండి</string>
+    <string name="roots_ui_translate_into">అనువదించే భాష (43 భాషలు)</string>
+    <string name="roots_ui_display_mode">అనువాద ప్రదర్శన విధానం</string>
+    <string name="roots_ui_manual">మాన్యువల్ — ప్రతి పోస్ట్‌కు ఒక ⇄ బటన్</string>
+    <string name="roots_ui_automatic">స్వయంచాలక (ప్రయోగాత్మక) — స్క్రోల్ చేస్తున్నప్పుడు పోస్ట్ వచనాన్ని మార్చండి</string>
+    <string name="roots_ui_appearance">రూపం</string>
+    <string name="roots_ui_accessibility">యాక్సెసిబిలిటీ మరియు అనుమతులు</string>
+    <string name="roots_ui_diagnostics">నిర్ధారణ</string>
+    <string name="roots_ui_storage">జ్ఞానం మరియు నిల్వ</string>
+    <string name="roots_ui_models">మోడళ్లు మరియు ఇన్‌ఫరెన్స్</string>
+    <string name="roots_ui_desktop">డెస్క్‌టాప్ అనుసంధానం</string>
+    <string name="roots_ui_intelligence">మేధస్సు</string>
+    <string name="roots_ui_open_accessibility">యాక్సెసిబిలిటీ సెట్టింగ్‌లు తెరవండి</string>
+    <string name="roots_ui_stop_processing">X వచన ప్రాసెసింగ్‌ను ఆపండి</string>
+</resources>

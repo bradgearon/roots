@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">测试 PLaMo 翻译</string>
+    <string name="roots_ui_save_connection">保存翻译连接</string>
+    <string name="roots_ui_clear_key">清除翻译密钥</string>
+    <string name="roots_ui_branches">分支</string>
+    <string name="roots_ui_agent">新建代理</string>
+    <string name="roots_ui_back">返回</string>
+    <string name="roots_ui_refresh">刷新</string>
+    <string name="roots_ui_cancel">取消</string>
+    <string name="roots_ui_close">关闭</string>
+    <string name="roots_ui_save">保存</string>
+    <string name="roots_ui_remove">移除</string>
+    <string name="roots_ui_clear">清除</string>
+    <string name="roots_ui_receive">接收知识</string>
+    <string name="roots_ui_nearby">附近设备交换</string>
+    <string name="roots_ui_connection">连接详情</string>
+    <string name="roots_ui_listen_start">开始监听</string>
+    <string name="roots_ui_listen_stop">停止监听</string>
+    <string name="roots_ui_network">网络浏览器</string>
+    <string name="roots_ui_external">外部知识</string>
+    <string name="roots_ui_history">推理记录</string>
+    <string name="roots_ui_poetic">诗意运动</string>
+    <string name="roots_ui_later">暂不</string>
+    <string name="roots_ui_home">主页</string>
+    <string name="roots_ui_stream_sub">生命之树 · 知识流</string>
+    <string name="roots_ui_settings_sub">Roots · 翻译与知识</string>
+    <string name="roots_ui_scheduling">语言、模式与调度</string>
+    <string name="roots_ui_consent_accessibility">我同意 — 打开无障碍设置</string>
+</resources>

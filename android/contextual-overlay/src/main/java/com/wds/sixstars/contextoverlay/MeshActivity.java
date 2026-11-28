@@ -77,7 +77,7 @@ public final class MeshActivity extends Activity {
         LinearLayout content=RootsUi.column(this);content.setPadding(dp(16),0,dp(16),dp(16));scroll.addView(content);
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout subscriptions=RootsUi.card(this,content);
-        subscriptions.addView(RootsUi.text(this,"Axon subscriptions",18,RootsUi.TEXT,true));
+        subscriptions.addView(RootsUi.text(this,getString(R.string.roots_ui_axons),18,RootsUi.TEXT,true));
         subscriptionStatus=RootsUi.text(this,"Loading subscriptions…",14,RootsUi.ACCENT,true);subscriptions.addView(subscriptionStatus);
         subscriptionRows=RootsUi.column(this);subscriptions.addView(subscriptionRows);
         subscriptions.addView(RootsUi.action(this,"Manage Axon subscriptions",()->startActivity(new Intent(this,EncounterActivity.class))));
@@ -92,18 +92,18 @@ public final class MeshActivity extends Activity {
         nearby.addView(RootsUi.text(this,"Bluetooth discovers and binds Axons. Receive uses the best available transport automatically.",13,RootsUi.MUTED,false));
         nearbyStatus=RootsUi.text(this,"",13,RootsUi.MUTED,false);nearby.addView(nearbyStatus);
         nearby.addView(RootsUi.action(this,"External receipt history",()->startActivity(new Intent(this,ExternalKnowledgeActivity.class))));
-        nearby.addView(RootsUi.action(this,"Manage nearby exchange",()->startActivity(new Intent(this,EncounterActivity.class))));
-        nearby.addView(RootsUi.action(this,"Network Explorer",()->startActivity(new Intent(this,NetworkExplorerActivity.class))));
+        nearby.addView(RootsUi.action(this,getString(R.string.roots_ui_nearby),()->startActivity(new Intent(this,EncounterActivity.class))));
+        nearby.addView(RootsUi.action(this,getString(R.string.roots_ui_network),()->startActivity(new Intent(this,NetworkExplorerActivity.class))));
         LinearLayout listener=RootsUi.card(this,content);
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
         listener.addView(RootsUi.text(this,"Start listening once to serve automatically in the background and after restarts. Stop listening turns sharing off; saved invitations remain valid.",13,RootsUi.MUTED,false));
         servingStatus=RootsUi.text(this,"Sharing off",14,RootsUi.ACCENT,true);listener.addView(servingStatus);
-        serve=RootsUi.action(this,"Start listening",this::start);listener.addView(serve);
+        serve=RootsUi.action(this,getString(R.string.roots_ui_listen_start),this::start);listener.addView(serve);
         copy=RootsUi.action(this,"Copy private invitation",this::copy);listener.addView(copy);
         listener.addView(RootsUi.action(this,"Share invitation…",this::share));
-        stop=RootsUi.action(this,"Stop listening",()->{try{MeshServingService.disable(this);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();}catch(Exception e){status.setText(e.getMessage());}});listener.addView(stop);
+        stop=RootsUi.action(this,getString(R.string.roots_ui_listen_stop),()->{try{MeshServingService.disable(this);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();}catch(Exception e){status.setText(e.getMessage());}});listener.addView(stop);
         // One shared connection control, outside the optional Axon section.
-        LinearLayout connection=RootsUi.section(this,content,"Connection details","Check this device and any selected peers.",true);
+        LinearLayout connection=RootsUi.section(this,content,getString(R.string.roots_ui_connection),"Check this device and any selected peers.",true);
         connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
         connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
         testConnection=RootsUi.action(this,"Refresh / test private LAN connection",this::testConnection);connection.addView(testConnection);
@@ -119,7 +119,7 @@ public final class MeshActivity extends Activity {
         analysisOutput=RootsUi.text(this,"Run a test to enable analysis with your selected model.",13,RootsUi.MUTED,false);
         analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         LinearLayout inbound=RootsUi.card(this,content);
-        inbound.addView(RootsUi.text(this,"Receive knowledge",18,RootsUi.TEXT,true));
+        inbound.addView(RootsUi.text(this,getString(R.string.roots_ui_receive),18,RootsUi.TEXT,true));
         inbound.addView(RootsUi.text(this,"Receive synchronizes saved Axons, including automatically bound nearby peers. Wi-Fi is preferred for bulk transfer; Bluetooth is the offline fallback. Enter an invitation only for an additional private LAN peer.",13,RootsUi.MUTED,false));
         invitations=new EditText(this);invitations.setHint("Optional: new or refreshed peer invitations");invitations.setMinLines(2);
         invitations.setSaveEnabled(false); // Credentials use encrypted private storage, never Android view state.
@@ -144,7 +144,7 @@ public final class MeshActivity extends Activity {
             if(busy)return;
             new AlertDialog.Builder(this).setTitle("Remove saved Axon?")
                 .setMessage("Removes the local subscription and saved peer access. Retained knowledge stays here.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->{
+                .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton(R.string.roots_ui_remove,(d,w)->{
                     AxonRuntime.revoke();
                     try{AxonSubscription.clear(this);useAxon.setChecked(false);axonStatus.setText("No saved Axon");invalidateDiagnostics("Axon binding removed. Test again for current details.");}
                     catch(Exception e){axonStatus.setText("Could not finish removing saved peer access. Try Remove again.");}
@@ -155,7 +155,7 @@ public final class MeshActivity extends Activity {
         inbound.addView(axonStatus);
         receive=RootsUi.action(this,"Receive missing knowledge",this::receive);inbound.addView(receive);
         status=RootsUi.text(this,"",14,RootsUi.ACCENT,true);content.addView(status);
-        shell.addView(RootsUi.action(this,"‹ Home",()->{startActivity(new Intent(this,RootsStreamActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));finish();}));
+        shell.addView(RootsUi.action(this,getString(R.string.roots_ui_home),()->{startActivity(new Intent(this,RootsStreamActivity.class).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP));finish();}));
         invitations.addTextChangedListener(new TextWatcher(){
             @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
             @Override public void onTextChanged(CharSequence s,int start,int before,int count){
@@ -459,7 +459,7 @@ public final class MeshActivity extends Activity {
         lines.setText(old==null?interests.getText().toString().replace(',','\n'):old.lines());box.addView(lines);
         RootsUi.styleInputs(this,box);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle(peers==null?"Edit saved .axon · "+old.pins.size()+" peer(s)":"Bind .axon to "+peers.size()+" invited peer(s)").setView(box)
-            .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
+            .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton(R.string.roots_ui_save,null).create();
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
             try{
                 IntelligenceModel selectedModel=IntelligenceModel.values()[model.getSelectedItemPosition()];
@@ -480,7 +480,7 @@ public final class MeshActivity extends Activity {
             AxonSubscription policy=access.policy();List<MeshPeer.Invite> peers=access.peers();
             new AlertDialog.Builder(this).setTitle("Allow runtime Axon access?")
                 .setMessage("Enable runtime knowledge requests for 30 minutes.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Arm",(d,w)->{AxonRuntime.arm(policy,peers);axonStatus.setText(AxonRuntime.status());invalidateDiagnostics("Runtime access changed. Test again for current details.");refresh();}).show();
+                .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton("Arm",(d,w)->{AxonRuntime.arm(policy,peers);axonStatus.setText(AxonRuntime.status());invalidateDiagnostics("Runtime access changed. Test again for current details.");refresh();}).show();
         }catch(Exception e){axonStatus.setText(e.getMessage());}
     }
     private void showAxon(){
@@ -576,7 +576,7 @@ public final class MeshActivity extends Activity {
         // Use explicit dark input colors even when invoked from the settings theme.
         box.setBackgroundColor(RootsUi.CARD);RootsUi.styleInputs(activity,box);
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Publish to Roots Mesh").setView(box)
-            .setNegativeButton("Cancel",null).setPositiveButton("Publish",null).create();
+            .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton("Publish",null).create();
         dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
             final MeshItem item;
             try{item=MeshItem.create(language.getText().toString(),topic.getText().toString(),text.getText().toString(),link.getText().toString());}

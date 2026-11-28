@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Uji terjemahan PLaMo</string>
+    <string name="roots_ui_save_connection">Simpan sambungan terjemahan</string>
+    <string name="roots_ui_clear_key">Kosongkan kunci terjemahan</string>
+    <string name="roots_ui_branches">Cabang</string>
+    <string name="roots_ui_agent">Ejen baharu</string>
+    <string name="roots_ui_back">Kembali</string>
+    <string name="roots_ui_refresh">Muat semula</string>
+    <string name="roots_ui_cancel">Batal</string>
+    <string name="roots_ui_close">Tutup</string>
+    <string name="roots_ui_save">Simpan</string>
+    <string name="roots_ui_remove">Alih keluar</string>
+    <string name="roots_ui_clear">Kosongkan</string>
+    <string name="roots_ui_receive">Terima pengetahuan</string>
+    <string name="roots_ui_nearby">Pertukaran berdekatan</string>
+    <string name="roots_ui_connection">Butiran sambungan</string>
+    <string name="roots_ui_listen_start">Mula mendengar sambungan</string>
+    <string name="roots_ui_listen_stop">Berhenti mendengar sambungan</string>
+    <string name="roots_ui_network">Peneroka rangkaian</string>
+    <string name="roots_ui_external">Pengetahuan luar</string>
+    <string name="roots_ui_history">Sejarah inferens</string>
+    <string name="roots_ui_poetic">Gerakan puitis</string>
+    <string name="roots_ui_later">Bukan sekarang</string>
+    <string name="roots_ui_home">Laman utama</string>
+    <string name="roots_ui_stream_sub">Pohon Kehidupan · aliran pengetahuan</string>
+    <string name="roots_ui_settings_sub">Roots · terjemahan dan pengetahuan</string>
+    <string name="roots_ui_scheduling">Bahasa, mod dan penjadualan</string>
+    <string name="roots_ui_consent_accessibility">Saya bersetuju — buka tetapan kebolehcapaian</string>
+</resources>

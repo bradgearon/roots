@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Subukan ang salin ng PLaMo</string>
+    <string name="roots_ui_save_connection">I-save ang koneksiyon sa pagsasalin</string>
+    <string name="roots_ui_clear_key">Burahin ang susi sa pagsasalin</string>
+    <string name="roots_ui_branches">Mga sanga</string>
+    <string name="roots_ui_agent">Bagong ahente</string>
+    <string name="roots_ui_back">Bumalik</string>
+    <string name="roots_ui_refresh">I-refresh</string>
+    <string name="roots_ui_cancel">Kanselahin</string>
+    <string name="roots_ui_close">Isara</string>
+    <string name="roots_ui_save">I-save</string>
+    <string name="roots_ui_remove">Alisin</string>
+    <string name="roots_ui_clear">Burahin</string>
+    <string name="roots_ui_receive">Tumanggap ng kaalaman</string>
+    <string name="roots_ui_nearby">Palitan sa malapit</string>
+    <string name="roots_ui_connection">Mga detalye ng koneksiyon</string>
+    <string name="roots_ui_listen_start">Simulang makinig sa mga koneksiyon</string>
+    <string name="roots_ui_listen_stop">Itigil ang pakikinig sa mga koneksiyon</string>
+    <string name="roots_ui_network">Network Explorer</string>
+    <string name="roots_ui_external">Panlabas na kaalaman</string>
+    <string name="roots_ui_history">Kasaysayan ng inference</string>
+    <string name="roots_ui_poetic">Makatang galaw</string>
+    <string name="roots_ui_later">Hindi ngayon</string>
+    <string name="roots_ui_home">Home</string>
+    <string name="roots_ui_stream_sub">Puno ng Buhay · daloy ng kaalaman</string>
+    <string name="roots_ui_settings_sub">Roots · pagsasalin at kaalaman</string>
+    <string name="roots_ui_scheduling">Wika, mode at iskedyul</string>
+    <string name="roots_ui_consent_accessibility">Pumapayag ako — buksan ang mga setting ng accessibility</string>
+</resources>

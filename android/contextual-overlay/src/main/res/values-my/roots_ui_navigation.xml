@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">ဆက်တင်များ</string>
+    <string name="roots_ui_stream">စီးကြောင်း</string>
+    <string name="roots_ui_tree">ဘဝသစ်ပင်</string>
+    <string name="roots_ui_local_knowledge">စက်တွင်း အသိပညာ</string>
+    <string name="roots_ui_search">သိမ်းထားသောစာသားကို ရှာရန်</string>
+    <string name="roots_ui_rank">အဆင့်စီ / ပြန်ဖွင့်</string>
+    <string name="roots_ui_inference">မော်ဒယ်တွက်ချက်မှု</string>
+    <string name="roots_ui_axons">Axon စာရင်းသွင်းမှုများ</string>
+    <string name="roots_ui_capture_on">စက်တွင်း စုဆောင်းမှု ဖွင့်ရန်</string>
+    <string name="roots_ui_capture_pause">စက်တွင်း စုဆောင်းမှု ခေတ္တရပ်ရန်</string>
+    <string name="roots_ui_more">အသိပညာ ပိုမိုပြရန်</string>
+    <string name="roots_ui_empty">လေ့လာမှတ်တမ်း မရှိသေးပါ။</string>
+    <string name="roots_ui_translation">ဘာသာပြန်</string>
+    <string name="roots_ui_follow_system">Android ဘာသာစကားအတိုင်း</string>
+    <string name="roots_ui_translate_into">ဘာသာပြန်မည့် ဘာသာစကား (၄၃ မျိုး)</string>
+    <string name="roots_ui_display_mode">ဘာသာပြန် ပြသမှု ပုံစံ</string>
+    <string name="roots_ui_manual">ကိုယ်တိုင် — ပို့စ်တစ်ခုလျှင် ⇄ ခလုတ်တစ်ခု</string>
+    <string name="roots_ui_automatic">အလိုအလျောက် (စမ်းသပ်ဆဲ) — စာမျက်နှာရွှေ့စဉ် ပို့စ်စာသား အစားထိုးရန်</string>
+    <string name="roots_ui_appearance">အသွင်အပြင်</string>
+    <string name="roots_ui_accessibility">အသုံးပြုနိုင်မှုနှင့် ခွင့်ပြုချက်များ</string>
+    <string name="roots_ui_diagnostics">ပြဿနာရှာဖွေမှု</string>
+    <string name="roots_ui_storage">အသိပညာနှင့် သိုလှောင်မှု</string>
+    <string name="roots_ui_models">မော်ဒယ်များနှင့် တွက်ချက်မှု</string>
+    <string name="roots_ui_desktop">ကွန်ပျူတာ ချိတ်ဆက်မှု</string>
+    <string name="roots_ui_intelligence">ဉာဏ်ရည်</string>
+    <string name="roots_ui_open_accessibility">အသုံးပြုနိုင်မှု ဆက်တင်များ ဖွင့်ရန်</string>
+    <string name="roots_ui_stop_processing">X စာသား စီမံမှု ရပ်ရန်</string>
+</resources>

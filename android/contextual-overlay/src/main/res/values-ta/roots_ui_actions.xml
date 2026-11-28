@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo மொழிபெயர்ப்பைச் சோதி</string>
+    <string name="roots_ui_save_connection">மொழிபெயர்ப்பு இணைப்பைச் சேமி</string>
+    <string name="roots_ui_clear_key">மொழிபெயர்ப்புச் சாவியை அழி</string>
+    <string name="roots_ui_branches">கிளைகள்</string>
+    <string name="roots_ui_agent">புதிய முகவர்</string>
+    <string name="roots_ui_back">பின்செல்</string>
+    <string name="roots_ui_refresh">புதுப்பி</string>
+    <string name="roots_ui_cancel">ரத்துசெய்</string>
+    <string name="roots_ui_close">மூடு</string>
+    <string name="roots_ui_save">சேமி</string>
+    <string name="roots_ui_remove">அகற்று</string>
+    <string name="roots_ui_clear">அழி</string>
+    <string name="roots_ui_receive">அறிவைப் பெறு</string>
+    <string name="roots_ui_nearby">அருகிலுள்ள சாதனங்களுடன் பரிமாற்றம்</string>
+    <string name="roots_ui_connection">இணைப்பு விவரங்கள்</string>
+    <string name="roots_ui_listen_start">இணைப்புகளுக்காகக் காத்திருக்கத் தொடங்கு</string>
+    <string name="roots_ui_listen_stop">இணைப்புகளுக்காகக் காத்திருப்பதை நிறுத்து</string>
+    <string name="roots_ui_network">பிணைய உலாவி</string>
+    <string name="roots_ui_external">வெளிப்புற அறிவு</string>
+    <string name="roots_ui_history">அனுமான வரலாறு</string>
+    <string name="roots_ui_poetic">கவித்துவ இயக்கம்</string>
+    <string name="roots_ui_later">இப்போது வேண்டாம்</string>
+    <string name="roots_ui_home">முகப்பு</string>
+    <string name="roots_ui_stream_sub">வாழ்வின் மரம் · அறிவின் ஓட்டம்</string>
+    <string name="roots_ui_settings_sub">Roots · மொழிபெயர்ப்பும் அறிவும்</string>
+    <string name="roots_ui_scheduling">மொழி, முறை மற்றும் திட்டமிடல்</string>
+    <string name="roots_ui_consent_accessibility">ஒப்புக்கொள்கிறேன் — அணுகல்தன்மை அமைப்புகளைத் திற</string>
+</resources>

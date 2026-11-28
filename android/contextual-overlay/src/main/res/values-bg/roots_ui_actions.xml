@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Тествай превода с PLaMo</string>
+    <string name="roots_ui_save_connection">Запази връзката за превод</string>
+    <string name="roots_ui_clear_key">Изтрий ключа за превод</string>
+    <string name="roots_ui_branches">Клони</string>
+    <string name="roots_ui_agent">Нов агент</string>
+    <string name="roots_ui_back">Назад</string>
+    <string name="roots_ui_refresh">Обнови</string>
+    <string name="roots_ui_cancel">Отказ</string>
+    <string name="roots_ui_close">Затвори</string>
+    <string name="roots_ui_save">Запази</string>
+    <string name="roots_ui_remove">Премахни</string>
+    <string name="roots_ui_clear">Изчисти</string>
+    <string name="roots_ui_receive">Получаване на знания</string>
+    <string name="roots_ui_nearby">Обмен наблизо</string>
+    <string name="roots_ui_connection">Данни за връзката</string>
+    <string name="roots_ui_listen_start">Започни слушане</string>
+    <string name="roots_ui_listen_stop">Спри слушането</string>
+    <string name="roots_ui_network">Мрежов преглед</string>
+    <string name="roots_ui_external">Външни знания</string>
+    <string name="roots_ui_history">История на инференцията</string>
+    <string name="roots_ui_poetic">Поетично движение</string>
+    <string name="roots_ui_later">Не сега</string>
+    <string name="roots_ui_home">Начало</string>
+    <string name="roots_ui_stream_sub">Дърво на живота · поток от знания</string>
+    <string name="roots_ui_settings_sub">Roots · превод и знания</string>
+    <string name="roots_ui_scheduling">Език, режим и планиране</string>
+    <string name="roots_ui_consent_accessibility">Съгласен съм — отвори настройките за достъпност</string>
+</resources>

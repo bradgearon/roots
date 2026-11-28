@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">அமைப்புகள்</string>
+    <string name="roots_ui_stream">ஸ்ட்ரீம்</string>
+    <string name="roots_ui_tree">வாழ்வின் மரம்</string>
+    <string name="roots_ui_local_knowledge">உள்ளூர் அறிவு</string>
+    <string name="roots_ui_search">சேமித்த உரையைத் தேடு</string>
+    <string name="roots_ui_rank">வரிசைப்படுத்து / புதுப்பி</string>
+    <string name="roots_ui_inference">அனுமானம்</string>
+    <string name="roots_ui_axons">Axon சந்தாக்கள்</string>
+    <string name="roots_ui_capture_on">உள்ளூர் சேகரிப்பை இயக்கு</string>
+    <string name="roots_ui_capture_pause">உள்ளூர் சேகரிப்பை இடைநிறுத்து</string>
+    <string name="roots_ui_more">மேலும் அறிவைக் காட்டு</string>
+    <string name="roots_ui_empty">இன்னும் கவனிப்புகள் இல்லை.</string>
+    <string name="roots_ui_translation">மொழிபெயர்ப்பு</string>
+    <string name="roots_ui_follow_system">Android மொழியைப் பின்பற்று</string>
+    <string name="roots_ui_translate_into">மொழிபெயர்க்கும் மொழி (43 மொழிகள்)</string>
+    <string name="roots_ui_display_mode">மொழிபெயர்ப்புக் காட்சி முறை</string>
+    <string name="roots_ui_manual">கைமுறை — ஒவ்வொரு பதிவுக்கும் ஒரு ⇄ பொத்தான்</string>
+    <string name="roots_ui_automatic">தானியங்கி (சோதனை) — உருட்டும்போது பதிவின் உரையை மாற்று</string>
+    <string name="roots_ui_appearance">தோற்றம்</string>
+    <string name="roots_ui_accessibility">அணுகல்தன்மை மற்றும் அனுமதிகள்</string>
+    <string name="roots_ui_diagnostics">கண்டறிதல்</string>
+    <string name="roots_ui_storage">அறிவு மற்றும் சேமிப்பு</string>
+    <string name="roots_ui_models">மாதிரிகள் மற்றும் அனுமானம்</string>
+    <string name="roots_ui_desktop">கணினி இணைப்பு</string>
+    <string name="roots_ui_intelligence">நுண்ணறிவு</string>
+    <string name="roots_ui_open_accessibility">அணுகல்தன்மை அமைப்புகளைத் திற</string>
+    <string name="roots_ui_stop_processing">X உரை செயலாக்கத்தை நிறுத்து</string>
+</resources>

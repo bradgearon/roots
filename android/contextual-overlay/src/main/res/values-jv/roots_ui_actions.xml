@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Tes terjemahan PLaMo</string>
+    <string name="roots_ui_save_connection">Simpen sambungan terjemahan</string>
+    <string name="roots_ui_clear_key">Busak kunci terjemahan</string>
+    <string name="roots_ui_branches">Pang</string>
+    <string name="roots_ui_agent">Agen anyar</string>
+    <string name="roots_ui_back">Mundur</string>
+    <string name="roots_ui_refresh">Segerake</string>
+    <string name="roots_ui_cancel">Batal</string>
+    <string name="roots_ui_close">Tutup</string>
+    <string name="roots_ui_save">Simpen</string>
+    <string name="roots_ui_remove">Copot</string>
+    <string name="roots_ui_clear">Busak</string>
+    <string name="roots_ui_receive">Tampa kawruh</string>
+    <string name="roots_ui_nearby">Ijol-ijolan ing sacedhake</string>
+    <string name="roots_ui_connection">Rincian sambungan</string>
+    <string name="roots_ui_listen_start">Wiwiti ngrungokake sambungan</string>
+    <string name="roots_ui_listen_stop">Mandheg ngrungokake sambungan</string>
+    <string name="roots_ui_network">Penjelajah jaringan</string>
+    <string name="roots_ui_external">Kawruh eksternal</string>
+    <string name="roots_ui_history">Riwayat inferensi</string>
+    <string name="roots_ui_poetic">Gerakan puitis</string>
+    <string name="roots_ui_later">Ora saiki</string>
+    <string name="roots_ui_home">Beranda</string>
+    <string name="roots_ui_stream_sub">Wit Panguripan · aliran kawruh</string>
+    <string name="roots_ui_settings_sub">Roots · terjemahan lan kawruh</string>
+    <string name="roots_ui_scheduling">Basa, mode lan jadwal</string>
+    <string name="roots_ui_consent_accessibility">Aku sarujuk — bukak setelan aksesibilitas</string>
+</resources>

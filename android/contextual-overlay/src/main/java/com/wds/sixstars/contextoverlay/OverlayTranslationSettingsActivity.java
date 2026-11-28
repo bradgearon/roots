@@ -54,15 +54,15 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         prefs = new OverlayPreferences(this);
 
         LinearLayout shell=RootsUi.shell(this);
-        shell.addView(RootsUi.header(this,"Settings","Roots · translation and knowledge"));
-        shell.addView(RootsUi.action(this,"Live inference history",()->startActivity(new Intent(this,InferenceHistoryActivity.class))));
+        shell.addView(RootsUi.header(this,getString(R.string.roots_ui_settings),getString(R.string.roots_ui_settings_sub)));
+        shell.addView(RootsUi.action(this,getString(R.string.roots_ui_history),()->startActivity(new Intent(this,InferenceHistoryActivity.class))));
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         LinearLayout sections = RootsUi.column(this);
         sections.setPadding(dp(16),dp(8),dp(16),dp(20));
         scroll.addView(sections);
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout content=RootsUi.section(this,sections,"Accessibility & permissions",
+        LinearLayout content=RootsUi.section(this,sections,getString(R.string.roots_ui_accessibility),
                 "Capture consent and Android service",true);
         TextView disclosure = text(
             "If enabled, Roots can read text and on-screen positions exposed by the X (Twitter) Android app while it is in the foreground. " +
@@ -81,7 +81,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(status);
 
         LinearLayout permissions=content;
-        LinearLayout diagnosticSection=RootsUi.section(this,sections,"Diagnostics","Scan and transport status",false);
+        LinearLayout diagnosticSection=RootsUi.section(this,sections,getString(R.string.roots_ui_diagnostics),"Scan and transport status",false);
         content=diagnosticSection;
         diagnostics = text("", 13, 0xFF9BCAD8);
         content.addView(diagnostics);
@@ -93,11 +93,11 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(inspectPost);
         content=permissions;
 
-        Button consent = button("I consent — open Accessibility settings");
+        Button consent = button(getString(R.string.roots_ui_consent_accessibility));
         consent.setOnClickListener(v -> showConsentDialog());
         content.addView(consent);
 
-        Button stop = button("Stop X text processing");
+        Button stop = button(getString(R.string.roots_ui_stop_processing));
         stop.setOnClickListener(v -> {
             prefs.setEnabled(false);
             XAccessibilityInspector.cancel();
@@ -111,17 +111,17 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         });
         content.addView(stop);
 
-        content=RootsUi.section(this,sections,"Knowledge & storage","Local observations, branches and capture",false);
-        Button tree = button("Open Tree of Life");
+        content=RootsUi.section(this,sections,getString(R.string.roots_ui_storage),"Local observations, branches and capture",false);
+        Button tree = button(getString(R.string.roots_ui_tree));
         tree.setOnClickListener(v -> startActivity(new Intent(this, TreeActivity.class)));
         content.addView(tree);
 
-        LinearLayout models=RootsUi.section(this,sections,"Models & inference","On-device model, acceleration and tests",false);
+        LinearLayout models=RootsUi.section(this,sections,getString(R.string.roots_ui_models),"On-device model, acceleration and tests",false);
         content=models;
         Button download = button("Download local PLaMo model (~550 MB)");
-        download.setOnClickListener(v -> LocalPLaMoTranslationProvider.downloadModel(this, (message, error) -> runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(error == null ? message : error).setPositiveButton("OK", null).show())));
+        download.setOnClickListener(v -> LocalPLaMoTranslationProvider.downloadModel(this, (message, error) -> runOnUiThread(() -> new AlertDialog.Builder(this).setMessage(error == null ? message : error).setPositiveButton(android.R.string.ok, null).show())));
         content.addView(download);
-        content=RootsUi.section(this,sections,"Desktop bridge","Pair a desktop and remember familiar networks",false);
+        content=RootsUi.section(this,sections,getString(R.string.roots_ui_desktop),"Pair a desktop and remember familiar networks",false);
         content.addView(text("Desktop bridge address (https://YOUR-PC:8223)", 13, 0xFFAAC8D4));
         bridgeAddress = new EditText(this);
         bridgeAddress.setSingleLine(true);
@@ -152,7 +152,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         translationKey.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         content.addView(translationKey);
 
-        Button saveKey = button("Save translation connection");
+        Button saveKey = button(getString(R.string.roots_ui_save_connection));
         saveKey.setOnClickListener(v -> saveTranslationConnection());
         content.addView(saveKey);
         TextView desktopTestStatus=text("Tests only the desktop, with a fixed sample. Never falls back to phone.",13,0xFFAAC8D4);
@@ -174,7 +174,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             }));
         });
 
-        Button clearKey = button("Clear translation key");
+        Button clearKey = button(getString(R.string.roots_ui_clear_key));
         clearKey.setOnClickListener(v -> {
             OverlayTranslationKeyStore.clear(this);
             FastestComputeRouter.forgetNetworks(this);
@@ -188,11 +188,11 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         });
         content.addView(clearKey);
 
-        LinearLayout translation=RootsUi.section(this,sections,"Translation","Language, mode and scheduling",true);
+        LinearLayout translation=RootsUi.section(this,sections,getString(R.string.roots_ui_translation),getString(R.string.roots_ui_scheduling),true);
         content=translation;
-        content.addView(text("Translate into (43 languages)", 13, 0xFFAAC8D4));
+        content.addView(text(getString(R.string.roots_ui_translate_into), 13, 0xFFAAC8D4));
         targetLanguage = new Spinner(this);
-        String[] languages = TranslationLanguages.settingLabels("Follow Android language");
+        String[] languages = TranslationLanguages.settingLabels(getString(R.string.roots_ui_follow_system));
         String[] codes = TranslationLanguages.settingCodes();
         RootsUi.styleSpinner(this, targetLanguage, languages);
         String configured = prefs.targetLanguageSetting();
@@ -234,7 +234,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                     .setMessage("Roots may send selected visible X text to your paired desktop when it is available and faster, including in automatic mode. " +
                             "Content may include sensitive posts or private messages. Requests are encrypted with the paired key. " +
                             "The phone remains available as a fallback. No location or Wi-Fi name is required. Continue?")
-                    .setNegativeButton("Not now", null)
+                    .setNegativeButton(R.string.roots_ui_later, null)
                     .setPositiveButton("I consent to desktop translation", (dialog, which) -> {
                         prefs.setDesktopTranslationEnabled(true);
                         TranslationRuntime.disconnect();
@@ -246,7 +246,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         });
         content.addView(desktopTranslation);
 
-        content.addView(text("Translation display mode", 18, 0xFFFFFFFF));
+        content.addView(text(getString(R.string.roots_ui_display_mode), 18, 0xFFFFFFFF));
         translationMode = new RadioGroup(this);
         translationMode.setOrientation(RadioGroup.VERTICAL);
         manualModeId = View.generateViewId();
@@ -254,13 +254,13 @@ public final class OverlayTranslationSettingsActivity extends Activity {
 
         RadioButton manual = new RadioButton(this);
         manual.setId(manualModeId);
-        manual.setText("Manual — one consistent ⇄ button per post");
+        manual.setText(getString(R.string.roots_ui_manual));
         manual.setTextColor(0xFFE5EFF4);
         translationMode.addView(manual);
 
         RadioButton automatic = new RadioButton(this);
         automatic.setId(autoModeId);
-        automatic.setText("Automatic (experimental) — replace post text as I scroll");
+        automatic.setText(getString(R.string.roots_ui_automatic));
         automatic.setTextColor(0xFFE5EFF4);
         translationMode.addView(automatic);
 
@@ -283,7 +283,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         activity.setOnCheckedChangeListener((button,checked)->prefs.setShowTranslationActivity(checked));
         content.addView(activity);
         content.addView(text("Roots prioritizes readable posts using measured scroll direction and learned backend latency. Names follow viable bodies; recently seen content is a lower-priority rollup at rest. One provider request is outstanding so waiting work can be reprioritized instead of piling up in a FIFO. Manual requests take the next available slot.", 12, 0xFFAAC8D4));
-        content=RootsUi.section(this,sections,"Appearance","Match your X theme",false);
+        content=RootsUi.section(this,sections,getString(R.string.roots_ui_appearance),"Match your X theme",false);
         content.addView(text("Inline overlay theme", 13, 0xFFAAC8D4));
         inlineAppearance = new Spinner(this);
         String[] appearanceLabels = { "Follow Android system", "X Black", "X Dim", "X Light" };
@@ -312,7 +312,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             12, 0xFFAAC8D4));
 
         content=permissions;
-        Button system = button("Open Accessibility settings");
+        Button system = button(getString(R.string.roots_ui_open_accessibility));
         system.setOnClickListener(v -> openAndroidSettings());
         content.addView(system);
 
@@ -341,7 +341,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         content.addView(text("ARM-optimized CPU kernels are enabled in the standard ARM64 build. Use the same sample twice or three times per setting; exclude first model load, and check the output. GPU is opt-in because driver compatibility and speed vary.",12,0xFFAAC8D4));
 
         content.addView(text("PLaMo translation connection test", 18, 0xFFFFFFFF));
-        Button sample = button("Test actual PLaMo translation");
+        Button sample = button(getString(R.string.roots_ui_test_translation));
         content.addView(sample);
         preview = text("Sample: Bonjour à tous!", 14, 0xFFE5EFF4);
         content.addView(preview);
@@ -363,7 +363,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 });
         });
 
-        content=RootsUi.section(this,sections,"Intelligence","General reasoning · phone or paired desktop",true);
+        content=RootsUi.section(this,sections,getString(R.string.roots_ui_intelligence),"General reasoning · phone or paired desktop",true);
         content.addView(text("Qwen3.5 0.8B is the default. Phone models load on request, release idle context after 30 seconds and unload weights after two minutes. Translation remains independent.",13,0xFFAAC8D4));
         Spinner intelligence=new Spinner(this);
         RootsUi.styleSpinner(this,intelligence,IntelligenceModel.labels());
@@ -451,7 +451,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             new AlertDialog.Builder(this).setTitle(model.label)
                 .setMessage("Download verified GGUF weights for on-device intelligence over unmetered network. Model terms: "+model.terms()+". The desktop uses its own model installation.")
                 .setNeutralButton("Review terms",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(model.terms()))))
-                .setNegativeButton("Cancel",null).setPositiveButton("Agree and download",(d,w)->
+                .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton("Agree and download",(d,w)->
                     LocalIntelligenceProvider.download(this,model,(message,error)->runOnUiThread(()->{
                         if(!isDestroyed())intelligenceStatus.setText(error==null?message:error);
                     }))).show();
@@ -494,7 +494,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         })));
         content.addView(intelligenceRelease);
         content.addView(intelligenceStatus);
-        Button movement=button("Open Poetic Movement lab");
+        Button movement=button(getString(R.string.roots_ui_poetic));
         movement.setOnClickListener(view->startActivity(new Intent(this,PoeticMovementActivity.class)));
         content.addView(movement);
 
@@ -520,7 +520,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             IntelligenceModel chosen=IntelligenceModel.values()[intelligence.getSelectedItemPosition()];
             new AlertDialog.Builder(this).setTitle("Clear measured flow?")
                 .setMessage("Clears aggregate observations for "+chosen.label+". Model weights and Tree are unchanged.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Clear",(d,w)->{
+                .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton(R.string.roots_ui_clear,(d,w)->{
                     try{LocalPLaMoTranslationProvider.WORK.execute(()->{
                         try{ElementFlow.clear(this,chosen);runOnUiThread(()->{if(!isDestroyed())flowStatus.setText("Baseline cleared");});}
                         catch(Exception e){runOnUiThread(()->{if(!isDestroyed())flowStatus.setText("Could not clear baseline");});}
@@ -537,7 +537,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             .setTitle("FunctionGemma model terms")
             .setMessage("Google Gemma terms apply. Review https://ai.google.dev/gemma/terms before downloading. Model weights are downloaded from Hugging Face over Wi-Fi; your requests remain on-device.")
             .setNeutralButton("Review terms",(d,w)->startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(LocalFunctionGemmaProvider.TERMS))))
-            .setNegativeButton("Cancel",null)
+            .setNegativeButton(R.string.roots_ui_cancel,null)
             .setPositiveButton("Agree and download",(d,w)->LocalFunctionGemmaProvider.download(this,(message,error)->runOnUiThread(()->functionStatus.setText(error==null?message:error))))
             .show());
         EditText functionInput=new EditText(this);
@@ -610,7 +610,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             .setMessage("Roots will inspect visible X text and screen coordinates and show an overlay. X may expose private or sensitive text. " +
                 "Only accessible X text is read. No text is transmitted to the desktop until you also enable the separate desktop translation consent. " +
                 "Do you consent to reading visible X text for translation?")
-            .setNegativeButton("Not now", null)
+            .setNegativeButton(R.string.roots_ui_later, null)
             .setPositiveButton("I consent", (dialog, which) -> {
                 prefs.setEnabled(true);
                 openAndroidSettings();
@@ -690,7 +690,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             int height=Math.min(dp(420),getResources().getDisplayMetrics().heightPixels*45/100);
             panel.addView(scroll,new LinearLayout.LayoutParams(-1,height));
         }
-        dialog.setView(panel).setNegativeButton("Close",null);
+        dialog.setView(panel).setNegativeButton(R.string.roots_ui_close,null);
         dialog.setNeutralButton("Record 90 seconds",(d,w)->{
             if(!prefs.enabled()||!accessibilityEnabled()){
                 android.widget.Toast.makeText(this,"Enable Roots X accessibility first.",android.widget.Toast.LENGTH_LONG).show();return;

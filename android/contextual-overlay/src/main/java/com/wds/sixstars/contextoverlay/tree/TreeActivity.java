@@ -12,6 +12,7 @@ import android.widget.TextView;
 import com.wds.sixstars.contextoverlay.OverlayPreferences;
 import com.wds.sixstars.contextoverlay.OverlayDiagnostics;
 import com.wds.sixstars.contextoverlay.RootsUi;
+import com.wds.sixstars.contextoverlay.R;
 import com.wds.sixstars.contextoverlay.KnowledgeRecordAdapter;
 import com.wds.sixstars.contextoverlay.KnowledgeRecordActions;
 import java.util.ArrayList;
@@ -35,12 +36,12 @@ public final class TreeActivity extends Activity {
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
         LinearLayout shell=RootsUi.shell(this);
-        shell.addView(RootsUi.header(this,"Tree of Life","Local observations and branches"));
+        shell.addView(RootsUi.header(this,getString(R.string.roots_ui_tree),"Local observations and branches"));
         LinearLayout layout=RootsUi.column(this);
         int inset=RootsUi.dp(this,16);
         layout.setPadding(inset,0,inset,inset);
         shell.addView(layout,new LinearLayout.LayoutParams(-1,0,1));
-        shell.addView(RootsUi.action(this,"‹  Back",this::finish));
+        shell.addView(RootsUi.action(this,getString(R.string.roots_ui_back),this::finish));
         if(!NativeTree.available()){
             LinearLayout card=RootsUi.card(this,layout);
             card.addView(RootsUi.text(this,"Tree unavailable",19,RootsUi.TEXT,true));
@@ -58,34 +59,34 @@ public final class TreeActivity extends Activity {
             setContentView(shell);return;
         }
         runtime=TreeRuntime.get(this);
-        summary=RootsUi.text(this,"Local knowledge",13,RootsUi.ACCENT,true);layout.addView(summary);
+        summary=RootsUi.text(this,getString(R.string.roots_ui_local_knowledge),13,RootsUi.ACCENT,true);layout.addView(summary);
         status=new TextView(this);
         // Keep diagnostic details out of the scrollable record area.
         LinearLayout tools=new LinearLayout(this);
-        tools.addView(button("Diagnostics",()->{
+        tools.addView(button(getString(R.string.roots_ui_diagnostics),()->{
             refreshStatus();
             TextView details=RootsUi.text(this,runtime.status()+"\n\nAccessibility:\n"+OverlayDiagnostics.summary(this),13,RootsUi.TEXT,false);
             int p=RootsUi.dp(this,16);details.setPadding(p,p,p,p);
             android.widget.ScrollView scroll=new android.widget.ScrollView(this);scroll.addView(details);
             new AlertDialog.Builder(this).setTitle("Tree diagnostics").setView(scroll)
                 .setNeutralButton("Compile GGUF",(dialog,w)->{runtime.requestSnapshot();refreshStatus();})
-                .setPositiveButton("Close",null).show();
+                .setPositiveButton(R.string.roots_ui_close,null).show();
         }),new LinearLayout.LayoutParams(0,-2,1));
         tools.addView(button("Capture",()->{
             if(runtime.enabled())runtime.setEnabled(false);else consent();
             refreshStatus();
         }),new LinearLayout.LayoutParams(0,-2,1));
         layout.addView(tools);
-        search=new EditText(this);search.setSingleLine(true);search.setHint("Search retained text");layout.addView(search);
+        search=new EditText(this);search.setSingleLine(true);search.setHint(getString(R.string.roots_ui_search));layout.addView(search);
         layout.addView(button("Search / refresh feed",this::reset));
         branchLabel=new TextView(this);branchLabel.setText("Branch: all records");layout.addView(branchLabel);
         Button mode=button("View: grouped records",()->{rawMode=!rawMode;reset();});
         mode.setOnClickListener(v->{rawMode=!rawMode;mode.setText(rawMode?"View: all raw fragments":"View: grouped records");reset();});
         layout.addView(mode);
         LinearLayout controls=new LinearLayout(this);
-        controls.addView(button("Branches",this::chooseBranch),new LinearLayout.LayoutParams(0,-2,1));
-        controls.addView(button("New agent",this::createAgent),new LinearLayout.LayoutParams(0,-2,1));
-        controls.addView(button("Remove",this::removeAgent),new LinearLayout.LayoutParams(0,-2,1));
+        controls.addView(button(getString(R.string.roots_ui_branches),this::chooseBranch),new LinearLayout.LayoutParams(0,-2,1));
+        controls.addView(button(getString(R.string.roots_ui_agent),this::createAgent),new LinearLayout.LayoutParams(0,-2,1));
+        controls.addView(button(getString(R.string.roots_ui_remove),this::removeAgent),new LinearLayout.LayoutParams(0,-2,1));
         layout.addView(controls);
         ListView list=new ListView(this);
         adapter=new KnowledgeRecordAdapter(this,rows);
@@ -119,11 +120,11 @@ public final class TreeActivity extends Activity {
     }
     private void consent(){
         if(!new OverlayPreferences(this).enabled()){
-            new AlertDialog.Builder(this).setMessage("First enable the Roots X accessibility permission in translation settings. Tree storage is a separate opt-in.").setPositiveButton("OK",null).show();return;
+            new AlertDialog.Builder(this).setMessage("First enable the Roots X accessibility permission in translation settings. Tree storage is a separate opt-in.").setPositiveButton(android.R.string.ok,null).show();return;
         }
         new AlertDialog.Builder(this).setTitle("Retain all visible X text locally?")
             .setMessage("Roots will retain accessible text displayed in foreground X across Home, profiles, replies, search and other screens, including potentially private messages and sensitive content. Editable fields and passwords are excluded. Text is stored in a private local database and derived GGUF; capture does not upload it. No screenshots or other apps are captured. Pause stops new capture; an in-flight write may finish. Clear removes retained records and generated snapshots.")
-            .setNegativeButton("Not now",null).setPositiveButton("Enable local capture",(d,w)->{runtime.setEnabled(true);refreshStatus();}).show();
+            .setNegativeButton(R.string.roots_ui_later,null).setPositiveButton(R.string.roots_ui_capture_on,(d,w)->{runtime.setEnabled(true);refreshStatus();}).show();
     }
     private void reset(){
         if(closed||adapter==null)return;
@@ -170,16 +171,16 @@ public final class TreeActivity extends Activity {
         EditText match=new EditText(this);match.setHint("Literal interest phrase");form.addView(match);
         new AlertDialog.Builder(this).setTitle("Create local branch agent").setView(form)
             .setMessage("Initial agents backfill and collect matching local fragments. Lily semantic sensors and external research are later capabilities.")
-            .setNegativeButton("Cancel",null).setPositiveButton("Create",(d,w)->runtime.createAgent(name.getText().toString().trim(),match.getText().toString().trim(),error->runOnUiThread(()->{if(!closed){if(error==null){refreshStatus();chooseBranch();}else status.setText(error);}}))).show();
+            .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton("Create",(d,w)->runtime.createAgent(name.getText().toString().trim(),match.getText().toString().trim(),error->runOnUiThread(()->{if(!closed){if(error==null){refreshStatus();chooseBranch();}else status.setText(error);}}))).show();
     }
     private void removeAgent(){
         if(branch==0)return;long id=branch;
         new AlertDialog.Builder(this).setMessage("Remove this agent and its branch membership? Observations remain.")
-            .setNegativeButton("Cancel",null).setPositiveButton("Remove",(d,w)->runtime.removeAgent(id,error->runOnUiThread(()->{if(!closed){if(error==null){branch=0;branchLabel.setText("Branch: all records");reset();refreshStatus();}else status.setText(error);}}))).show();
+            .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton(R.string.roots_ui_remove,(d,w)->runtime.removeAgent(id,error->runOnUiThread(()->{if(!closed){if(error==null){branch=0;branchLabel.setText("Branch: all records");reset();refreshStatus();}else status.setText(error);}}))).show();
     }
     private void clear(){
         new AlertDialog.Builder(this).setTitle("Clear local Tree?").setMessage("Stops capture and logically deletes all observations, agents, and managed GGUF snapshots. This is not forensic erasure.")
-            .setNegativeButton("Cancel",null).setPositiveButton("Clear",(d,w)->{
+            .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton(R.string.roots_ui_clear,(d,w)->{
                 generation++;ended=true;loading=false;rows.clear();adapter.notifyDataSetChanged();
                 runtime.clear(error->runOnUiThread(()->{if(!closed){branch=0;branchLabel.setText("Branch: all records");reset();refreshStatus();if(error!=null)status.setText(error);}}));
             }).show();

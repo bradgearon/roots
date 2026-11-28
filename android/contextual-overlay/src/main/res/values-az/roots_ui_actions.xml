@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo tərcüməsini sına</string>
+    <string name="roots_ui_save_connection">Tərcümə bağlantısını saxla</string>
+    <string name="roots_ui_clear_key">Tərcümə açarını sil</string>
+    <string name="roots_ui_branches">Budaqlar</string>
+    <string name="roots_ui_agent">Yeni agent</string>
+    <string name="roots_ui_back">Geri</string>
+    <string name="roots_ui_refresh">Yenilə</string>
+    <string name="roots_ui_cancel">Ləğv et</string>
+    <string name="roots_ui_close">Bağla</string>
+    <string name="roots_ui_save">Saxla</string>
+    <string name="roots_ui_remove">Sil</string>
+    <string name="roots_ui_clear">Təmizlə</string>
+    <string name="roots_ui_receive">Bilik qəbul et</string>
+    <string name="roots_ui_nearby">Yaxınlıqda mübadilə</string>
+    <string name="roots_ui_connection">Bağlantı təfərrüatları</string>
+    <string name="roots_ui_listen_start">Dinləməyə başla</string>
+    <string name="roots_ui_listen_stop">Dinləməyi dayandır</string>
+    <string name="roots_ui_network">Şəbəkə bələdçisi</string>
+    <string name="roots_ui_external">Xarici bilik</string>
+    <string name="roots_ui_history">Çıxarım tarixçəsi</string>
+    <string name="roots_ui_poetic">Poetik hərəkət</string>
+    <string name="roots_ui_later">İndi yox</string>
+    <string name="roots_ui_home">Ana səhifə</string>
+    <string name="roots_ui_stream_sub">Həyat ağacı · bilik axını</string>
+    <string name="roots_ui_settings_sub">Roots · tərcümə və bilik</string>
+    <string name="roots_ui_scheduling">Dil, rejim və planlaşdırma</string>
+    <string name="roots_ui_consent_accessibility">Razıyam — əlçatanlıq parametrlərini aç</string>
+</resources>

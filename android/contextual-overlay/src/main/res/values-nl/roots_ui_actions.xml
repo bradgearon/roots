@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo-vertaling testen</string>
+    <string name="roots_ui_save_connection">Vertaalverbinding opslaan</string>
+    <string name="roots_ui_clear_key">Vertaalsleutel wissen</string>
+    <string name="roots_ui_branches">Takken</string>
+    <string name="roots_ui_agent">Nieuwe agent</string>
+    <string name="roots_ui_back">Terug</string>
+    <string name="roots_ui_refresh">Vernieuwen</string>
+    <string name="roots_ui_cancel">Annuleren</string>
+    <string name="roots_ui_close">Sluiten</string>
+    <string name="roots_ui_save">Opslaan</string>
+    <string name="roots_ui_remove">Verwijderen</string>
+    <string name="roots_ui_clear">Wissen</string>
+    <string name="roots_ui_receive">Kennis ontvangen</string>
+    <string name="roots_ui_nearby">Uitwisseling in de buurt</string>
+    <string name="roots_ui_connection">Verbindingsgegevens</string>
+    <string name="roots_ui_listen_start">Begin met luisteren</string>
+    <string name="roots_ui_listen_stop">Stop met luisteren</string>
+    <string name="roots_ui_network">Netwerkverkenner</string>
+    <string name="roots_ui_external">Externe kennis</string>
+    <string name="roots_ui_history">Inferentiegeschiedenis</string>
+    <string name="roots_ui_poetic">Poëtische beweging</string>
+    <string name="roots_ui_later">Niet nu</string>
+    <string name="roots_ui_home">Start</string>
+    <string name="roots_ui_stream_sub">Levensboom · kennisstroom</string>
+    <string name="roots_ui_settings_sub">Roots · vertaling en kennis</string>
+    <string name="roots_ui_scheduling">Taal, modus en planning</string>
+    <string name="roots_ui_consent_accessibility">Ik geef toestemming — open toegankelijkheidsinstellingen</string>
+</resources>

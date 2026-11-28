@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">សាកល្បងការបកប្រែ PLaMo</string>
+    <string name="roots_ui_save_connection">រក្សាទុកការតភ្ជាប់ការបកប្រែ</string>
+    <string name="roots_ui_clear_key">លុបសោការបកប្រែ</string>
+    <string name="roots_ui_branches">មែកធាង</string>
+    <string name="roots_ui_agent">ភ្នាក់ងារថ្មី</string>
+    <string name="roots_ui_back">ថយក្រោយ</string>
+    <string name="roots_ui_refresh">ធ្វើឱ្យស្រស់</string>
+    <string name="roots_ui_cancel">បោះបង់</string>
+    <string name="roots_ui_close">បិទ</string>
+    <string name="roots_ui_save">រក្សាទុក</string>
+    <string name="roots_ui_remove">ដកចេញ</string>
+    <string name="roots_ui_clear">សម្អាត</string>
+    <string name="roots_ui_receive">ទទួលចំណេះដឹង</string>
+    <string name="roots_ui_nearby">ការផ្លាស់ប្តូរជាមួយឧបករណ៍នៅក្បែរ</string>
+    <string name="roots_ui_connection">ព័ត៌មានលម្អិតនៃការតភ្ជាប់</string>
+    <string name="roots_ui_listen_start">ចាប់ផ្តើមរង់ចាំការតភ្ជាប់</string>
+    <string name="roots_ui_listen_stop">ឈប់រង់ចាំការតភ្ជាប់</string>
+    <string name="roots_ui_network">កម្មវិធីរុករកបណ្តាញ</string>
+    <string name="roots_ui_external">ចំណេះដឹងខាងក្រៅ</string>
+    <string name="roots_ui_history">ប្រវត្តិការសន្និដ្ឋាន</string>
+    <string name="roots_ui_poetic">ចលនាកំណាព្យ</string>
+    <string name="roots_ui_later">មិនមែនឥឡូវនេះ</string>
+    <string name="roots_ui_home">ទំព័រដើម</string>
+    <string name="roots_ui_stream_sub">ដើមឈើជីវិត · លំហូរចំណេះដឹង</string>
+    <string name="roots_ui_settings_sub">Roots · ការបកប្រែ និងចំណេះដឹង</string>
+    <string name="roots_ui_scheduling">ភាសា របៀប និងកាលវិភាគ</string>
+    <string name="roots_ui_consent_accessibility">ខ្ញុំយល់ព្រម — បើកការកំណត់ភាពងាយស្រួលប្រើ</string>
+</resources>

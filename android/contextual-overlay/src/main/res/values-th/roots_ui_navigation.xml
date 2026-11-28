@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">การตั้งค่า</string>
+    <string name="roots_ui_stream">สตรีม</string>
+    <string name="roots_ui_tree">ต้นไม้แห่งชีวิต</string>
+    <string name="roots_ui_local_knowledge">ความรู้ในเครื่อง</string>
+    <string name="roots_ui_search">ค้นหาข้อความที่เก็บไว้</string>
+    <string name="roots_ui_rank">จัดอันดับ / รีเฟรช</string>
+    <string name="roots_ui_inference">การอนุมาน</string>
+    <string name="roots_ui_axons">การสมัคร Axon</string>
+    <string name="roots_ui_capture_on">เปิดการเก็บข้อมูลในเครื่อง</string>
+    <string name="roots_ui_capture_pause">หยุดการเก็บข้อมูลในเครื่องชั่วคราว</string>
+    <string name="roots_ui_more">แสดงความรู้เพิ่มเติม</string>
+    <string name="roots_ui_empty">ยังไม่มีบันทึกการสังเกต</string>
+    <string name="roots_ui_translation">การแปล</string>
+    <string name="roots_ui_follow_system">ใช้ภาษาตาม Android</string>
+    <string name="roots_ui_translate_into">แปลเป็น (43 ภาษา)</string>
+    <string name="roots_ui_display_mode">โหมดแสดงคำแปล</string>
+    <string name="roots_ui_manual">ด้วยตนเอง — หนึ่งปุ่ม ⇄ ต่อโพสต์</string>
+    <string name="roots_ui_automatic">อัตโนมัติ (ทดลอง) — แทนที่ข้อความโพสต์ขณะเลื่อน</string>
+    <string name="roots_ui_appearance">รูปลักษณ์</string>
+    <string name="roots_ui_accessibility">การช่วยเหลือพิเศษและสิทธิ์</string>
+    <string name="roots_ui_diagnostics">การวินิจฉัย</string>
+    <string name="roots_ui_storage">ความรู้และพื้นที่จัดเก็บ</string>
+    <string name="roots_ui_models">โมเดลและการอนุมาน</string>
+    <string name="roots_ui_desktop">การเชื่อมต่อเดสก์ท็อป</string>
+    <string name="roots_ui_intelligence">ความฉลาด</string>
+    <string name="roots_ui_open_accessibility">เปิดการตั้งค่าการช่วยเหลือพิเศษ</string>
+    <string name="roots_ui_stop_processing">หยุดประมวลผลข้อความ X</string>
+</resources>

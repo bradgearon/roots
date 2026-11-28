@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Paramètres</string>
+    <string name="roots_ui_stream">Flux</string>
+    <string name="roots_ui_tree">Arbre de vie</string>
+    <string name="roots_ui_local_knowledge">Connaissances locales</string>
+    <string name="roots_ui_search">Rechercher dans le texte conservé</string>
+    <string name="roots_ui_rank">Classer / actualiser</string>
+    <string name="roots_ui_inference">Inférence</string>
+    <string name="roots_ui_axons">Abonnements Axon</string>
+    <string name="roots_ui_capture_on">Activer la collecte locale</string>
+    <string name="roots_ui_capture_pause">Mettre en pause la collecte locale</string>
+    <string name="roots_ui_more">Afficher plus de connaissances</string>
+    <string name="roots_ui_empty">Aucune observation pour le moment.</string>
+    <string name="roots_ui_translation">Traduction</string>
+    <string name="roots_ui_follow_system">Suivre la langue d\'Android</string>
+    <string name="roots_ui_translate_into">Traduire vers (43 langues)</string>
+    <string name="roots_ui_display_mode">Mode d\'affichage des traductions</string>
+    <string name="roots_ui_manual">Manuel — un bouton ⇄ par publication</string>
+    <string name="roots_ui_automatic">Automatique (expérimental) — remplacer le texte des publications au défilement</string>
+    <string name="roots_ui_appearance">Apparence</string>
+    <string name="roots_ui_accessibility">Accessibilité et autorisations</string>
+    <string name="roots_ui_diagnostics">Diagnostic</string>
+    <string name="roots_ui_storage">Connaissances et stockage</string>
+    <string name="roots_ui_models">Modèles et inférence</string>
+    <string name="roots_ui_desktop">Connexion à l\'ordinateur</string>
+    <string name="roots_ui_intelligence">Intelligence</string>
+    <string name="roots_ui_open_accessibility">Ouvrir les paramètres d\'accessibilité</string>
+    <string name="roots_ui_stop_processing">Arrêter le traitement du texte de X</string>
+</resources>

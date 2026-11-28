@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">সেটিংস</string>
+    <string name="roots_ui_stream">স্ট্রিম</string>
+    <string name="roots_ui_tree">জীবনের বৃক্ষ</string>
+    <string name="roots_ui_local_knowledge">স্থানীয় জ্ঞান</string>
+    <string name="roots_ui_search">সংরক্ষিত লেখা খুঁজুন</string>
+    <string name="roots_ui_rank">ক্রম নির্ধারণ / রিফ্রেশ</string>
+    <string name="roots_ui_inference">ইনফারেন্স</string>
+    <string name="roots_ui_axons">Axon সাবস্ক্রিপশন</string>
+    <string name="roots_ui_capture_on">স্থানীয় সংগ্রহ চালু করুন</string>
+    <string name="roots_ui_capture_pause">স্থানীয় সংগ্রহ বিরত রাখুন</string>
+    <string name="roots_ui_more">আরও জ্ঞান দেখুন</string>
+    <string name="roots_ui_empty">এখনও কোনো পর্যবেক্ষণ নেই।</string>
+    <string name="roots_ui_translation">অনুবাদ</string>
+    <string name="roots_ui_follow_system">Android-এর ভাষা অনুসরণ করুন</string>
+    <string name="roots_ui_translate_into">অনুবাদের ভাষা (৪৩টি)</string>
+    <string name="roots_ui_display_mode">অনুবাদ প্রদর্শনের মোড</string>
+    <string name="roots_ui_manual">ম্যানুয়াল — প্রতি পোস্টে একটি ⇄ বোতাম</string>
+    <string name="roots_ui_automatic">স্বয়ংক্রিয় (পরীক্ষামূলক) — স্ক্রল করার সময় পোস্টের লেখা বদলান</string>
+    <string name="roots_ui_appearance">চেহারা</string>
+    <string name="roots_ui_accessibility">অ্যাক্সেসিবিলিটি ও অনুমতি</string>
+    <string name="roots_ui_diagnostics">ডায়াগনস্টিকস</string>
+    <string name="roots_ui_storage">জ্ঞান ও স্টোরেজ</string>
+    <string name="roots_ui_models">মডেল ও ইনফারেন্স</string>
+    <string name="roots_ui_desktop">ডেস্কটপ সংযোগ</string>
+    <string name="roots_ui_intelligence">বুদ্ধিমত্তা</string>
+    <string name="roots_ui_open_accessibility">অ্যাক্সেসিবিলিটি সেটিংস খুলুন</string>
+    <string name="roots_ui_stop_processing">X-এর লেখা প্রক্রিয়াকরণ বন্ধ করুন</string>
+</resources>

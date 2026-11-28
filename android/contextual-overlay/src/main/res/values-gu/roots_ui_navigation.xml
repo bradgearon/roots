@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">સેટિંગ્સ</string>
+    <string name="roots_ui_stream">પ્રવાહ</string>
+    <string name="roots_ui_tree">જીવનનું વૃક્ષ</string>
+    <string name="roots_ui_local_knowledge">સ્થાનિક જ્ઞાન</string>
+    <string name="roots_ui_search">સંગ્રહિત લખાણ શોધો</string>
+    <string name="roots_ui_rank">ક્રમ આપો / તાજું કરો</string>
+    <string name="roots_ui_inference">ઇન્ફરન્સ</string>
+    <string name="roots_ui_axons">Axon સબ્સ્ક્રિપ્શન્સ</string>
+    <string name="roots_ui_capture_on">સ્થાનિક સંગ્રહ ચાલુ કરો</string>
+    <string name="roots_ui_capture_pause">સ્થાનિક સંગ્રહ થોભાવો</string>
+    <string name="roots_ui_more">વધુ જ્ઞાન બતાવો</string>
+    <string name="roots_ui_empty">હજુ કોઈ અવલોકન નથી.</string>
+    <string name="roots_ui_translation">અનુવાદ</string>
+    <string name="roots_ui_follow_system">Androidની ભાષા અનુસરો</string>
+    <string name="roots_ui_translate_into">અનુવાદની ભાષા (૪૩ ભાષાઓ)</string>
+    <string name="roots_ui_display_mode">અનુવાદ દર્શાવવાની રીત</string>
+    <string name="roots_ui_manual">મેન્યુઅલ — દરેક પોસ્ટ માટે એક ⇄ બટન</string>
+    <string name="roots_ui_automatic">સ્વચાલિત (પ્રાયોગિક) — સ્ક્રોલ કરતી વખતે પોસ્ટનું લખાણ બદલો</string>
+    <string name="roots_ui_appearance">દેખાવ</string>
+    <string name="roots_ui_accessibility">ઍક્સેસિબિલિટી અને પરવાનગીઓ</string>
+    <string name="roots_ui_diagnostics">નિદાન</string>
+    <string name="roots_ui_storage">જ્ઞાન અને સંગ્રહ</string>
+    <string name="roots_ui_models">મોડેલ અને ઇન્ફરન્સ</string>
+    <string name="roots_ui_desktop">ડેસ્કટોપ જોડાણ</string>
+    <string name="roots_ui_intelligence">બુદ્ધિમત્તા</string>
+    <string name="roots_ui_open_accessibility">ઍક્સેસિબિલિટી સેટિંગ્સ ખોલો</string>
+    <string name="roots_ui_stop_processing">X લખાણની પ્રક્રિયા બંધ કરો</string>
+</resources>

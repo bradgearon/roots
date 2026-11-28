@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo 번역 테스트</string>
+    <string name="roots_ui_save_connection">번역 연결 저장</string>
+    <string name="roots_ui_clear_key">번역 키 지우기</string>
+    <string name="roots_ui_branches">가지</string>
+    <string name="roots_ui_agent">새 에이전트</string>
+    <string name="roots_ui_back">뒤로</string>
+    <string name="roots_ui_refresh">새로고침</string>
+    <string name="roots_ui_cancel">취소</string>
+    <string name="roots_ui_close">닫기</string>
+    <string name="roots_ui_save">저장</string>
+    <string name="roots_ui_remove">제거</string>
+    <string name="roots_ui_clear">지우기</string>
+    <string name="roots_ui_receive">지식 받기</string>
+    <string name="roots_ui_nearby">주변 기기 교환</string>
+    <string name="roots_ui_connection">연결 세부정보</string>
+    <string name="roots_ui_listen_start">연결 수신 대기 시작</string>
+    <string name="roots_ui_listen_stop">연결 수신 대기 중지</string>
+    <string name="roots_ui_network">네트워크 탐색기</string>
+    <string name="roots_ui_external">외부 지식</string>
+    <string name="roots_ui_history">추론 기록</string>
+    <string name="roots_ui_poetic">시적 움직임</string>
+    <string name="roots_ui_later">나중에</string>
+    <string name="roots_ui_home">홈</string>
+    <string name="roots_ui_stream_sub">생명나무 · 지식 스트림</string>
+    <string name="roots_ui_settings_sub">Roots · 번역 및 지식</string>
+    <string name="roots_ui_scheduling">언어, 모드 및 일정</string>
+    <string name="roots_ui_consent_accessibility">동의합니다 — 접근성 설정 열기</string>
+</resources>

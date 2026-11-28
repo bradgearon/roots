@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">Thử bản dịch PLaMo</string>
+    <string name="roots_ui_save_connection">Lưu kết nối dịch</string>
+    <string name="roots_ui_clear_key">Xóa khóa dịch</string>
+    <string name="roots_ui_branches">Nhánh</string>
+    <string name="roots_ui_agent">Tác nhân mới</string>
+    <string name="roots_ui_back">Quay lại</string>
+    <string name="roots_ui_refresh">Làm mới</string>
+    <string name="roots_ui_cancel">Hủy</string>
+    <string name="roots_ui_close">Đóng</string>
+    <string name="roots_ui_save">Lưu</string>
+    <string name="roots_ui_remove">Xóa bỏ</string>
+    <string name="roots_ui_clear">Xóa sạch</string>
+    <string name="roots_ui_receive">Nhận tri thức</string>
+    <string name="roots_ui_nearby">Trao đổi với thiết bị lân cận</string>
+    <string name="roots_ui_connection">Chi tiết kết nối</string>
+    <string name="roots_ui_listen_start">Bắt đầu lắng nghe kết nối</string>
+    <string name="roots_ui_listen_stop">Dừng lắng nghe kết nối</string>
+    <string name="roots_ui_network">Trình khám phá mạng</string>
+    <string name="roots_ui_external">Tri thức bên ngoài</string>
+    <string name="roots_ui_history">Lịch sử suy luận</string>
+    <string name="roots_ui_poetic">Chuyển động thi ca</string>
+    <string name="roots_ui_later">Để sau</string>
+    <string name="roots_ui_home">Trang chủ</string>
+    <string name="roots_ui_stream_sub">Cây Sự Sống · dòng tri thức</string>
+    <string name="roots_ui_settings_sub">Roots · bản dịch và tri thức</string>
+    <string name="roots_ui_scheduling">Ngôn ngữ, chế độ và lịch trình</string>
+    <string name="roots_ui_consent_accessibility">Tôi đồng ý — mở cài đặt trợ năng</string>
+</resources>

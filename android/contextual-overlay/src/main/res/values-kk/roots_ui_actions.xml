@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_test_translation">PLaMo аудармасын сынау</string>
+    <string name="roots_ui_save_connection">Аударма байланысын сақтау</string>
+    <string name="roots_ui_clear_key">Аударма кілтін өшіру</string>
+    <string name="roots_ui_branches">Бұтақтар</string>
+    <string name="roots_ui_agent">Жаңа агент</string>
+    <string name="roots_ui_back">Артқа</string>
+    <string name="roots_ui_refresh">Жаңарту</string>
+    <string name="roots_ui_cancel">Бас тарту</string>
+    <string name="roots_ui_close">Жабу</string>
+    <string name="roots_ui_save">Сақтау</string>
+    <string name="roots_ui_remove">Алып тастау</string>
+    <string name="roots_ui_clear">Тазарту</string>
+    <string name="roots_ui_receive">Білім қабылдау</string>
+    <string name="roots_ui_nearby">Жақын құрылғылармен алмасу</string>
+    <string name="roots_ui_connection">Байланыс мәліметтері</string>
+    <string name="roots_ui_listen_start">Байланыстарды тыңдауды бастау</string>
+    <string name="roots_ui_listen_stop">Тыңдауды тоқтату</string>
+    <string name="roots_ui_network">Желі шолғышы</string>
+    <string name="roots_ui_external">Сыртқы білім</string>
+    <string name="roots_ui_history">Инференция тарихы</string>
+    <string name="roots_ui_poetic">Поэтикалық қозғалыс</string>
+    <string name="roots_ui_later">Қазір емес</string>
+    <string name="roots_ui_home">Басты бет</string>
+    <string name="roots_ui_stream_sub">Өмір ағашы · білім ағыны</string>
+    <string name="roots_ui_settings_sub">Roots · аударма және білім</string>
+    <string name="roots_ui_scheduling">Тіл, режим және жоспарлау</string>
+    <string name="roots_ui_consent_accessibility">Келісемін — арнайы мүмкіндіктер параметрлерін ашу</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">تنظیمات</string>
+    <string name="roots_ui_stream">جریان</string>
+    <string name="roots_ui_tree">درخت زندگی</string>
+    <string name="roots_ui_local_knowledge">دانش محلی</string>
+    <string name="roots_ui_search">جست‌وجوی متن ذخیره‌شده</string>
+    <string name="roots_ui_rank">رتبه‌بندی / تازه‌سازی</string>
+    <string name="roots_ui_inference">استنتاج</string>
+    <string name="roots_ui_axons">اشتراک‌های Axon</string>
+    <string name="roots_ui_capture_on">فعال کردن گردآوری محلی</string>
+    <string name="roots_ui_capture_pause">توقف موقت گردآوری محلی</string>
+    <string name="roots_ui_more">نمایش دانش بیشتر</string>
+    <string name="roots_ui_empty">هنوز مشاهده‌ای وجود ندارد.</string>
+    <string name="roots_ui_translation">ترجمه</string>
+    <string name="roots_ui_follow_system">پیروی از زبان Android</string>
+    <string name="roots_ui_translate_into">ترجمه به (۴۳ زبان)</string>
+    <string name="roots_ui_display_mode">حالت نمایش ترجمه</string>
+    <string name="roots_ui_manual">دستی — یک دکمه ⇄ برای هر پست</string>
+    <string name="roots_ui_automatic">خودکار (آزمایشی) — جایگزینی متن پست هنگام پیمایش</string>
+    <string name="roots_ui_appearance">ظاهر</string>
+    <string name="roots_ui_accessibility">دسترس‌پذیری و مجوزها</string>
+    <string name="roots_ui_diagnostics">عیب‌یابی</string>
+    <string name="roots_ui_storage">دانش و ذخیره‌سازی</string>
+    <string name="roots_ui_models">مدل‌ها و استنتاج</string>
+    <string name="roots_ui_desktop">اتصال رایانه</string>
+    <string name="roots_ui_intelligence">هوشمندی</string>
+    <string name="roots_ui_open_accessibility">باز کردن تنظیمات دسترس‌پذیری</string>
+    <string name="roots_ui_stop_processing">توقف پردازش متن X</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Beállítások</string>
+    <string name="roots_ui_stream">Hírfolyam</string>
+    <string name="roots_ui_tree">Életfa</string>
+    <string name="roots_ui_local_knowledge">Helyi tudás</string>
+    <string name="roots_ui_search">Keresés a mentett szövegben</string>
+    <string name="roots_ui_rank">Rangsorolás / frissítés</string>
+    <string name="roots_ui_inference">Inferencia</string>
+    <string name="roots_ui_axons">Axon-előfizetések</string>
+    <string name="roots_ui_capture_on">Helyi gyűjtés engedélyezése</string>
+    <string name="roots_ui_capture_pause">Helyi gyűjtés szüneteltetése</string>
+    <string name="roots_ui_more">További tudás megjelenítése</string>
+    <string name="roots_ui_empty">Még nincsenek megfigyelések.</string>
+    <string name="roots_ui_translation">Fordítás</string>
+    <string name="roots_ui_follow_system">Android nyelvének követése</string>
+    <string name="roots_ui_translate_into">Fordítás nyelve (43 nyelv)</string>
+    <string name="roots_ui_display_mode">Fordítás megjelenítési módja</string>
+    <string name="roots_ui_manual">Kézi — bejegyzésenként egy ⇄ gomb</string>
+    <string name="roots_ui_automatic">Automatikus (kísérleti) — a bejegyzés szövegének cseréje görgetéskor</string>
+    <string name="roots_ui_appearance">Megjelenés</string>
+    <string name="roots_ui_accessibility">Akadálymentesítés és engedélyek</string>
+    <string name="roots_ui_diagnostics">Diagnosztika</string>
+    <string name="roots_ui_storage">Tudás és tárhely</string>
+    <string name="roots_ui_models">Modellek és inferencia</string>
+    <string name="roots_ui_desktop">Asztali kapcsolat</string>
+    <string name="roots_ui_intelligence">Intelligencia</string>
+    <string name="roots_ui_open_accessibility">Akadálymentesítési beállítások megnyitása</string>
+    <string name="roots_ui_stop_processing">X-szöveg feldolgozásának leállítása</string>
+</resources>

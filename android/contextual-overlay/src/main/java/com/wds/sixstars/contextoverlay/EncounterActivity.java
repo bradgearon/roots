@@ -24,7 +24,7 @@ public final class EncounterActivity extends Activity {
         ScrollView scroll=new ScrollView(this);LinearLayout content=RootsUi.column(this);
         content.setPadding(RootsUi.dp(this,16),0,RootsUi.dp(this,16),0);scroll.addView(content);shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout controls=RootsUi.card(this,content);
-        toggle=new Switch(this);toggle.setText("Nearby exchange");toggle.setTextColor(RootsUi.TEXT);toggle.setTextSize(18);
+        toggle=new Switch(this);toggle.setText(getString(R.string.roots_ui_nearby));toggle.setTextColor(RootsUi.TEXT);toggle.setTextSize(18);
         controls.addView(toggle);
         status=RootsUi.text(this,"",14,RootsUi.ACCENT,true);controls.addView(status);
         summary=RootsUi.text(this,"",13,RootsUi.MUTED,false);controls.addView(summary);
@@ -35,17 +35,17 @@ public final class EncounterActivity extends Activity {
         controls.addView(RootsUi.text(this,"Restricted mode: linked originals only. Full Root mode below includes unlinked knowledge, all Tree observations and branches.",13,RootsUi.MUTED,false));
         fullRootGraph=new Switch(this);fullRootGraph.setText("Share full Root graph");fullRootGraph.setTextColor(RootsUi.TEXT);controls.addView(fullRootGraph);
         controls.addView(RootsUi.text(this,"No topic or source-link filter. Knowledge travels through the secure connection; only enable if all retained content may be publicly shared. This does not authorize private GPU access.",13,RootsUi.MUTED,false));
-        controls.addView(RootsUi.action(this,"Open Receive knowledge",()->startActivity(new android.content.Intent(this,MeshActivity.class))));
+        controls.addView(RootsUi.action(this,getString(R.string.roots_ui_receive),()->startActivity(new android.content.Intent(this,MeshActivity.class))));
         controls.addView(RootsUi.action(this,"Publish existing public Tree items",()->PublicTreePublishing.choose(this,this::update)));
-        controls.addView(RootsUi.action(this,"External knowledge · source and receipt history",()->startActivity(new android.content.Intent(this,ExternalKnowledgeActivity.class))));
-        controls.addView(RootsUi.action(this,"Network Explorer · browse public nodes",()->startActivity(new android.content.Intent(this,NetworkExplorerActivity.class))));
-        LinearLayout peers=RootsUi.card(this,content);peers.addView(RootsUi.text(this,"Axon subscriptions",18,RootsUi.TEXT,true));
+        controls.addView(RootsUi.action(this,getString(R.string.roots_ui_external),()->startActivity(new android.content.Intent(this,ExternalKnowledgeActivity.class))));
+        controls.addView(RootsUi.action(this,getString(R.string.roots_ui_network),()->startActivity(new android.content.Intent(this,NetworkExplorerActivity.class))));
+        LinearLayout peers=RootsUi.card(this,content);peers.addView(RootsUi.text(this,getString(R.string.roots_ui_axons),18,RootsUi.TEXT,true));
         peers.addView(RootsUi.text(this,"Nearby subscriptions persist offline and appear on the Roots home screen. Block a peer to stop future exchange; previously transferred knowledge remains.",13,RootsUi.MUTED,false));
         peerList=RootsUi.column(this);peers.addView(peerList);
         LinearLayout history=RootsUi.card(this,content);history.addView(RootsUi.text(this,"Recent interactions",18,RootsUi.TEXT,true));
         history.addView(RootsUi.action(this,"Clear interaction history",()->new AlertDialog.Builder(this).setTitle("Clear interaction history?")
-            .setMessage("Saved bindings and transfer totals will remain.").setNegativeButton("Cancel",null)
-            .setPositiveButton("Clear",(d,w)->mutate(()->EncounterBindings.get(this).clearHistory())).show()));
+            .setMessage("Saved bindings and transfer totals will remain.").setNegativeButton(R.string.roots_ui_cancel,null)
+            .setPositiveButton(R.string.roots_ui_clear,(d,w)->mutate(()->EncounterBindings.get(this).clearHistory())).show()));
         eventList=RootsUi.column(this);history.addView(eventList);
         shell.addView(RootsUi.action(this,"‹ Roots Mesh",this::finish));setContentView(shell);
         fullRootGraph.setOnCheckedChangeListener((button,on)->{
@@ -121,7 +121,7 @@ public final class EncounterActivity extends Activity {
     private void manage(EncounterBindings.Peer peer){
         String id=peer.binding().peer();
         new AlertDialog.Builder(this).setTitle(name(peer)).setMessage("Identity: "+id+"\nFirst seen: "+date(peer.firstSeen())+"\nScope: all offered Root knowledge\nBlocking prevents automatic reconnection.")
-            .setNegativeButton("Close",null)
+            .setNegativeButton(R.string.roots_ui_close,null)
             .setNeutralButton("Rename",(d,w)->rename(peer))
             .setPositiveButton(peer.blocked()?"Unblock":"Block",(d,w)->mutate(()->{
                 try{EncounterBindings.get(this).setBlocked(id,!peer.blocked());}
@@ -130,8 +130,8 @@ public final class EncounterActivity extends Activity {
     }
     private void rename(EncounterBindings.Peer peer){
         EditText input=new EditText(this);input.setSingleLine(true);input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(60)});input.setText(peer.label());input.setHint("Local label");
-        new AlertDialog.Builder(this).setTitle("Rename Axon").setView(input).setNegativeButton("Cancel",null)
-            .setPositiveButton("Save",(d,w)->{String label=input.getText().toString();mutate(()->EncounterBindings.get(this).rename(peer.binding().peer(),label));}).show();
+        new AlertDialog.Builder(this).setTitle("Rename Axon").setView(input).setNegativeButton(R.string.roots_ui_cancel,null)
+            .setPositiveButton(R.string.roots_ui_save,(d,w)->{String label=input.getText().toString();mutate(()->EncounterBindings.get(this).rename(peer.binding().peer(),label));}).show();
     }
     private interface Mutation{void run()throws Exception;}
     private void mutate(Mutation mutation){

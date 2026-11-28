@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Configuració</string>
+    <string name="roots_ui_stream">Flux</string>
+    <string name="roots_ui_tree">Arbre de la vida</string>
+    <string name="roots_ui_local_knowledge">Coneixement local</string>
+    <string name="roots_ui_search">Cerca el text desat</string>
+    <string name="roots_ui_rank">Ordena / actualitza</string>
+    <string name="roots_ui_inference">Inferència</string>
+    <string name="roots_ui_axons">Subscripcions d\'Axon</string>
+    <string name="roots_ui_capture_on">Activa la captura local</string>
+    <string name="roots_ui_capture_pause">Posa en pausa la captura local</string>
+    <string name="roots_ui_more">Mostra més coneixement</string>
+    <string name="roots_ui_empty">Encara no hi ha observacions.</string>
+    <string name="roots_ui_translation">Traducció</string>
+    <string name="roots_ui_follow_system">Segueix la llengua d\'Android</string>
+    <string name="roots_ui_translate_into">Tradueix a (43 llengües)</string>
+    <string name="roots_ui_display_mode">Mode de visualització de la traducció</string>
+    <string name="roots_ui_manual">Manual — un botó ⇄ per publicació</string>
+    <string name="roots_ui_automatic">Automàtic (experimental) — substitueix el text en desplaçar-se</string>
+    <string name="roots_ui_appearance">Aparença</string>
+    <string name="roots_ui_accessibility">Accessibilitat i permisos</string>
+    <string name="roots_ui_diagnostics">Diagnòstic</string>
+    <string name="roots_ui_storage">Coneixement i emmagatzematge</string>
+    <string name="roots_ui_models">Models i inferència</string>
+    <string name="roots_ui_desktop">Connexió amb l\'ordinador</string>
+    <string name="roots_ui_intelligence">Intel·ligència</string>
+    <string name="roots_ui_open_accessibility">Obre la configuració d\'accessibilitat</string>
+    <string name="roots_ui_stop_processing">Atura el processament de text d\'X</string>
+</resources>

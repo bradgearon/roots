@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Настройки</string>
+    <string name="roots_ui_stream">Лента</string>
+    <string name="roots_ui_tree">Древо жизни</string>
+    <string name="roots_ui_local_knowledge">Локальные знания</string>
+    <string name="roots_ui_search">Поиск по сохранённому тексту</string>
+    <string name="roots_ui_rank">Ранжировать / обновить</string>
+    <string name="roots_ui_inference">Инференс</string>
+    <string name="roots_ui_axons">Подписки Axon</string>
+    <string name="roots_ui_capture_on">Включить локальный сбор</string>
+    <string name="roots_ui_capture_pause">Приостановить локальный сбор</string>
+    <string name="roots_ui_more">Показать больше знаний</string>
+    <string name="roots_ui_empty">Пока нет наблюдений.</string>
+    <string name="roots_ui_translation">Перевод</string>
+    <string name="roots_ui_follow_system">Использовать язык Android</string>
+    <string name="roots_ui_translate_into">Перевести на (43 языка)</string>
+    <string name="roots_ui_display_mode">Режим отображения перевода</string>
+    <string name="roots_ui_manual">Вручную — одна кнопка ⇄ на публикацию</string>
+    <string name="roots_ui_automatic">Автоматически (экспериментально) — заменять текст при прокрутке</string>
+    <string name="roots_ui_appearance">Внешний вид</string>
+    <string name="roots_ui_accessibility">Специальные возможности и разрешения</string>
+    <string name="roots_ui_diagnostics">Диагностика</string>
+    <string name="roots_ui_storage">Знания и хранение</string>
+    <string name="roots_ui_models">Модели и инференс</string>
+    <string name="roots_ui_desktop">Подключение к компьютеру</string>
+    <string name="roots_ui_intelligence">Интеллект</string>
+    <string name="roots_ui_open_accessibility">Открыть настройки специальных возможностей</string>
+    <string name="roots_ui_stop_processing">Остановить обработку текста X</string>
+</resources>

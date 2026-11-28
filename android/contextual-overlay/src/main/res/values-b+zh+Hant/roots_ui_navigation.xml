@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">設定</string>
+    <string name="roots_ui_stream">動態消息</string>
+    <string name="roots_ui_tree">生命之樹</string>
+    <string name="roots_ui_local_knowledge">本機知識</string>
+    <string name="roots_ui_search">搜尋已儲存文字</string>
+    <string name="roots_ui_rank">排序 / 重新整理</string>
+    <string name="roots_ui_inference">推論</string>
+    <string name="roots_ui_axons">Axon 訂閱</string>
+    <string name="roots_ui_capture_on">啟用本機擷取</string>
+    <string name="roots_ui_capture_pause">暫停本機擷取</string>
+    <string name="roots_ui_more">顯示更多知識</string>
+    <string name="roots_ui_empty">尚無觀察記錄。</string>
+    <string name="roots_ui_translation">翻譯</string>
+    <string name="roots_ui_follow_system">跟隨 Android 系統語言</string>
+    <string name="roots_ui_translate_into">翻譯為（43 種語言）</string>
+    <string name="roots_ui_display_mode">翻譯顯示模式</string>
+    <string name="roots_ui_manual">手動 — 每篇貼文一個 ⇄ 按鈕</string>
+    <string name="roots_ui_automatic">自動（實驗性）— 捲動時取代貼文文字</string>
+    <string name="roots_ui_appearance">外觀</string>
+    <string name="roots_ui_accessibility">無障礙功能與權限</string>
+    <string name="roots_ui_diagnostics">診斷</string>
+    <string name="roots_ui_storage">知識與儲存</string>
+    <string name="roots_ui_models">模型與推論</string>
+    <string name="roots_ui_desktop">電腦連線</string>
+    <string name="roots_ui_intelligence">智慧</string>
+    <string name="roots_ui_open_accessibility">開啟無障礙設定</string>
+    <string name="roots_ui_stop_processing">停止處理 X 文字</string>
+</resources>

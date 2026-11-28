@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Cài đặt</string>
+    <string name="roots_ui_stream">Luồng</string>
+    <string name="roots_ui_tree">Cây Sự Sống</string>
+    <string name="roots_ui_local_knowledge">Tri thức cục bộ</string>
+    <string name="roots_ui_search">Tìm văn bản đã lưu</string>
+    <string name="roots_ui_rank">Xếp hạng / làm mới</string>
+    <string name="roots_ui_inference">Suy luận</string>
+    <string name="roots_ui_axons">Đăng ký Axon</string>
+    <string name="roots_ui_capture_on">Bật thu thập cục bộ</string>
+    <string name="roots_ui_capture_pause">Tạm dừng thu thập cục bộ</string>
+    <string name="roots_ui_more">Hiện thêm tri thức</string>
+    <string name="roots_ui_empty">Chưa có quan sát nào.</string>
+    <string name="roots_ui_translation">Bản dịch</string>
+    <string name="roots_ui_follow_system">Theo ngôn ngữ Android</string>
+    <string name="roots_ui_translate_into">Dịch sang (43 ngôn ngữ)</string>
+    <string name="roots_ui_display_mode">Chế độ hiển thị bản dịch</string>
+    <string name="roots_ui_manual">Thủ công — một nút ⇄ cho mỗi bài đăng</string>
+    <string name="roots_ui_automatic">Tự động (thử nghiệm) — thay thế văn bản bài đăng khi cuộn</string>
+    <string name="roots_ui_appearance">Giao diện</string>
+    <string name="roots_ui_accessibility">Trợ năng và quyền</string>
+    <string name="roots_ui_diagnostics">Chẩn đoán</string>
+    <string name="roots_ui_storage">Tri thức và lưu trữ</string>
+    <string name="roots_ui_models">Mô hình và suy luận</string>
+    <string name="roots_ui_desktop">Kết nối máy tính</string>
+    <string name="roots_ui_intelligence">Trí tuệ</string>
+    <string name="roots_ui_open_accessibility">Mở cài đặt trợ năng</string>
+    <string name="roots_ui_stop_processing">Dừng xử lý văn bản X</string>
+</resources>

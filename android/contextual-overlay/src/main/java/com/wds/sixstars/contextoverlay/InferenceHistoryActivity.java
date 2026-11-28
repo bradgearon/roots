@@ -28,11 +28,11 @@ public final class InferenceHistoryActivity extends Activity {
         super.onCreate(state);
         history=InferenceHistory.get(this);
         LinearLayout shell=RootsUi.shell(this);
-        shell.addView(RootsUi.header(this,"Inference history","Live · actual requests from this phone"));
+        shell.addView(RootsUi.header(this,getString(R.string.roots_ui_history),"Live · actual requests from this phone"));
         LinearLayout top=RootsUi.column(this);top.setPadding(dp(16),0,dp(16),dp(8));shell.addView(top);
         summary=RootsUi.text(this,"",14,RootsUi.TEXT,true);top.addView(summary);
         TextView hint=RootsUi.text(this,"Last 100 attempts · desktop completion means an authenticated response. No source text is saved here.",12,RootsUi.MUTED,false);top.addView(hint);
-        top.addView(RootsUi.action(this,"Clear history",()->new AlertDialog.Builder(this).setMessage("Clear the saved inference history?").setNegativeButton("Cancel",null).setPositiveButton("Clear",(d,w)->history.clear()).show()));
+        top.addView(RootsUi.action(this,"Clear history",()->new AlertDialog.Builder(this).setMessage("Clear the saved inference history?").setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton(R.string.roots_ui_clear,(d,w)->history.clear()).show()));
         list=new ListView(this);list.setDivider(null);list.setClipToPadding(false);list.setPadding(dp(16),dp(4),dp(16),dp(8));
         adapter=new BaseAdapter(){
             public int getCount(){return rows.size();}
@@ -56,7 +56,7 @@ public final class InferenceHistoryActivity extends Activity {
             }
         };
         list.setAdapter(adapter);shell.addView(list,new LinearLayout.LayoutParams(-1,0,1));
-        shell.addView(RootsUi.action(this,"‹ Back",this::finish));
+        shell.addView(RootsUi.action(this,getString(R.string.roots_ui_back),this::finish));
         setContentView(shell);refresh();
     }
     @Override protected void onStart(){super.onStart();history.listen(refresh);refresh();}

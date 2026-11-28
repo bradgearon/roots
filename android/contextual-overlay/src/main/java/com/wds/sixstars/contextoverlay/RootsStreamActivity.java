@@ -77,16 +77,16 @@ public final class RootsStreamActivity extends Activity {
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
         LinearLayout shell=RootsUi.shell(this);
-        shell.addView(RootsUi.header(this,"Roots","Tree of Life · knowledge stream"));
+        shell.addView(RootsUi.header(this,"Roots",getString(R.string.roots_ui_stream_sub)));
         LinearLayout tools=RootsUi.column(this);
         tools.setPadding(dp(16),0,dp(16),dp(8));
         shell.addView(tools);
-        status=RootsUi.text(this,"Local knowledge",14,RootsUi.ACCENT,true);
+        status=RootsUi.text(this,getString(R.string.roots_ui_local_knowledge),14,RootsUi.ACCENT,true);
         tools.addView(status);
 
         search=new EditText(this);search.setSingleLine(true);search.setTextSize(15);
         search.setTextColor(RootsUi.TEXT);search.setHintTextColor(RootsUi.MUTED);
-        search.setHint("Search retained text");search.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        search.setHint(getString(R.string.roots_ui_search));search.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         search.setBackground(RootsUi.rounded(this,RootsUi.CARD,10,RootsUi.STROKE));
         search.setPadding(dp(12),dp(8),dp(12),dp(8));search.setMinHeight(dp(48));
         tools.addView(search);
@@ -94,28 +94,28 @@ public final class RootsStreamActivity extends Activity {
             if(action==EditorInfo.IME_ACTION_SEARCH){reset();return true;}return false;
         });
         LinearLayout actions=new LinearLayout(this);actions.setPadding(0,dp(8),0,0);
-        actions.addView(RootsUi.action(this,"Rank / refresh",this::reset),new LinearLayout.LayoutParams(0,-2,1));
-        TextView tree=RootsUi.action(this,"Tree of Life",()->startActivity(new Intent(this,TreeActivity.class)));
+        actions.addView(RootsUi.action(this,getString(R.string.roots_ui_rank),this::reset),new LinearLayout.LayoutParams(0,-2,1));
+        TextView tree=RootsUi.action(this,getString(R.string.roots_ui_tree),()->startActivity(new Intent(this,TreeActivity.class)));
         LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(0,-2,1);tp.leftMargin=dp(8);actions.addView(tree,tp);
         tools.addView(actions);
         LinearLayout network=new LinearLayout(this);network.setPadding(0,dp(6),0,0);
         network.addView(RootsUi.action(this,"Roots Mesh",()->startActivity(new Intent(this,MeshActivity.class))),new LinearLayout.LayoutParams(0,-2,1));
         LinearLayout.LayoutParams historyParams=new LinearLayout.LayoutParams(0,-2,1);historyParams.leftMargin=dp(8);
-        network.addView(RootsUi.action(this,"Inference",()->startActivity(new Intent(this,InferenceHistoryActivity.class))),historyParams);
+        network.addView(RootsUi.action(this,getString(R.string.roots_ui_inference),()->startActivity(new Intent(this,InferenceHistoryActivity.class))),historyParams);
         tools.addView(network);
-        axonSubscriptions=RootsUi.action(this,"Axon subscriptions",()->startActivity(new Intent(this,MeshActivity.class)));tools.addView(axonSubscriptions);
+        axonSubscriptions=RootsUi.action(this,getString(R.string.roots_ui_axons),()->startActivity(new Intent(this,MeshActivity.class)));tools.addView(axonSubscriptions);
         axonPreview=RootsUi.text(this,"",12,RootsUi.MUTED,false);axonPreview.setMaxLines(4);tools.addView(axonPreview);
         axonPreview.setOnClickListener(v->startActivity(new Intent(this,MeshActivity.class)));
-        capture=RootsUi.action(this,"Enable local capture",this::toggleCapture);tools.addView(capture);
+        capture=RootsUi.action(this,getString(R.string.roots_ui_capture_on),this::toggleCapture);tools.addView(capture);
         feed=new ListView(this);feed.setDivider(null);feed.setClipToPadding(false);
         feed.setPadding(dp(16),dp(4),dp(16),dp(8));feed.setSelector(android.R.color.transparent);
         adapter=new KnowledgeRecordAdapter(this,rows,rankByKey);
         // Footer before setAdapter, to keep the explicit pagination control.
-        more=RootsUi.action(this,"Show more knowledge",this::load);feed.addFooterView(more,null,false);
+        more=RootsUi.action(this,getString(R.string.roots_ui_more),this::load);feed.addFooterView(more,null,false);
         feed.setAdapter(adapter);
         feed.setOnItemClickListener((parent,view,position,id)->{if(position<rows.size())KnowledgeRecordActions.open(this,rows.get(position),this::reset);});
         feed.setOnItemLongClickListener((parent,view,position,id)->{if(position>=rows.size())return false;KnowledgeRecordActions.options(this,rows.get(position),this::reset);return true;});
-        empty=RootsUi.text(this,"No observations yet.",16,RootsUi.MUTED,false);
+        empty=RootsUi.text(this,getString(R.string.roots_ui_empty),16,RootsUi.MUTED,false);
         empty.setPadding(dp(20),dp(16),dp(20),dp(16));empty.setGravity(Gravity.CENTER);
         android.widget.FrameLayout body=new android.widget.FrameLayout(this);
         body.addView(feed,new android.widget.FrameLayout.LayoutParams(-1,-1));
@@ -128,7 +128,7 @@ public final class RootsStreamActivity extends Activity {
         else {
             status.setText("Native Tree unavailable");
             empty.setText(NativeTree.unavailableReason()+"\n\nBuild Roots with Tree support to retain and browse timeline text. Open Tree of Life for build instructions.");
-            capture.setText("Open settings");capture.setOnClickListener(v->startActivity(new Intent(this,OverlayTranslationSettingsActivity.class)));
+            capture.setText(getString(R.string.roots_ui_settings));capture.setOnClickListener(v->startActivity(new Intent(this,OverlayTranslationSettingsActivity.class)));
             more.setVisibility(View.GONE);
         }
     }
@@ -146,12 +146,12 @@ public final class RootsStreamActivity extends Activity {
         if(!new OverlayPreferences(this).enabled()){
             new AlertDialog.Builder(this).setTitle("Accessibility consent required")
                 .setMessage("First enable X text processing in Settings. Local knowledge retention is a separate choice.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Settings",(d,w)->startActivity(new Intent(this,OverlayTranslationSettingsActivity.class))).show();
+                .setNegativeButton(R.string.roots_ui_cancel,null).setPositiveButton(R.string.roots_ui_settings,(d,w)->startActivity(new Intent(this,OverlayTranslationSettingsActivity.class))).show();
             return;
         }
         new AlertDialog.Builder(this).setTitle("Retain all visible X text locally?")
             .setMessage("Roots will retain accessible text displayed in foreground X across Home, profiles, replies, search and other screens, including potentially private messages and sensitive content. Editable fields and passwords are excluded. Text is stored in a private local database and derived GGUF; capture does not upload it. No screenshots or other apps are captured. Pause stops new capture; an in-flight write may finish. Clear removes retained records and generated snapshots.")
-            .setNegativeButton("Not now",null).setPositiveButton("Enable local capture",(d,w)->{runtime.setEnabled(true);reset();}).show();
+            .setNegativeButton(R.string.roots_ui_later,null).setPositiveButton(R.string.roots_ui_capture_on,(d,w)->{runtime.setEnabled(true);reset();}).show();
     }
     private void reset(){
         if(runtime==null||closed)return;
@@ -161,7 +161,7 @@ public final class RootsStreamActivity extends Activity {
         showEmpty(true);
         more.setEnabled(true);
         empty.setText("Reading local knowledge…");
-        capture.setText(runtime.enabled()?"Pause local capture":"Enable local capture");
+        capture.setText(runtime.enabled()?getString(R.string.roots_ui_capture_pause):getString(R.string.roots_ui_capture_on));
         load();
     }
     private void showEmpty(boolean value){
@@ -172,7 +172,7 @@ public final class RootsStreamActivity extends Activity {
         int end=Math.min(ranked.size(),rows.size()+PAGE);
         while(rows.size()<end)rows.add(ranked.get(rows.size()).record());
         ended=rows.size()>=ranked.size();adapter.notifyDataSetChanged();showEmpty(rows.isEmpty());
-        more.setText(ended?"All matching knowledge shown":"Show more knowledge");
+        more.setText(ended?"All matching knowledge shown":getString(R.string.roots_ui_more));
         more.setEnabled(!ended);
     }
     private void load(){

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="roots_ui_settings">Параметрлер</string>
+    <string name="roots_ui_stream">Ағын</string>
+    <string name="roots_ui_tree">Өмір ағашы</string>
+    <string name="roots_ui_local_knowledge">Жергілікті білім</string>
+    <string name="roots_ui_search">Сақталған мәтінді іздеу</string>
+    <string name="roots_ui_rank">Реттеу / жаңарту</string>
+    <string name="roots_ui_inference">Инференция</string>
+    <string name="roots_ui_axons">Axon жазылымдары</string>
+    <string name="roots_ui_capture_on">Жергілікті жинауды қосу</string>
+    <string name="roots_ui_capture_pause">Жергілікті жинауды кідірту</string>
+    <string name="roots_ui_more">Көбірек білім көрсету</string>
+    <string name="roots_ui_empty">Әзірге бақылаулар жоқ.</string>
+    <string name="roots_ui_translation">Аударма</string>
+    <string name="roots_ui_follow_system">Android тілін қолдану</string>
+    <string name="roots_ui_translate_into">Аудару тілі (43 тіл)</string>
+    <string name="roots_ui_display_mode">Аударманы көрсету режимі</string>
+    <string name="roots_ui_manual">Қолмен — әр жазбаға бір ⇄ түймесі</string>
+    <string name="roots_ui_automatic">Автоматты (сынақ) — айналдырғанда жазба мәтінін ауыстыру</string>
+    <string name="roots_ui_appearance">Көрініс</string>
+    <string name="roots_ui_accessibility">Арнайы мүмкіндіктер мен рұқсаттар</string>
+    <string name="roots_ui_diagnostics">Диагностика</string>
+    <string name="roots_ui_storage">Білім және сақтау</string>
+    <string name="roots_ui_models">Модельдер және инференция</string>
+    <string name="roots_ui_desktop">Компьютермен байланыс</string>
+    <string name="roots_ui_intelligence">Зияткерлік</string>
+    <string name="roots_ui_open_accessibility">Арнайы мүмкіндіктер параметрлерін ашу</string>
+    <string name="roots_ui_stop_processing">X мәтінін өңдеуді тоқтату</string>
+</resources>
