@@ -3,10 +3,20 @@ setlocal
 pushd "%~dp0"
 if not defined ROOTS_TREE_LIBRARY set "ROOTS_TREE_LIBRARY=%~dp0build\desktop-tree\Release\roots_tree.dll"
 set "ROOTS_SURFACE_AGENT=%~dp0build\desktop-surface\Release\roots-surface.exe"
-set "EXPERIENCE=%~dp0src\Wds.Roots.Experience\bin\Release\net9.0\Wds.Roots.Experience.dll"
-if not exist "%ROOTS_SURFACE_AGENT%" goto missing
-if not exist "%ROOTS_TREE_LIBRARY%" goto missing
-if not exist "%EXPERIENCE%" goto missing
+set "EXPERIENCE=%~dp0src\Wds.Roots.Experience\bin\x64\Release\net9.0\Wds.Roots.Experience.dll"
+if not exist "%EXPERIENCE%" set "EXPERIENCE=%~dp0src\Wds.Roots.Experience\bin\Release\net9.0\Wds.Roots.Experience.dll"
+if not exist "%ROOTS_SURFACE_AGENT%" (
+    echo Missing native Surface agent: "%ROOTS_SURFACE_AGENT%"
+    goto missing
+)
+if not exist "%ROOTS_TREE_LIBRARY%" (
+    echo Missing native Tree library: "%ROOTS_TREE_LIBRARY%"
+    goto missing
+)
+if not exist "%EXPERIENCE%" (
+    echo Missing managed Experience DLL in bin\x64\Release\net9.0 or bin\Release\net9.0.
+    goto missing
+)
 dotnet "%EXPERIENCE%" %*
 set "RC=%ERRORLEVEL%"
 popd
