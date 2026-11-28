@@ -320,6 +320,7 @@ final class AutoOverlaySceneController {
             AutoInlineThemeService.Palette palette) {
         Controls action = controlsFor(id);
         action.nameText = name;
+        expanded.updateName(id,name);
         if (action.name == null) {
             ImageView view = actionView(android.R.drawable.ic_menu_info_details,
                     "Read full account name", palette);
