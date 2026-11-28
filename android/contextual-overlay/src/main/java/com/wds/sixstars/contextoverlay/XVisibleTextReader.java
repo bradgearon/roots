@@ -200,7 +200,7 @@ public final class XVisibleTextReader {
                 String viewId = node.getViewIdResourceName();
                 String className = node.getClassName() == null
                         ? "" : node.getClassName().toString();
-                String language = bodyLanguageHint(text);
+                String language = PostLanguage.hint(text,reportedLanguage(node,textValue));
 
                 Rect bounds = new Rect();
                 node.getBoundsInScreen(bounds);
@@ -355,7 +355,7 @@ public final class XVisibleTextReader {
             int end=text.getSpanEnd(span);
             if(end<=0||end>text.length())continue;
             String suffix=text.subSequence(end,text.length()).toString().trim();
-            if(suffix.isEmpty()||suffix.matches("(?i)(?:…|\\\\.\\\\.\\\\.)?\\\\s*show more"))return true;
+            if(suffix.isEmpty()||suffix.matches("(?i)(?:…|\\.\\.\\.)?\\s*show more"))return true;
         }
         return false;
     }
@@ -633,27 +633,32 @@ public final class XVisibleTextReader {
      * Best-effort language hint. Actual translation stays with PLaMo. Native X
      * doesn't necessarily expose the tweet's language or normalized post ID.
      */
-    static String bodyLanguageHint(String text) {
-        String hint=languageHint(text);
-        return hint.isEmpty()?KnowledgeLanguage.englishHint(text):hint;
-    }
+    static String bodyLanguageHint(String text) {return PostLanguage.hint(text,"");}
 
-    public static String languageHint(String text) {
-        if (text == null || text.isEmpty()) return "";
-        if (text.codePoints().anyMatch(c -> (c >= 0x3040 && c <= 0x30ff))) return "ja";
-        if (text.codePoints().anyMatch(c -> c >= 0xac00 && c <= 0xd7af)) return "ko";
-        if (text.codePoints().anyMatch(c -> c >= 0x0600 && c <= 0x06ff)) return "ar";
-        if (text.codePoints().anyMatch(c -> c >= 0x0400 && c <= 0x04ff)) return "ru";
-        if (text.codePoints().anyMatch(c -> c >= 0x4e00 && c <= 0x9fff)) return "zh";
-        String s = " " + text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}]+", " ") + " ";
-        if (containsAny(s, " bonjour ", " merci ", " pourquoi ", " aujourd hui ", " je suis ", " avec vous ")) return "fr";
-        if (containsAny(s, " hola ", " gracias ", " buenos dias ", " buenas noches ", " estoy ", " nosotros ")) return "es";
-        if (containsAny(s, " hallo ", " danke ", " bitte ", " guten morgen ", " ich bin ")) return "de";
+    public static String languageHint(String text) {return PostLanguage.hint(text,"");}
+
+    private static String reportedLanguage(AccessibilityNodeInfo node,CharSequence value){
+        try{
+            android.os.Bundle extras=node.getExtras();
+            for(String key:extras.keySet()){
+                String name=XPostMetadata.keyRole(key);
+                if(!name.matches("(post|tweet|source|text|content)?(lang|language|languagecode)"))continue;
+                Object raw=extras.get(key);
+                if(raw instanceof CharSequence){
+                    String code=PostLanguage.code(raw.toString());
+                    if(!code.isEmpty())return code;
+                }
+            }
+        }catch(RuntimeException ignored){}
+        if(value instanceof android.text.Spanned){
+            android.text.Spanned text=(android.text.Spanned)value;
+            for(android.text.style.LocaleSpan span:text.getSpans(0,text.length(),android.text.style.LocaleSpan.class)){
+                if(text.getSpanEnd(span)-text.getSpanStart(span)<text.length()*.8)continue;
+                java.util.Locale locale=span.getLocale();
+                if(locale!=null)return PostLanguage.code(locale.getLanguage());
+            }
+        }
         return "";
     }
 
-    private static boolean containsAny(String text, String... words) {
-        for (String candidate : words) if (text.contains(candidate)) return true;
-        return false;
-    }
 }
