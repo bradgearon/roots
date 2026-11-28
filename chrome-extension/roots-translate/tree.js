@@ -22,7 +22,7 @@ async function localViewCommand(operation,args){
       const params=new URLSearchParams({term:String(args.term||"").slice(0,512),
         beforeMs:String(positive(args.beforeMs)),beforeSequence:String(positive(args.beforeSequence)),
         agent:String(positive(args.agent)),limit:operation==="viewScreens"?"12":"30"});
-      path+=(operation==="viewScreens"?"/screens":operation==="viewRecords"?"/records":"/feed")+"?"+params;break;
+      path+=(operation==="viewScreens"?"/screens":operation==="viewRecords"?"/records":"/feed")+"?"+params;timeout=20000;break;
     }
     case "viewWeights":
       if(!positive(args.sequence))return {ok:false,error:"invalid_sequence"};
@@ -47,7 +47,7 @@ async function localViewCommand(operation,args){
     });
     const data=await response.json().catch(()=>({}));
     return {...data,ok:response.ok&&data.ok!==false,error:response.ok?data.error:(data.error||"HTTP "+response.status)};
-  }catch{return {ok:false,error:"tree_service_unavailable"};}
+  }catch(e){return {ok:false,error:e?.name==="TimeoutError"?"tree_query_timeout":"tree_service_unavailable"};}
 }
 async function command(operation,args={}){
   let result=await chrome.runtime.sendMessage({type:"rootsTreeCommand",operation,...args});
@@ -57,6 +57,8 @@ async function command(operation,args={}){
     const error=result?.error||"Desktop Tree unavailable";
     if(error==="invalid_operation")throw new Error("Extension worker is out of date. Reload Roots at chrome://extensions and reopen Tree.");
     if(error==="HTTP 404"&&operation.startsWith("view"))throw new Error("Restart the updated Roots desktop host (launch.cmd). The source-view API is missing.");
+    if(error==="tree_query_timeout")throw new Error("The Tree timeline query timed out. Use Refresh to retry.");
+    if(error==="tree_operation_failed"&&result?.detail)throw new Error("Tree query failed ("+result.detail+").");
     throw new Error(error);
   }
   return result;
@@ -197,7 +199,8 @@ async function load(reset=false,live=false){
     if(reset&&!rows.length)el("items").append(node("p",view==="screens"?"No screen text observations yet. Grouped records also shows activity intervals.":"No matching knowledge yet.","muted"));
     beforeMs=data.nextBeforeMs||0;beforeSequence=data.nextBeforeSequence||0;pages++;
     el("more").hidden=!(data.hasMore??(rows.length===(view==="screens"?screenPageSize:30)))||!beforeSequence||beforeSequence===previous;
-  }catch(e){if(gen===generation){if(reset)el("items").replaceChildren(node("p",e.message,"muted"));status(e.message);}}
+    status("");return true;
+  }catch(e){if(gen===generation){if(reset&&!live)el("items").replaceChildren(node("p",e.message,"muted"));status(e.message);}return false;}
   finally{if(gen===generation){loading=false;el("more").disabled=false;}}
 }
 async function refreshSelected(force=false){
@@ -227,7 +230,7 @@ async function refreshSelected(force=false){
       else if(previous){selectedAgent=0;await load(true);}
     }
     const canRefresh=el("liveKnowledge").checked&&pages<=1&&!loading&&!el("items").querySelector("details[open]")&&!el("term").matches(":focus");
-    if(changed&&canRefresh){await load(true,true);if(epoch===viewEpoch&&source===selectedSource)viewRevision=state.revision;}
+    if(changed&&canRefresh){const loaded=await load(true,true);if(loaded&&epoch===viewEpoch&&source===selectedSource)viewRevision=state.revision;}
     else if(changed){el("knowledgeSummary").textContent+=" · new data available";}
     else viewRevision=state.revision;
   }catch(e){if(epoch===viewEpoch)el("knowledgeSummary").textContent="View unavailable · "+e.message;}
