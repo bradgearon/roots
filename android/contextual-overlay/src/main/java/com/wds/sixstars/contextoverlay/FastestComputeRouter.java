@@ -31,6 +31,7 @@ final class FastestComputeRouter implements TranslationProvider {
     private final LocalPLaMoTranslationProvider local;
     private final ThreadPoolExecutor routes=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(3));
     private final Map<String,Estimate> timings=new HashMap<>();
+    private final OnDeviceLanguageDetector localDetector=new OnDeviceLanguageDetector();
     private long detectorRetryAfter;
     private String detectorRoute="";
     private static final class Estimate {double ms;long at;int count;}
@@ -158,6 +159,9 @@ final class FastestComputeRouter implements TranslationProvider {
         return r.ms<l.ms*.90;
     }
     @Override public void translate(String text,String source,String target,Result callback){
+        translateChecked(text,source,target,false,false,callback);
+    }
+    @Override public void translateChecked(String text,String source,String target,boolean name,boolean automatic,Result callback){
         if(callback==null)return;
         if(!prefs.enabled()){callback.completed(null,"Translation permission is off.");return;}
         if(text==null||text.trim().isEmpty()||text.length()>1200||target==null||!target.matches("[a-z]{2,3}")||text.contains("<|plamo:")){
@@ -175,26 +179,33 @@ final class FastestComputeRouter implements TranslationProvider {
                 network==null?"No active Wi-Fi":!key.contains(":")?"Desktop TLS connection key required":
                 !remote?"Network not remembered":"Measured local preference";
             String desktop="desktop:"+base+":"+fingerprint;
-            String language=PostLanguage.hint(text,source);
-            if(remote&&authorized(base,key)&&network.equals(wifi())){
+            String language="";
+            try{language=localDetector.detect(text).accepted(name);}
+            catch(Exception|LinkageError unavailable){android.util.Log.d("RootsLanguage","On-device classifier unavailable");}
+            if(language.isEmpty()&&remote&&authorized(base,key)&&network.equals(wifi())&&!PostLanguage.clean(text).isBlank()){
                 long now=SystemClock.elapsedRealtime();
                 if(!desktop.equals(detectorRoute)){detectorRoute=desktop;detectorRetryAfter=0;}
                 if(now>=detectorRetryAfter){
                     try{
                         JSONObject detected=socket.detect(network,base,key,PostLanguage.clean(text));
                         if(authorized(base,key)&&network.equals(wifi()))
-                            language=PostLanguage.resolve(text,source,detected.optString("language"),
-                                detected.optDouble("confidence",0),detected.optBoolean("reliable",false));
+                            language=detected.optBoolean("reliable",false)&&detected.optDouble("confidence",0)>=(name?.90:.70)
+                                ?PostLanguage.code(detected.optString("language")):"";
                     }catch(Exception unavailable){
                         detectorRetryAfter=SystemClock.elapsedRealtime()+15000;
                     }
                 }
             }
             if(!prefs.enabled()){finish(callback,finished,null,"Translation permission is off.");return;}
+            if(language.isEmpty()&&automatic){
+                finish(callback,finished,null,TranslationProvider.LANGUAGE_UNCERTAIN);return;
+            }
+            callback.identifiedLanguage(language);
             if(target.equalsIgnoreCase(language)){
                 if(finished.compareAndSet(false,true))callback.alreadyLocalized(text,target);
                 return;
             }
+            // A manual request can still ask PLaMo to infer an uncertain language.
             final String effectiveSource=language;
             if(remote&&preferRemote(desktop,phone,text.length())){
                 if(remoteTranslate(network,base,key,desktop,text,effectiveSource,target,callback,finished))return;
