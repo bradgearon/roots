@@ -33,7 +33,8 @@ public final class AutoTranslationEligibilityService {
         // X exposed a stable view ID or a recognizable post container.
         if (text == null || text.trim().length() < (recognizedBody ? 1 : 2) || text.length() > 1100)
             return false;
-        if (target == null || target.isEmpty()) return false;
+        if (target == null || target.isEmpty() || PostLanguage.letters(text)==0) return false;
+        source=PostLanguage.hint(text,source);
         if (source != null && !source.isEmpty() && source.equalsIgnoreCase(target)) return false;
         // Unknown source is eligible for credible post bodies. The provider
         // receives no source hint instead of an invented language.
