@@ -34,6 +34,10 @@ public final class XVisibleTextReader {
     private int lastClippedNameCount;
     private boolean lastPostDetail;
     private long nextMetadataProbeAt;
+    private XOverlayOrigin.Offset lastOverlayOrigin;
+    private int lastOverlayWindow=-1;
+    XOverlayOrigin.Offset lastOverlayOrigin(){return lastOverlayOrigin;}
+    int lastOverlayWindow(){return lastOverlayWindow;}
     // In-memory discovery snapshot, independent of the chosen render layout.
     private List<TextCandidate> lastDiscovered = Collections.emptyList();
     public List<TextCandidate> lastDiscovered() { return lastDiscovered; }
@@ -73,6 +77,8 @@ public final class XVisibleTextReader {
         Map<Integer,List<XKnowledgeRecords.Sample>> samplesByOrder=new LinkedHashMap<>();
         List<XTimelineCardRecords.Node> cardNodes=new ArrayList<>();
         Map<Integer,Rect> cardNodeBounds=new HashMap<>();
+        Map<Rect,Rect> windowTextBounds=new HashMap<>();
+        lastOverlayOrigin=null;lastOverlayWindow=-1;
         long observedAt=System.currentTimeMillis();
         // Do not turn fast scrolling into repeated metadata IPC. Explicit
         // values already present in extras are still read on every scan.
@@ -96,6 +102,7 @@ public final class XVisibleTextReader {
         if (root == null || root.getPackageName() == null
                 || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
 
+        lastOverlayWindow=root.getWindowId();
         ArrayDeque<ScanNode> queue = new ArrayDeque<>();
         queue.add(new ScanNode(root,true,"0"));
         boolean detailScreen = false;
@@ -174,6 +181,12 @@ public final class XVisibleTextReader {
                             hasBodySpan(value==null||value.length()==0?descriptionValue:value),
                             sourceAllowed,links,reportedLanguage(node,value==null||value.length()==0?descriptionValue:value)));
                         cardNodeBounds.put(order,new Rect(observedBounds));
+                        if(android.os.Build.VERSION.SDK_INT>=34&&node.getWindowId()==lastOverlayWindow&&
+                                ((value!=null&&value.length()>0)||(descriptionValue!=null&&descriptionValue.length()>0))){
+                            Rect local=new Rect();node.getBoundsInWindow(local);
+                            Rect previous=windowTextBounds.putIfAbsent(new Rect(observedBounds),local);
+                            if(previous!=null&&!previous.equals(local))windowTextBounds.put(new Rect(observedBounds),new Rect());
+                        }
                     }
                 }
 
@@ -412,6 +425,18 @@ public final class XVisibleTextReader {
         lastDiscovered = Collections.unmodifiableList(new ArrayList<>(work.values()));
         List<TextCandidate> scene = new ArrayList<>(selected);
         scene.addAll(authorNames);
+        if(android.os.Build.VERSION.SDK_INT>=34){
+            XOverlayOrigin origin=new XOverlayOrigin();
+            for(TextCandidate candidate:scene){
+                // Unsafe merged headers are not painted inline.
+                if(candidate.authorName&&candidate.author!=null&&!candidate.author.inlineSafe)continue;
+                Rect screen=candidate.bounds,local=windowTextBounds.get(screen);
+                if(local==null)origin.missing();
+                else origin.observe(screen.left,screen.top,screen.right,screen.bottom,
+                    local.left,local.top,local.right,local.bottom);
+            }
+            lastOverlayOrigin=origin.result();
+        }
         lastCandidateCount = scene.size();
         lastAvatarCount = avatars.size();
         lastAuthorSampleCount = authorSamples.size();
