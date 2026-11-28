@@ -65,3 +65,21 @@ Console.WriteLine("Public Axon protocol and Tree projection checks passed.");
 
 Check(new DesktopArchiveProfile().Budget().Records==4096,"Initial 4096 record target");
 Check(new DesktopArchiveProfile(InFlight:4096).Recover().Budget().Records==2048,"Interrupted archive reduces target");
+
+const string footprintVector = """{"id":"dfbe12e2d2664cbf6a3c217d455c72908c33bca4fdd3b2f068b6bd538cb7128c","revision":1000,"links":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],"key":"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZ4DF/HAnXixwYaDnh3uxdN6t65iHAn8/qDZUFYun9Qw8uow0vDXSDoH3MKwce9bWYalC+QxqnKVcUS+eSgASZg==","sig":"MEQCIANwWze2MZ4bdv/5RI0fXVsbxlM5iClxvbxg/HNvcQUVAiBrsjbyN07soEGCkZsZuMdmVIEZ/iS55aod+mawpx6aFg=="}""";
+var verified=DesktopPublicFootprintCodec.VerifyFootprint(footprintVector,1001);
+Check(verified.Id=="dfbe12e2d2664cbf6a3c217d455c72908c33bca4fdd3b2f068b6bd538cb7128c"&&verified.Links.SequenceEqual(new[]{new string('a',64),new string('b',64)}),"Independent P-256 footprint vector");
+var ownFootprint=DesktopPublicFootprintCodec.SignFootprint(a,new[]{bid,aid,bid},400000);
+Check(ownFootprint.Id==aid&&ownFootprint.Links.SequenceEqual(new[]{bid}),"Signed footprint excludes self and duplicate links");
+void RejectFootprint(string wire,long now)
+{
+    bool rejected=false;
+    try{DesktopPublicFootprintCodec.VerifyFootprint(wire,now);}catch(Exception){rejected=true;}
+    Check(rejected,"Malformed footprint was accepted");
+}
+var changed=JsonNode.Parse(footprintVector)!.AsObject();changed["revision"]=1002;
+RejectFootprint(changed.ToJsonString(),1003);
+changed=JsonNode.Parse(footprintVector)!.AsObject();changed["id"]=new string('c',64);
+RejectFootprint(changed.ToJsonString(),1001);
+RejectFootprint(ownFootprint.Wire,1000);
+Console.WriteLine("Public footprint signature and interoperability checks passed.");

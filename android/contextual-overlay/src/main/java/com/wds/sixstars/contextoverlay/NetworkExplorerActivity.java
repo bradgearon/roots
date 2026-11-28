@@ -15,7 +15,11 @@ public final class NetworkExplorerActivity extends Activity {
     private final ExecutorService work=Executors.newSingleThreadExecutor();
     private EditText query;
     private TextView status,policy,searchButton;
-    private LinearLayout nearby,remote;
+    private LinearLayout nearby,remote,footprintRows;
+    private TextView footprintStatus,previousPage,nextPage;
+    private List<PublicFootprints.Card> footprints=Collections.emptyList();
+    private int footprintPage;
+    private static final int FOOTPRINT_PAGE_SIZE=24;
     private boolean busy,closed,initialBrowse;
     @Override protected void onCreate(Bundle saved){
         super.onCreate(saved);
@@ -32,6 +36,14 @@ public final class NetworkExplorerActivity extends Activity {
         status=RootsUi.text(this,"No search yet.",13,RootsUi.MUTED,false);controls.addView(status);
         LinearLayout local=RootsUi.card(this,content);local.addView(RootsUi.text(this,"Nearby bound Axons",18,RootsUi.TEXT,true));
         nearby=RootsUi.column(this);local.addView(nearby);
+        LinearLayout savedIndex=RootsUi.card(this,content);
+        savedIndex.addView(RootsUi.text(this,"Saved public Mesh index",18,RootsUi.TEXT,true));
+        savedIndex.addView(RootsUi.text(this,"Verified contributor references received through Axon encounters. Includes offline contributors; not a complete network census. Opening an entry does not connect or subscribe.",13,RootsUi.MUTED,false));
+        savedIndex.addView(RootsUi.action(this,"Refresh saved index",this::refreshFootprints));
+        footprintStatus=RootsUi.text(this,"Loading saved footprints…",13,RootsUi.MUTED,false);savedIndex.addView(footprintStatus);
+        footprintRows=RootsUi.column(this);savedIndex.addView(footprintRows);
+        previousPage=RootsUi.action(this,"‹ Previous page",()->{if(footprintPage>0){footprintPage--;renderFootprints();}});savedIndex.addView(previousPage);
+        nextPage=RootsUi.action(this,"Next page ›",()->{if((footprintPage+1)*FOOTPRINT_PAGE_SIZE<footprints.size()){footprintPage++;renderFootprints();}});savedIndex.addView(nextPage);
         LinearLayout internet=RootsUi.card(this,content);internet.addView(RootsUi.text(this,"Internet directory",18,RootsUi.TEXT,true));
         internet.addView(RootsUi.text(this,"A valid signature proves a card's owner, not the truth of its claims. Directory-only nodes do not yet offer Internet Axon exchange.",13,RootsUi.MUTED,false));
         remote=RootsUi.column(this);internet.addView(remote);
@@ -47,6 +59,7 @@ public final class NetworkExplorerActivity extends Activity {
             var snapshot=EncounterBindings.get(this).snapshot();
             runOnUiThread(()->{if(!closed)renderNearby(snapshot);});
         });
+        refreshFootprints();
         if(initialBrowse){initialBrowse=false;search();}
     }
     private void configure(){
@@ -68,6 +81,50 @@ public final class NetworkExplorerActivity extends Activity {
             row.addView(RootsUi.text(this,peer.label().isEmpty()?"Axon "+id.substring(0,12):peer.label(),15,RootsUi.TEXT,true));
             row.addView(RootsUi.text(this,(peer.blocked()?"Blocked":id.equals(EncounterService.activePeer())?"Connected":"Bound · offline")+" · "+peer.received()+" received",13,RootsUi.MUTED,false));
         }
+    }
+    private void refreshFootprints(){
+        if(closed||work.isShutdown())return;
+        work.execute(()->{
+            try{
+                List<PublicFootprints.Card> snapshot=PublicFootprints.get(this).snapshot();
+                runOnUiThread(()->{if(!closed){footprints=snapshot;renderFootprints();}});
+            }catch(Exception failure){runOnUiThread(()->{if(!closed)footprintStatus.setText("Saved public index unavailable.");});}
+        });
+    }
+    private void renderFootprints(){
+        footprintRows.removeAllViews();
+        int pages=Math.max(1,(footprints.size()+FOOTPRINT_PAGE_SIZE-1)/FOOTPRINT_PAGE_SIZE);
+        footprintPage=Math.min(footprintPage,pages-1);
+        int from=footprintPage*FOOTPRINT_PAGE_SIZE,to=Math.min(footprints.size(),from+FOOTPRINT_PAGE_SIZE);
+        footprintStatus.setText(footprints.size()+" saved verified contributors · page "+(footprintPage+1)+" / "+pages+" · partial directory");
+        previousPage.setEnabled(footprintPage>0);nextPage.setEnabled(footprintPage+1<pages);
+        if(footprints.isEmpty())footprintRows.addView(RootsUi.text(this,"No signed footprints yet. Encounter an updated Roots peer to receive its public index references.",13,RootsUi.MUTED,false));
+        for(int i=from;i<to;i++){
+            var card=footprints.get(i);
+            footprintRows.addView(RootsUi.action(this,"Axon "+card.id().substring(0,12)+" · "+card.links().size()+" public references",()->showFootprint(card.id())));
+        }
+    }
+    private void showFootprint(String id){
+        PublicFootprints.Card found=null;
+        for(var card:footprints)if(card.id().equals(id)){found=card;break;}
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("Public Axon "+id.substring(0,12))
+            .setPositiveButton("Close",null).setNeutralButton("Copy ID",(d,w)->{
+                android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                if(clipboard!=null)clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Public Axon ID",id));
+            });
+        if(found==null){dialog.setMessage("Referenced contributor · no verified footprint retained locally. This is not a live connection.\n"+id);}
+        else if(found.links().isEmpty()){dialog.setMessage("Verified historical footprint · no public links in this revision.\n"+id);}
+        else{
+            List<String> links=found.links();
+            String[] rows=new String[links.size()];
+            for(int i=0;i<rows.length;i++){
+                String target=links.get(i);boolean known=false;
+                for(var card:footprints)if(card.id().equals(target)){known=true;break;}
+                rows[i]="Axon "+target.substring(0,12)+(known?" · saved footprint":" · reference only");
+            }
+            dialog.setItems(rows,(d,index)->showFootprint(links.get(index)));
+        }
+        dialog.show();
     }
     private void search(){
         if(busy||closed)return;String term=query.getText().toString();
