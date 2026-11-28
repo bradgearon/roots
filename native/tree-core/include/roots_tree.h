@@ -86,6 +86,11 @@ ROOTS_TREE_API roots_tree_result roots_tree_screens_time(roots_tree *tree,const 
 ROOTS_TREE_API roots_tree_result roots_tree_fragment_weights(roots_tree *tree,
     int64_t sequence,float *weights,size_t count);
 ROOTS_TREE_API roots_tree_result roots_tree_count(roots_tree *tree, int64_t *count);
+/* Exact, case-sensitive occurrence count for one screen-text fragment. */
+ROOTS_TREE_API roots_tree_result roots_tree_text_occurrences(roots_tree *tree,int64_t sequence,int64_t *count);
+/* SQLite online backup to a NEW path; includes committed WAL content.
+ * The destination is integrity-checked and made self-contained before return. */
+ROOTS_TREE_API roots_tree_result roots_tree_backup(roots_tree *tree,const char *new_path,int64_t *revision);
 ROOTS_TREE_API roots_tree_result roots_tree_agent_create(roots_tree *tree,
     const char *name, const char *term, int64_t *id);
 ROOTS_TREE_API roots_tree_result roots_tree_agent_list(roots_tree *tree,
