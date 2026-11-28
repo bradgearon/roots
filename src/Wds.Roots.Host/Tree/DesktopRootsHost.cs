@@ -135,6 +135,13 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
             var weights=source=="experience"?DesktopExperienceTree.Weights(sequence):host!._tree.FragmentWeights(sequence);
             return Results.Json(new {ok=true,profile="roots.lexical.byte-trigram.fnv1a.l2.v1",weights});
         });
+        group.MapPost("/view/{source}/compile",(string source,CompileRequest request)=>{
+            if(source=="experience"){
+                var result=DesktopExperienceTree.Compile();return Results.Json(new {ok=true,available=result.Available,revision=result.Revision});
+            }
+            if(source=="knowledge")return Results.Json(host!._tree.CompileLocalized(request.Language));
+            return Results.BadRequest(new {ok=false,error="invalid_source"});
+        });
         group.MapGet("/view/{source}/branches",(string source)=>{
             if(source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_source"});
             return Results.Json(new {ok=true,items=source=="experience"?DesktopExperienceTree.Branches():host!._tree.Branches()});
