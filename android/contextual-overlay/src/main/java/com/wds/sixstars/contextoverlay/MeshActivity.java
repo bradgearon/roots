@@ -27,7 +27,7 @@ import java.util.concurrent.Executors;
 public final class MeshActivity extends Activity {
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsMeshUi");t.setDaemon(true);return t;});
     private MeshPeer mesh;
-    private TextView status,serve,copy,receive,stop,axonStatus;
+    private TextView status,serve,copy,receive,stop,axonStatus,servingStatus;
     private TextView connectionSummary,connectionStatus,connectionDetails,analysisOutput;
     private TextView testConnection,analyzeConnection,copyConnectionReport;
     private TextView savedAxonStatus,boundConnectionStatus;
@@ -35,6 +35,7 @@ public final class MeshActivity extends Activity {
     private static final ExecutorService CONNECTION_REFRESH=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsAxonRefresh");t.setDaemon(true);return t;});
     private final android.os.Handler refreshHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     private volatile boolean foreground;
+    private final Runnable servingObserver=()->runOnUiThread(()->{if(foreground&&!isDestroyed())refresh();});
     private boolean refreshing,clearingSavedInvite;
     private volatile int foregroundGeneration;
     private android.net.ConnectivityManager refreshNetworkManager;
@@ -69,11 +70,12 @@ public final class MeshActivity extends Activity {
         publish.addView(RootsUi.action(this,"Write a remembrance",()->publish(this,null,this::refresh)));
         LinearLayout listener=RootsUi.card(this,content);
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
-        listener.addView(RootsUi.text(this,"Create an invitation for another phone. Stop listening pauses sharing; saved invitations remain valid after restart.",13,RootsUi.MUTED,false));
+        listener.addView(RootsUi.text(this,"Start listening once to serve automatically in the background and after restarts. Stop listening turns sharing off; saved invitations remain valid.",13,RootsUi.MUTED,false));
+        servingStatus=RootsUi.text(this,"Sharing off",14,RootsUi.ACCENT,true);listener.addView(servingStatus);
         serve=RootsUi.action(this,"Start listening",this::start);listener.addView(serve);
         copy=RootsUi.action(this,"Copy private invitation",this::copy);listener.addView(copy);
         listener.addView(RootsUi.action(this,"Share invitation…",this::share));
-        stop=RootsUi.action(this,"Stop listening",()->{mesh.stop();getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();status.setText(mesh.status());});listener.addView(stop);
+        stop=RootsUi.action(this,"Stop listening",()->{try{MeshServingService.disable(this);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();}catch(Exception e){status.setText(e.getMessage());}});listener.addView(stop);
         // One shared connection control, outside the optional Axon section.
         LinearLayout connection=RootsUi.section(this,content,"Connection details","Check this device and any selected peers.",true);
         connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
@@ -160,7 +162,7 @@ public final class MeshActivity extends Activity {
         }catch(Exception e){status.setText("Invalid Roots Mesh invitation.");}
     }
     @Override protected void onResume(){
-        super.onResume();foreground=true;foregroundGeneration++;refresh();scheduleBoundRefresh(0);
+        super.onResume();foreground=true;foregroundGeneration++;MeshServingService.addObserver(servingObserver);MeshServingService.restore(this);refresh();scheduleBoundRefresh(0);
         refreshNetworkManager=(android.net.ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
         if(refreshNetworkManager!=null){
             android.net.ConnectivityManager.NetworkCallback callback=new android.net.ConnectivityManager.NetworkCallback(){
@@ -177,7 +179,7 @@ public final class MeshActivity extends Activity {
         }
     }
     @Override protected void onPause(){
-        foreground=false;foregroundGeneration++;refreshHandler.removeCallbacks(refreshBoundTick);
+        foreground=false;foregroundGeneration++;MeshServingService.removeObserver(servingObserver);refreshHandler.removeCallbacks(refreshBoundTick);
         if(refreshNetworkManager!=null&&refreshNetworkCallback!=null)
             try{refreshNetworkManager.unregisterNetworkCallback(refreshNetworkCallback);}catch(RuntimeException ignored){}
         refreshNetworkCallback=null;refreshNetworkManager=null;super.onPause();
@@ -232,7 +234,9 @@ public final class MeshActivity extends Activity {
     private void refresh(){
         if(isDestroyed()||mesh==null)return;
         boolean listening=!mesh.invitation().isEmpty();
-        serve.setEnabled(!listening&&!busy);copy.setEnabled(listening);stop.setEnabled(listening);
+        boolean serving=MeshServingService.enabled(this);
+        servingStatus.setText(MeshServingService.status(this)+(listening?" · "+mesh.tlsIdentityStatus():""));
+        enable(serve,!serving&&!busy);enable(copy,serving&&listening);enable(stop,serving);
         receive.setEnabled(!busy&&NativeTree.available());
         invitations.setEnabled(!busy);interests.setEnabled(!busy);useAxon.setEnabled(!busy);
         String summary=mesh.connectionSummary();
@@ -359,14 +363,9 @@ public final class MeshActivity extends Activity {
         connectionStatus.setText("Connection report copied. Invitation credentials are excluded.");
     }
     private void start(){
-        if(busy)return;busy=true;refresh();status.setText("Starting local TLS listener…");
-        WORK.execute(()->{
-            String message;
-            try{mesh.start();message="Listening on Wi-Fi · "+mesh.offeredCount()+" graph items\n"+mesh.tlsIdentityStatus();}
-            catch(Exception|LinkageError e){message="Could not start listener: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
-            final String result=message;
-            runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();if(!mesh.invitation().isEmpty())getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);status.setText(result);});
-        });
+        if(busy)return;
+        try{MeshServingService.enable(this);refresh();}
+        catch(Exception error){status.setText("Could not enable sharing: "+error.getMessage());}
     }
     private void copy(){
         String invitation=mesh.invitation();if(invitation.isEmpty())return;
