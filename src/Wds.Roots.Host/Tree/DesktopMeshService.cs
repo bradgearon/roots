@@ -32,6 +32,26 @@ internal sealed class DesktopMeshService : IAsyncDisposable
     List<MeshInvitation> _peers;
     bool _enabled;
     string _status="Sharing off";
+    Task? _receiveJob;
+    string _receiveStatus="Idle";
+    object? _receiveResult;
+    public object StartReceive()
+    {
+        lock(_gate)
+        {
+            if(!_lan||_peers.Count==0)throw new InvalidOperationException("Bind a LAN peer first.");
+            if(_receiveJob is {IsCompleted:false})return new {ok=true,running=true};
+            _receiveStatus="Receiving";_receiveResult=null;
+            _receiveJob=Task.Run(async ()=>{
+                try{
+                    object result=await ReceiveAsync(_lifetime.Token);
+                    lock(_gate){_receiveResult=result;_receiveStatus="Completed";}
+                }catch(OperationCanceledException){lock(_gate)_receiveStatus="Cancelled";}
+                catch(Exception e){lock(_gate)_receiveStatus="Receive failed: "+e.GetType().Name;}
+            });
+            return new {ok=true,running=true};
+        }
+    }
     public DesktopMeshService(DesktopTreeService tree,string directory,bool lan)
     {
         _tree=tree;_directory=directory;_lan=lan;
@@ -46,7 +66,8 @@ internal sealed class DesktopMeshService : IAsyncDisposable
     public object Status()
     {
         lock(_gate)return new { enabled=_enabled,lan=_lan,listening=_listener!=null,status=_status,pin=_identity.Pin,
-            peers=_peers.Select(p=>new {host=p.Host,pin=p.Pin}).ToArray() };
+            peers=_peers.Select(p=>new {host=p.Host,pin=p.Pin}).ToArray(),
+            receiving=_receiveJob is {IsCompleted:false},receiveStatus=_receiveStatus,receiveResult=_receiveResult };
     }
     public string[] Invitations()
     {
@@ -110,7 +131,8 @@ internal sealed class DesktopMeshService : IAsyncDisposable
         string path=Path.Combine(_directory,"subscription.axon");
         string temp=path+".tmp";
         File.WriteAllText(temp,JsonSerializer.Serialize(new {type="roots.axon",version=1,
-            peers=peers.Select(p=>p.Pin).Order(StringComparer.Ordinal),lanes="*",scope="bulk"}));
+            peers=peers.Select(p=>p.Pin).Order(StringComparer.Ordinal),lanes="*",
+            model="BALANCED",model_sha="57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf",operation="Intelligence sample",scope="bulk"}));
         File.Move(temp,path,true);
     }
     void SaveGrant(MeshInvitation original,string grant)
@@ -445,6 +467,7 @@ internal sealed class DesktopMeshService : IAsyncDisposable
         _lifetime.Cancel();lock(_gate)Stop();
         if(_accept!=null)try{await _accept;}catch{}
         await Task.WhenAll(_handlers.Values.ToArray());
+        if(_receiveJob!=null)await _receiveJob;
         await _receive.WaitAsync();
         _identity.Dispose();_serving?.Dispose();_lifetime.Dispose();_receive.Dispose();
     }
