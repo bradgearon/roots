@@ -100,4 +100,6 @@ dependencies {
     // Small bundled language classifier; no Roots brain/llama.cpp rebuild.
     implementation("com.google.mlkit:language-id:17.0.6")
     testImplementation("junit:junit:4.13.2")
+    // Real JSON implementation for local JVM protocol tests (not packaged in the app).
+    testImplementation("org.json:json:20240303")
 }
