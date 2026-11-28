@@ -107,7 +107,7 @@ final class AutoOverlayPositionStore {
     private final int screenHeight;
     private final int safeTop;
     private boolean coordinatesTrusted = true;
-    private long version;
+    private long version, occurrenceSequence;
 
     AutoOverlayPositionStore(int screenWidth, int screenHeight) {
         this(screenWidth, screenHeight, 0);
@@ -120,6 +120,47 @@ final class AutoOverlayPositionStore {
     }
 
     long version() { return version; }
+
+    // A content fingerprint identifies a translation, not an occurrence.
+    // Two visible copies of the same text must own separate positions.
+    static String contentId(String occurrence){
+        int separator=occurrence.lastIndexOf('@');
+        return separator<0?occurrence:occurrence.substring(0,separator);
+    }
+    boolean containsContent(String content){
+        if(!coordinatesTrusted)return false;
+        for(Entry e:entries.values())if(contentId(e.id).equals(content))return true;
+        return false;
+    }
+    void publishScene(List<Observation> fresh,boolean scrolling,long nowMs){
+        List<Observation> assigned=new ArrayList<>();
+        Set<String> used=new HashSet<>();
+        for(Observation o:fresh){
+            if(o==null||o.id==null||o.rectangle==null)continue;
+            boolean duplicate=false;
+            for(Observation a:assigned)if(contentId(a.id).equals(o.id)&&same(a.rectangle,o.rectangle)){
+                duplicate=true;break;
+            }
+            if(duplicate)continue;
+            Entry exact=null, overlapping=null;
+            int overlaps=0;
+            if(coordinatesTrusted)for(Entry e:entries.values()){
+                if(used.contains(e.id)||!contentId(e.id).equals(o.id))continue;
+                if(same(e.rectangle,o.rectangle)){exact=e;break;}
+                if(overlaps(e.rectangle,o.rectangle)){overlapping=e;overlaps++;}
+            }
+            // Only reuse an occurrence when the measured rectangles agree
+            // or overlap unambiguously. No cross-post text-only association.
+            Entry matched=exact!=null?exact:overlaps==1?overlapping:null;
+            String id=matched==null?o.id+"@"+(++occurrenceSequence):matched.id;
+            used.add(id);
+            assigned.add(new Observation(id,o.rectangle,o.details,o.nameDetails,
+                o.authorName,o.nameInlineSafe,o.nameClipped));
+        }
+        // The auto scene never keeps an absent text rectangle. Translation
+        // results stay cached independently and can be displayed on return.
+        publish(assigned,true,nowMs);
+    }
 
     void publish(List<Observation> fresh, boolean scrolling, long nowMs) {
         final boolean recovering = !coordinatesTrusted;
