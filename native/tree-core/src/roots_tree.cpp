@@ -187,6 +187,7 @@ roots_tree_result roots_tree_open(const char *path,roots_tree **out){
                    "CREATE TABLE IF NOT EXISTS agents(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,term TEXT NOT NULL);"
                    "CREATE TABLE IF NOT EXISTS branch_members(agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,fragment_seq INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,PRIMARY KEY(agent_id,fragment_seq));"
                    "CREATE INDEX IF NOT EXISTS branch_fragment ON branch_members(fragment_seq);"
+                   "CREATE INDEX IF NOT EXISTS fragment_observed ON fragments(observed_ms DESC,seq DESC);"
                    "CREATE INDEX IF NOT EXISTS fragment_master ON fragments(external_id,seq) WHERE source GLOB 'record.*';"
                    "CREATE INDEX IF NOT EXISTS fragment_master_language ON fragments(external_id,language,seq) WHERE source GLOB 'record.*';"
                    "CREATE TABLE IF NOT EXISTS work_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,fragment INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,operation TEXT NOT NULL,profile TEXT NOT NULL,priority INTEGER NOT NULL,deadline INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,state INTEGER NOT NULL DEFAULT 0,worker TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,token INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,output TEXT NOT NULL DEFAULT '',UNIQUE(fragment,operation,profile));"
@@ -254,6 +255,25 @@ roots_tree_result roots_tree_records(roots_tree *t,const char *term,int64_t agen
             roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};
             if(cb(user,entry.first,&f))break;
         }
+    });
+}
+roots_tree_result roots_tree_query_time(roots_tree *t,const char *term,int64_t agent_id,
+        int64_t before_ms,int64_t before_seq,uint32_t limit,roots_fragment_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&agent_id>=0&&before_ms>=0&&before_seq>=0&&limit>0&&limit<=100);
+        require(before_seq!=0||before_ms==0);bounded(term,512);
+        std::vector<row> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,"SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms FROM fragments f "
+                "WHERE (?=0 OR f.observed_ms<? OR (f.observed_ms=? AND f.seq<?)) "
+                "AND instr(lower(f.body),lower(?))>0 AND (?=0 OR EXISTS(SELECT 1 FROM branch_members b WHERE b.fragment_seq=f.seq AND b.agent_id=?)) "
+                "ORDER BY f.observed_ms DESC,f.seq DESC LIMIT ?");
+            s.number(1,before_seq);s.number(2,before_ms);s.number(3,before_ms);s.number(4,before_seq);
+            s.text(5,term);s.number(6,agent_id);s.number(7,agent_id);s.number(8,limit);
+            while(s.next())rows.push_back(read_row(s));
+        }
+        for(const auto &r:rows){roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};if(cb(user,&f))break;}
     });
 }
 roots_tree_result roots_tree_records_time(roots_tree *t,const char *term,int64_t agent_id,
