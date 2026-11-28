@@ -255,7 +255,7 @@ function cleanTreePost(raw) {
 }
 async function treeCommand(request){
   switch(request.operation){
-    case "viewStatus":case "viewRecords":case "viewFeed":case "viewWeights":
+    case "viewStatus":case "viewRecords":case "viewFeed":case "viewScreens":case "viewWeights":
     case "viewBranches":case "viewAddBranch":case "viewRemoveBranch":case "viewCompile":{
       const source=request.source;
       if(source!=="experience"&&source!=="knowledge")return {ok:false,error:"invalid_source"};
@@ -263,11 +263,13 @@ async function treeCommand(request){
       const positive=v=>Number.isSafeInteger(v)&&v>0?v:0;
       switch(request.operation){
         case "viewStatus":return treeCall(path+"/status");
-        case "viewRecords":case "viewFeed":{
+        case "viewRecords":case "viewFeed":case "viewScreens":{
+          if(request.operation==="viewScreens"&&source!=="experience")return {ok:false,error:"invalid_source"};
           const params=new URLSearchParams({term:String(request.term||"").slice(0,512),
             beforeMs:String(positive(request.beforeMs)),beforeSequence:String(positive(request.beforeSequence)),
-            agent:String(positive(request.agent)),limit:"30"});
-          return treeCall(path+(request.operation==="viewRecords"?"/records":"/feed")+"?"+params);
+            agent:String(positive(request.agent)),limit:request.operation==="viewScreens"?"12":"30"});
+          const endpoint=request.operation==="viewScreens"?"/screens":request.operation==="viewRecords"?"/records":"/feed";
+          return treeCall(path+endpoint+"?"+params);
         }
         case "viewWeights":return positive(request.sequence)?treeCall(path+"/weights/"+request.sequence):{ok:false,error:"invalid_sequence"};
         case "viewCompile":return treeCall(path+"/compile","POST",{language:String(request.language||"en").slice(0,3)},60000);
