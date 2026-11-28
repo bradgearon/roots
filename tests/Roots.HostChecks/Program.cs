@@ -5,6 +5,9 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using Wds.Roots.Host.Runtime;
+using Wds.Roots.Host;
+using System.Text.Json;
+using System.IO.Compression;
 
 // Child fixtures re-launch this executable. They neither load models nor touch
 // user processes, and use only temporary files or ephemeral loopback ports.
@@ -54,6 +57,33 @@ Directory.CreateDirectory(scratch);
 int passed = 0;
 try
 {
+    await Run("Compressed public Axon receipts survive camelCase and legacy PascalCase recovery", () =>
+    {
+        using var item=JsonDocument.Parse("{\"id\":\"fixture\",\"text\":\"Retained knowledge\"}");
+        var receipt=new DesktopPublicAxonReceipt(item.RootElement.Clone(),new string('a',64),123456,true);
+        // Reproduce the actual old archive writer (Web/camelCase), and legacy
+        // individual receipt writer (default/PascalCase).
+        foreach(var options in new[]{new JsonSerializerOptions(JsonSerializerDefaults.Web),new JsonSerializerOptions()})
+        {
+            using var bytes=new MemoryStream();
+            using(var zip=new GZipStream(bytes,CompressionLevel.Fastest,true))
+                JsonSerializer.Serialize(zip,new[]{receipt,receipt with{Promoted=false}},options);
+            bytes.Position=0;
+            using var unzip=new GZipStream(bytes,CompressionMode.Decompress);
+            var recovered=JsonSerializer.Deserialize<DesktopPublicAxonReceipt[]>(unzip,DesktopPublicAxonReceipt.Options);
+            Require(recovered is {Length:2},"Receipt count changed.");
+            Require(recovered![0].Item.ValueKind==JsonValueKind.Object,"Receipt item was not read.");
+            Require(recovered[0].Item.GetProperty("text").GetString()=="Retained knowledge","Receipt text changed.");
+            Require(recovered[0].Peer==receipt.Peer&&recovered[0].At==receipt.At,"Receipt provenance changed.");
+            Require(recovered[0].Promoted&&!recovered[1].Promoted,"Pending and promoted states changed.");
+        }
+        bool rejected=false;
+        try { JsonSerializer.Deserialize<DesktopPublicAxonReceipt>("{\"peer\":\"fixture\",\"at\":1,\"promoted\":false}",DesktopPublicAxonReceipt.Options); }
+        catch(JsonException){rejected=true;}
+        Require(rejected,"An archive receipt missing its item was accepted.");
+        return Task.CompletedTask;
+    });
+
     await Run("Early exit drains output and reports the actual exit code", async () =>
     {
         var logged = new ConcurrentQueue<string>();
