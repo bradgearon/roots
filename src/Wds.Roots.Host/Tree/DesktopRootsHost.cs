@@ -103,6 +103,42 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
                 members=g.Select(r=>r.Fragment).ToArray()}).ToArray();
             return Results.Json(new {ok=true,items=records,nextBefore=records.Length==0?0:records[^1].sequence});
         });
+        // These routes are local administration only, under the same loopback/token
+        // filter. Experience never enters the Mesh or public social catalog.
+        group.MapGet("/view/{source}/status",(string source)=>{
+            if(source=="experience"){var state=DesktopExperienceTree.Status();return Results.Json(new {ok=true,count=state.Count,revision=state.Revision});}
+            if(source=="knowledge")return Results.Json(new {ok=true,count=host!._tree.Count,revision=host._tree.Revision});
+            return Results.BadRequest(new {ok=false,error="invalid_source"});
+        });
+        group.MapGet("/view/{source}/records",(string source,string? term,long? beforeMs,long? beforeSequence,int? limit,long? agent)=>{
+            if(source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_source"});
+            long ms=Math.Max(0,beforeMs??0),seq=Math.Max(0,beforeSequence??0),branch=Math.Max(0,agent??0);
+            uint count=(uint)Math.Clamp(limit??30,1,100);
+            var rows=source=="experience"?DesktopExperienceTree.Records(term??"",ms,seq,count,branch)
+                :host!._tree.RecordsByTime(term??"",ms,seq,count,branch);
+            var records=rows.GroupBy(r=>r.MasterSequence).Select(g=>new {sequence=g.Key,
+                observedMs=g.Min(r=>r.Fragment.ObservedMs),key=g.First().Fragment.ExternalId,members=g.Select(r=>r.Fragment).ToArray()}).ToArray();
+            var last=records.LastOrDefault();
+            return Results.Json(new {ok=true,items=records,nextBeforeMs=last?.observedMs??0,nextBeforeSequence=last?.sequence??0});
+        });
+        group.MapGet("/view/{source}/weights/{sequence:long}",(string source,long sequence)=>{
+            if(sequence<=0||source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_request"});
+            var weights=source=="experience"?DesktopExperienceTree.Weights(sequence):host!._tree.FragmentWeights(sequence);
+            return Results.Json(new {ok=true,profile="roots.lexical.byte-trigram.fnv1a.l2.v1",weights});
+        });
+        group.MapGet("/view/{source}/branches",(string source)=>{
+            if(source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_source"});
+            return Results.Json(new {ok=true,items=source=="experience"?DesktopExperienceTree.Branches():host!._tree.Branches()});
+        });
+        group.MapPost("/view/{source}/branches",(string source,BranchRequest request)=>{
+            if(source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_source"});
+            return Results.Json(new {ok=true,id=source=="experience"?DesktopExperienceTree.AddBranch(request.Name,request.Term):host!._tree.AddBranch(request.Name,request.Term)});
+        });
+        group.MapDelete("/view/{source}/branches/{id:long}",(string source,long id)=>{
+            if(source!="experience"&&source!="knowledge"||id<=0)return Results.BadRequest(new {ok=false,error="invalid_request"});
+            if(source=="experience")DesktopExperienceTree.RemoveBranch(id);else host!._tree.RemoveBranch(id);
+            return Results.Json(new {ok=true});
+        });
         group.MapGet("/branches",()=>Results.Json(new {ok=true,items=host!._tree.Branches()}));
         group.MapPost("/branches",(BranchRequest request)=>Results.Json(new {ok=true,id=host!._tree.AddBranch(request.Name,request.Term)}));
         group.MapDelete("/branches/{id:long}",(long id)=>{host!._tree.RemoveBranch(id);return Results.Json(new {ok=true});});
