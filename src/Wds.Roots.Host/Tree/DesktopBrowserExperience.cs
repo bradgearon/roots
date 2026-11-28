@@ -22,6 +22,7 @@ internal static class DesktopBrowserExperience
     private static long LastWrite;
 
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowDisplayAffinity(nint hwnd,out uint affinity);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint hwnd,out uint pid);
     [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindowVisible(nint hwnd);
     [DllImport("user32.dll")] [return:MarshalAs(UnmanagedType.Bool)] private static extern bool IsIconic(nint hwnd);
@@ -66,6 +67,7 @@ internal static class DesktopBrowserExperience
         var session=Session();if(session==null)return null;
         nint window=GetForegroundWindow();
         if(window==0||!IsWindowVisible(window)||IsIconic(window))return null;
+        if(GetWindowDisplayAffinity(window,out uint affinity)&&affinity!=0)return null;
         // Verify an actual Chromium top-level window, not an arbitrary
         // background tab claiming to be foreground. Attribution comes from OS.
         var name=new StringBuilder(128);
@@ -75,7 +77,8 @@ internal static class DesktopBrowserExperience
         if(pid==0)return null;
         try{
             using var process=Process.GetProcessById(checked((int)pid));
-            if(process.SessionId!=Process.GetCurrentProcess().SessionId)return null;
+            using var self=Process.GetCurrentProcess();
+            if(process.SessionId!=self.SessionId)return null;
             string app=process.ProcessName+".exe";
             if(session.Excluded.Contains(app,StringComparer.OrdinalIgnoreCase))return null;
             long created=process.StartTime.ToUniversalTime().ToFileTimeUtc();
