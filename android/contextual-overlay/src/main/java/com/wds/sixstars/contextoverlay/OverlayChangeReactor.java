@@ -38,7 +38,10 @@ public final class OverlayChangeReactor {
             next.put(c.fingerprint, new PostPosition(c.bounds, c.postBounds,
                     c.avatarBounds, c.author));
         }
-        if (!hasSnapshot || previousAutoMode != automatic ||
+        // The compositor has independent measured-scroll state. A repeated
+        // accessibility snapshot must still rebase its positions; comparing
+        // only to the previous raw snapshot can leave shifted text stranded.
+        if (automatic || !hasSnapshot || previousAutoMode != automatic ||
                 !same(previous, next) || scrolling) {
             renderer.update(candidates, clickHandler, automatic, scrolling);
             previous.clear();
