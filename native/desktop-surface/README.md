@@ -32,12 +32,12 @@ are capture pixels; UIA coordinates are desktop pixels. Neither is yet used to p
 
 This milestone is experimental, not a broad desktop capture release. Keep the
 visible console open and press Ctrl+C to stop. Pause or stop capture before opening private content; OCR cannot reliably
-recognize every sensitive surface. Common browsers, terminals, password managers,
-credential UI, messaging/email clients, remote desktops and Roots processes
-are excluded from the native lane. These exclusions are best-effort, not a
-guarantee of detecting every confidential application. The later
-browser lane will use the existing extension and authorized DOM rather than
-duplicating native collection. No key/clipboard/microphone collection, no injection
+recognize every sensitive surface. There are no built-in process-name exclusions.
+The optional --exclude argument is the only name-based exclusion. The collector
+still checks foreground visibility, current Windows session, secure desktop and
+capture protection, and fences sensitive accessibility controls. Browsers are
+eligible for this same native policy; the planned authorized DOM lane will
+provide richer browser text without duplicating native observations. No key/clipboard/microphone collection, no injection
 or protected capture bypass. Use an ordinary desktop/borderless game.
 
 The native agent monitors foreground transitions, verifies process creation time
