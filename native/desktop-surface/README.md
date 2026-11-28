@@ -175,7 +175,7 @@ References: [Surface plan](../../design/desktop-surface-experience.md),
 
 ### Browser Experience, dialogue and backups
 
-Reload extension 0.4.4 and choose Experience → Enable visible webpage reading.
+Reload extension 0.4.5 and choose Experience → Enable visible webpage reading.
 Grant Chrome's requested site access once. It uses visible top-level page text,
 not hidden DOM, form values, browser history, or background tabs. The host also
 checks the live Surface lease and foreground Chromium window. The setting can
@@ -203,3 +203,22 @@ files contain their own internally consistent revision. A newer live revision
 no longer invalidates a completed snapshot. The content vectors remain
 lexical, not trained semantic embeddings. These files and the rolling backup
 are private, local artifacts and do not enter Mesh or Axon exchange.
+
+### Scroll-aware captured webpage reader
+
+Click a screen card or individual preview to expand the complete stored text.
+Browser screen cards have a separate **Read captured webpage in page order**
+reader. The capture lane samples after scrolling settles as well as periodically.
+It records document-relative positions (including enclosing scroll offsets)
+and stable visible text-node span anchors. The host checks durable first-seen
+identities and same-position text hashes before inserting a line, so overlapping
+viewports and scrolling back do not add the same observed text repeatedly.
+New lines still form a chronological screen group; page reading uses a separate
+top-to-bottom order and a stable forward cursor. Repeated text elsewhere on
+the page can remain a distinct observation. Browser order is approximate for
+virtualized/reflowing pages, complex columns or sticky overlays; positions record
+first sight, not a hidden DOM dump. A navigation/reload or new Surface run starts
+a new document identity. No attempt is made to reconstruct unobserved text or
+historical page positions from old records. Native OCR/UIA continue to retain
+separate screen occurrences; their within-screen display is sorted by coordinates
+inside each acquisition lane.
