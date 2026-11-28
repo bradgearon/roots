@@ -57,7 +57,7 @@ final class AutoWindowAttachedSurface {
     private Rect windowBounds;
 
     private List<AutoOverlaySceneView.TextItem> latest = Collections.emptyList();
-    private long visibilityEpoch;
+    private long sceneEpoch;
     private boolean drawing;
     private boolean dirty;
     private boolean closed;
@@ -122,9 +122,12 @@ final class AutoWindowAttachedSurface {
     void present(List<AutoOverlaySceneView.TextItem> source) {
         if (closed || failed) return;
         latest = Collections.unmodifiableList(new ArrayList<>(source));
+        // Every new scene supersedes a render still being produced, but
+        // retain the last committed buffer until its replacement is ready.
+        ++sceneEpoch;
         if(latest.isEmpty()){
             // Hiding does not depend on acquiring a free hardware buffer.
-            ++visibilityEpoch;dirty=false;committedFrame=submittedFrame;cancelWatchdog();
+            dirty=false;committedFrame=submittedFrame;cancelWatchdog();
             try(SurfaceControl.Transaction transaction=new SurfaceControl.Transaction()){
                 transaction.setVisibility(surface,false).setBuffer(surface,null).apply();
             }catch(RuntimeException e){fail();}
@@ -149,7 +152,7 @@ final class AutoWindowAttachedSurface {
         drawing = true;
         slot.busy = true;
         final Slot frameSlot = slot;
-        final long frameEpoch=visibilityEpoch;
+        final long frameEpoch=sceneEpoch;
 
         try {
             // Record on our main thread, execute GPU rendering on Android's
@@ -179,7 +182,7 @@ final class AutoWindowAttachedSurface {
     private void onRendered(Slot slot, RenderResult result,long frameEpoch) {
         drawing = false;
         android.hardware.SyncFence ready = result.getFence();
-        if (closed || frameEpoch!=visibilityEpoch) {
+        if (closed || frameEpoch!=sceneEpoch) {
             // Never submit a frame for an invalidated geometry epoch. The
             // GPU may still be writing this never-presented buffer.
             // Await its render fence away from the main/UI thread before
@@ -227,7 +230,7 @@ final class AutoWindowAttachedSurface {
                         }));
                 // A render submitted before an uncertain-scroll hide must
                 // never make old text visible again.
-                transaction.setVisibility(surface,frameEpoch==visibilityEpoch&&!latest.isEmpty());
+                transaction.setVisibility(surface,frameEpoch==sceneEpoch&&!latest.isEmpty());
                 long sequence=++submittedFrame;
                 transaction.addTransactionCommittedListener(command->main.post(command),()->{
                     if(closed||failed||sequence<=committedFrame)return;
