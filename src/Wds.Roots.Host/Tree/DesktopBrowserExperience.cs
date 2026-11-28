@@ -25,8 +25,7 @@ internal static class DesktopBrowserExperience
         }
         public string OrderKey()=>FormattableString.Invariant($"{(long)PageY!.Value+1000000000:D10}:{(long)PageX!.Value+1000000000:D10}:{Order!.Value:D10}:{Anchor!.Value:D10}:{Start!.Value:D10}");
     }
-    internal sealed record Snapshot(string DocumentKey,string Host,Line[] Rows);
-    internal sealed record CaptureSession(string Run,string[] Excluded);
+    internal sealed record Snapshot(string DocumentKey,string Host,Line[] Rows,string? CaptureEpoch=null,string? CaptureRun=null);
     private sealed record Recent(string Signature,long At);
     private static readonly object Gate=new();
     private static readonly Dictionary<string,Recent> Previous=new(StringComparer.Ordinal);
@@ -58,23 +57,11 @@ internal static class DesktopBrowserExperience
         }finally{CloseDesktop(desktop);}
     }
 
-    private static CaptureSession? Session()
-    {
-        var directory=DirectoryPath();
-        var path=Path.Combine(directory,"capture.lock");
-        if(!File.Exists(path))return null;
-        try{
-            using var unused=new FileStream(path,FileMode.Open,FileAccess.ReadWrite,FileShare.None);
-            return null; // nobody owns the Surface lease
-        }catch(IOException e) when((e.HResult&0xffff) is 32 or 33){}
-        catch{return null;}
-        try{
-            var session=JsonSerializer.Deserialize<CaptureSession>(File.ReadAllText(Path.Combine(directory,"capture.session.json")));
-            return session!=null&&Guid.TryParse(session.Run,out _)&&session.Excluded is {Length:<=64}?session:null;
-        }catch{return null;}
-    }
+    private static ExperienceCaptureControl Control()=>new(DirectoryPath());
 
-    private static (CaptureSession Session,string Process,nint Window,uint Pid,long Created)? Foreground()
+    private static ExperienceCaptureControl.Worker? Session()=>Control().ActiveSession();
+
+    private static (ExperienceCaptureControl.Worker Session,string Process,nint Window,uint Pid,long Created)? Foreground()
     {
         if(!DesktopUnlocked())return null;
         var session=Session();if(session==null)return null;
@@ -101,6 +88,18 @@ internal static class DesktopBrowserExperience
     }
 
     public static bool Enabled()=>Foreground()!=null;
+    public static object Settings()
+    {
+        var current=Foreground();
+        return new {ok=true,capture=current!=null,epoch=current?.Session.Epoch,run=current?.Session.Run};
+    }
+    public static ExperienceCaptureControl.CaptureStatus CaptureStatus()=>Control().Status();
+    public static ExperienceCaptureControl.CaptureStatus SetCapture(bool enabled)
+    {
+        var control=Control();
+        control.SetEnabled(enabled);
+        return control.Status();
+    }
 
     public static object Observe(Snapshot? snapshot)
     {
@@ -121,6 +120,10 @@ internal static class DesktopBrowserExperience
             var current=Foreground();
             if(current==null)return new {ok=false,error="capture_off"};
             var (session,process,window,pid,created)=current.Value;
+            // A snapshot collected before pause or a watcher restart may arrive
+            // late. It is not authorized under the next capture generation.
+            if(snapshot.CaptureEpoch!=session.Epoch||snapshot.CaptureRun!=session.Run)
+                return new {ok=false,error="capture_off"};
             if(ActiveRun!=session.Run){Previous.Clear();ActiveRun=session.Run;LastWrite=0;}
             long now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             // Rate limit any sender to one snapshot per second; deduplicate
@@ -161,14 +164,19 @@ internal static class DesktopBrowserExperience
                     boundsCssPx=line.Bounds,coordinateSpace="viewport-css",method="dom",
                     pageX=line.PageX,pageY=line.PageY,anchor=line.Anchor,start=line.Start,end=line.End}));
             }
-            var check=Foreground();
-            if(check==null||check.Value.Window!=window||check.Value.Session.Run!=session.Run||
-               check.Value.Pid!=pid||check.Value.Created!=created)return new {ok=false,error="capture_off"};
             ulong inserted=0;
-            // Up to nine fields per line. The Tree batch limit is 256; keep
-            // each observation atomic, including its page-order metadata.
-            foreach(var group in rows.GroupBy(r=>r.ExternalId).Chunk(28))
-                inserted+=tree.Observe(group.SelectMany(g=>g).ToArray());
+            bool committed=false;
+            // Serialize the final write with the same control gate used by
+            // Surface. Pause acknowledgement cannot race a delayed DOM write.
+            if(!Control().TryCommit(session.Epoch,()=>{
+                var check=Foreground();
+                if(check==null||check.Value.Window!=window||check.Value.Session.Run!=session.Run||
+                   check.Value.Pid!=pid||check.Value.Created!=created)return;
+                // Up to nine fields per line; keep each observation atomic.
+                foreach(var group in rows.GroupBy(r=>r.ExternalId).Chunk(28))
+                    inserted+=tree.Observe(group.SelectMany(g=>g).ToArray());
+                committed=true;
+            })||!committed)return new {ok=false,error="capture_off"};
             LastWrite=now;
             Previous[key]=new(signature,now);
             if(Previous.Count>256){
