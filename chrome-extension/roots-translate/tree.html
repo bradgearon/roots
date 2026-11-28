@@ -22,6 +22,24 @@ article p{white-space:pre-wrap;margin:8px 0}
 .screen-observation p{font-size:14px;color:#e8eaf0}
 .screen-card>details>summary{cursor:pointer;color:#9bcce5;font-weight:600}
 .screen-card>details>summary:hover{color:#fff}
+.screen-reader,.text-reader{margin-top:0}
+.screen-reader-summary,.text-reader-summary{display:block;cursor:pointer;list-style:none;border-radius:5px}
+.screen-reader-summary::-webkit-details-marker,.text-reader-summary::-webkit-details-marker{display:none}
+.screen-reader-summary:focus-visible,.text-reader-summary:focus-visible{outline:2px solid #80c6f4;outline-offset:4px}
+.reader-hint{display:block;color:#9bcce5;font-size:13px;font-weight:600;margin:8px 0}
+.reader-hint::before{content:"▸ "}
+details[open] > summary > .reader-hint::before{content:"▾ "}
+.screen-reader[open] > summary > .screen-preview{display:none}
+.text-reader-preview{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;color:#e8eaf0;font-size:14px;font-weight:400}
+.text-reader[open] > summary > .text-reader-preview{display:none}
+.text-reader[open] > summary > .reader-hint{margin:0;font-size:12px}
+.full-text{white-space:normal;color:#e8eaf0}
+.full-text p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6;margin:8px 0}
+.full-text button,.screen-reader-content>button{font-size:12px;padding:5px 9px;margin:6px 6px 6px 0}
+.page-reader{border-top:1px solid #384352;padding-top:9px}
+.page-reader .text-reader{border-bottom:1px solid #384352;padding:5px 0}
+.experience-section h4{margin:14px 0 5px;font-size:13px}
+
 details{color:#b7c4d3;margin-top:8px}details p{font-size:13px}
 #message{min-height:1.5em}
 .weight-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;font:12px ui-monospace,monospace;margin:8px 0}
