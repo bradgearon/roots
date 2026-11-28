@@ -11,7 +11,14 @@ import android.content.Context;
 public interface TranslationProvider {
     void translate(String text, String sourceLanguageHint, String targetLanguage, Result callback);
 
+    String LANGUAGE_UNCERTAIN="Language could not be identified confidently.";
+
+    default void translateChecked(String text,String source,String target,boolean name,boolean automatic,Result callback){
+        translate(text,source,target,callback);
+    }
+
     interface Result {
+        default void identifiedLanguage(String language){}
         /** Local inference begins, or remote dispatch begins (not remote GPU execution). */
         default void started() {}
         /** Cumulative provisional text; never cache as final. */
