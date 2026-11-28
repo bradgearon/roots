@@ -64,14 +64,16 @@ final class AutoWindowAttachedSurface {
     private boolean failed;
     private final Runnable onFailure;
     private boolean watchdogArmed;
+    private long submittedFrame,committedFrame;
+    private boolean waitingForFrame(){return dirty||drawing||submittedFrame>committedFrame;}
     // A dirty frame may wait for a GPU render or a release fence. Do not
     // leave its predecessor frozen onscreen if neither callback arrives.
     private final Runnable frameWatchdog=()->{
         watchdogArmed=false;
-        if(!closed&&!failed&&!latest.isEmpty()&&(dirty||drawing))fail();
+        if(!closed&&!failed&&!latest.isEmpty()&&waitingForFrame())fail();
     };
     private void watchFrame(){
-        if(!watchdogArmed&&!closed&&!failed&&!latest.isEmpty()&&(dirty||drawing))
+        if(!watchdogArmed&&!closed&&!failed&&!latest.isEmpty()&&waitingForFrame())
             watchdogArmed=main.postDelayed(frameWatchdog,FRAME_STALL_MS);
     }
     private void cancelWatchdog(){main.removeCallbacks(frameWatchdog);watchdogArmed=false;}
@@ -122,7 +124,7 @@ final class AutoWindowAttachedSurface {
         latest = Collections.unmodifiableList(new ArrayList<>(source));
         if(latest.isEmpty()){
             // Hiding does not depend on acquiring a free hardware buffer.
-            ++visibilityEpoch;dirty=false;cancelWatchdog();
+            ++visibilityEpoch;dirty=false;committedFrame=submittedFrame;cancelWatchdog();
             try(SurfaceControl.Transaction transaction=new SurfaceControl.Transaction()){
                 transaction.setVisibility(surface,false).setBuffer(surface,null).apply();
             }catch(RuntimeException e){fail();}
@@ -223,6 +225,12 @@ final class AutoWindowAttachedSurface {
                 // A render submitted before an uncertain-scroll hide must
                 // never make old text visible again.
                 transaction.setVisibility(surface,frameEpoch==visibilityEpoch&&!latest.isEmpty());
+                long sequence=++submittedFrame;
+                transaction.addTransactionCommittedListener(command->main.post(command),()->{
+                    if(closed||failed||sequence<=committedFrame)return;
+                    committedFrame=sequence;
+                    cancelWatchdog();watchFrame();
+                });
                 transaction.apply();
             }
         } catch (RuntimeException error) {
@@ -237,9 +245,9 @@ final class AutoWindowAttachedSurface {
             ready.close();
         }
 
-        // Successful progress resets the timeout; repeated scene updates
-        // alone never extend the deadline of a blocked GPU pipeline.
-        cancelWatchdog();
+        // Only an actual SurfaceControl commit resets the watchdog. A
+        // successful render callback alone does not prove that a new frame
+        // was accepted by the compositor.
         watchFrame();
         // Submit the newest replacement while the previous buffer is
         // displayed; the old slot is only reused once its release fence fires.
