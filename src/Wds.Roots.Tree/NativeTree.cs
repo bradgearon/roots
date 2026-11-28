@@ -138,6 +138,22 @@ public sealed class NativeTree : IDisposable
         Check(N.ScreensByTime(_handle,term,agent,beforeMs,beforeSequence,limit,cb,IntPtr.Zero));GC.KeepAlive(cb);
         if(failure!=null)ExceptionDispatchInfo.Capture(failure).Throw();return result;
     }
+    public bool ExperienceSeen(string eventId,string positionKey)
+    {
+        Validate(eventId);Validate(positionKey);
+        Check(N.ExperienceSeen(_handle,eventId,positionKey,out var seen));return seen!=0;
+    }
+    public IReadOnlyList<RecordMember> ExperiencePage(string parent,string afterOrder="",long afterSequence=0,uint limit=100)
+    {
+        Validate(parent);Validate(afterOrder);var result=new List<RecordMember>();Exception? failure=null;
+        RecordCallback cb=(_,master,p)=>{
+            try{var f=Marshal.PtrToStructure<NativeFragment>(p);
+                result.Add(new(master,new Fragment(f.Sequence,Decode(f.Source),Decode(f.ExternalId),Decode(f.Body),Decode(f.Language),f.ObservedMs)));return 0;}
+            catch(Exception e){failure=e;return 1;}
+        };
+        Check(N.ExperiencePage(_handle,parent,afterOrder,afterSequence,limit,cb,IntPtr.Zero));GC.KeepAlive(cb);
+        if(failure!=null)ExceptionDispatchInfo.Capture(failure).Throw();return result;
+    }
     public float[] FragmentWeights(long sequence)
     {
         var weights=new float[128];Check(N.FragmentWeights(_handle,sequence,weights,(nuint)weights.Length));return weights;
@@ -229,6 +245,8 @@ public sealed class NativeTree : IDisposable
         [DllImport(Lib, EntryPoint="roots_tree_query", CallingConvention=CallingConvention.Cdecl)] internal static extern int Query(TreeHandle h, [MarshalAs(UnmanagedType.LPUTF8Str)] string term, long agent, long before, uint limit, FragmentCallback cb, IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_records", CallingConvention=CallingConvention.Cdecl)] internal static extern int Records(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long before,uint limit,RecordCallback cb,IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_query_time", CallingConvention=CallingConvention.Cdecl)] internal static extern int QueryByTime(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long beforeMs,long beforeSequence,uint limit,FragmentCallback cb,IntPtr user);
+        [DllImport(Lib, EntryPoint="roots_tree_experience_seen", CallingConvention=CallingConvention.Cdecl)] internal static extern int ExperienceSeen(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string eventId,[MarshalAs(UnmanagedType.LPUTF8Str)] string positionKey,out long seen);
+        [DllImport(Lib, EntryPoint="roots_tree_experience_page", CallingConvention=CallingConvention.Cdecl)] internal static extern int ExperiencePage(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string parent,[MarshalAs(UnmanagedType.LPUTF8Str)] string afterOrder,long afterSequence,uint limit,RecordCallback cb,IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_screens_time", CallingConvention=CallingConvention.Cdecl)] internal static extern int ScreensByTime(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long beforeMs,long beforeSequence,uint limit,RecordCallback cb,IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_records_time", CallingConvention=CallingConvention.Cdecl)] internal static extern int RecordsByTime(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long beforeMs,long beforeSequence,uint limit,RecordCallback cb,IntPtr user);
         [DllImport(Lib, EntryPoint="roots_tree_fragment_weights", CallingConvention=CallingConvention.Cdecl)] internal static extern int FragmentWeights(TreeHandle h,long sequence,[Out] float[] weights,nuint count);
