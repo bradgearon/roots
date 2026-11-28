@@ -169,6 +169,59 @@ int main(){
             ok(roots_tree_clear(t));
         }
         {
+            // A screen is an acquisition pass, not one OCR line. Explicit
+            // monotonic keys distinguish passes at the same wall-clock time.
+            // Legacy lines sharing a parent/session and timestamp still group.
+            roots_observation screenRows[]={
+                {"record.experience.body","local:experience:one","Alpha menu","",50},
+                {"record.experience.kind","local:experience:one","observation","",50},
+                {"record.experience.parent","local:experience:one","session-a","",50},
+                {"record.experience.screen","local:experience:one","session-a:screen:100","",50},
+                {"record.experience.body","local:experience:two","Beta subtitle","",50},
+                {"record.experience.kind","local:experience:two","observation","",50},
+                {"record.experience.parent","local:experience:two","session-a","",50},
+                {"record.experience.screen","local:experience:two","session-a:screen:100","",50},
+                {"record.experience.body","local:experience:three","Another screen","",50},
+                {"record.experience.kind","local:experience:three","observation","",50},
+                {"record.experience.parent","local:experience:three","session-a","",50},
+                {"record.experience.screen","local:experience:three","session-a:screen:101","",50},
+                {"record.experience.body","local:experience:old-a","Legacy one","",10},
+                {"record.experience.kind","local:experience:old-a","observation","",10},
+                {"record.experience.parent","local:experience:old-a","session-b","",10},
+                {"record.experience.body","local:experience:old-b","Legacy two","",10},
+                {"record.experience.kind","local:experience:old-b","observation","",10},
+                {"record.experience.parent","local:experience:old-b","session-b","",10},
+                {"record.experience.body","local:experience:other","Different session","",10},
+                {"record.experience.kind","local:experience:other","observation","",10},
+                {"record.experience.parent","local:experience:other","session-c","",10},
+                {"record.experience.body","local:experience:interval","Foreground activity","",99},
+                {"record.experience.kind","local:experience:interval","activity.interval","",99}};
+            size_t n=0;ok(roots_tree_observe(t,screenRows,sizeof(screenRows)/sizeof(screenRows[0]),&n));
+            need(n==sizeof(screenRows)/sizeof(screenRows[0]),"screen fixture persisted");
+            std::vector<std::pair<int64_t,std::string>> groups;
+            ok(roots_tree_screens_time(t,"",0,0,0,1,record_member,&groups));
+            need(groups.size()==4&&groups[0].second=="Another screen","newest screen and time tie-breaker");
+            auto cursor=groups[0].first;groups.clear();
+            ok(roots_tree_screens_time(t,"",0,50,cursor,1,record_member,&groups));
+            need(groups.size()==8&&groups[0].second=="Alpha menu"&&groups[4].second=="Beta subtitle","complete screen group");
+            auto firstScreen=groups[0].first;groups.clear();
+            ok(roots_tree_screens_time(t,"Beta subtitle",0,0,0,1,record_member,&groups));
+            need(groups.size()==8&&groups[0].first==firstScreen,"search returns whole screen context");
+            int64_t branch=0;ok(roots_tree_agent_create(t,"Alpha","Alpha menu",&branch));groups.clear();
+            ok(roots_tree_screens_time(t,"",branch,0,0,1,record_member,&groups));
+            need(groups.size()==8,"branch matches whole screen context");
+            groups.clear();
+            ok(roots_tree_screens_time(t,"",0,50,firstScreen,1,record_member,&groups));
+            need(groups.size()==3&&groups[0].second=="Different session","legacy sessions do not merge");
+            cursor=groups[0].first;groups.clear();
+            ok(roots_tree_screens_time(t,"",0,10,cursor,1,record_member,&groups));
+            need(groups.size()==6&&groups[0].second=="Legacy one"&&groups[3].second=="Legacy two","legacy screen grouping");
+            cursor=groups[0].first;groups.clear();
+            ok(roots_tree_screens_time(t,"",0,10,cursor,1,record_member,&groups));
+            need(groups.empty(),"screen pages exclude activity intervals");
+            ok(roots_tree_clear(t));
+        }
+        {
             roots_observation localized[]={
                 {"record.x.body","local:x:localization","ORIGINAL_JA_PRIVATE_SENTINEL","ja",1},
                 {"record.x.en.translation","local:x:localization","OLD_EN_TRANSLATION_SENTINEL","en",2},
