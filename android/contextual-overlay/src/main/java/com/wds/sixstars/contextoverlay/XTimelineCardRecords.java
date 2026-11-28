@@ -119,10 +119,11 @@ final class XTimelineCardRecords {
             if(direct.isEmpty()||context.contains(direct)||controls.contains(direct)||
                 (header!=null&&pathCompare(direct,header.path())<=0))continue;
             String value=n.text().trim();
-            boolean directText=parent(n.path()).equals(card)&&n.className().endsWith("TextView")&&
+            boolean directContent=parent(n.path()).equals(card)&&
                 !isControl(value)&&!COUNT.matcher(value).matches()&&!HANDLE.matcher(value).matches()&&
                 !TIME.matcher(value).matches();
-            int strength=n.bodyRole()?4:n.bodySpan()&&directText?3:header!=null&&directText?1:0;
+            boolean directText=directContent&&n.className().endsWith("TextView");
+            int strength=n.bodyRole()?4:n.bodySpan()&&directContent?3:header!=null&&directText?1:0;
             if(strength==0)continue;
             if(strength>best){body=n;best=strength;ambiguous=false;}
             else if(strength==best&&!TextFingerprint.normalized(body.text()).equals(TextFingerprint.normalized(n.text())))ambiguous=true;
