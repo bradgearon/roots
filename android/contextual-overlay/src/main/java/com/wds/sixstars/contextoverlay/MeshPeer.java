@@ -438,21 +438,43 @@ final class MeshPeer {
         }
         return items;
     }
-    /** Public encounters never use graphCatalog(), which contains raw captures. */
-    Map<String,MeshItem> encounterCatalog(){return legacyCatalog();}
+    /** Public encounters never use graphCatalog(), which includes private raw captures.
+     * Project structured, linked originals only under explicit source-scope consent.
+     * Public projections are generated on demand and never mutate the local Tree. */
+    record EncounterCatalogStats(int total,int automatic,int unlinked){}
+    private record EncounterCatalog(Map<String,MeshItem> items,EncounterCatalogStats stats){}
+    private EncounterCatalog buildEncounterCatalog(){
+        Map<String,MeshItem> items=new java.util.TreeMap<>();
+        if(!NativeTree.available())return new EncounterCatalog(items,new EncounterCatalogStats(0,0,0));
+        boolean automatic=EncounterSettings.automaticPublication(app);
+        int projected=0,unlinked=0;
+        for(NativeTree.Master record:tree.allRecords("",10000)){
+            MeshItem item=MeshItem.from(record);
+            if(item!=null)items.putIfAbsent(item.id(),item);
+            if(!PublicTreePublishing.structuredOriginal(record))continue;
+            try{
+                MeshItem candidate=PublicTreePublishing.project(record);
+                if(candidate==null){if(XPostLink.forRecord(record).isEmpty())unlinked++;continue;}
+                if(automatic&&items.putIfAbsent(candidate.id(),candidate)==null)projected++;
+            }catch(Exception malformed){/* An ineligible record must not break the whole inventory. */}
+        }
+        return new EncounterCatalog(items,new EncounterCatalogStats(items.size(),projected,unlinked));
+    }
+    Map<String,MeshItem> encounterCatalog(){return buildEncounterCatalog().items();}
     private final Object encounterCountLock=new Object();
     private long encounterCountAt=-1;
-    private int encounterCount;
+    private EncounterCatalogStats encounterStats=new EncounterCatalogStats(0,0,0);
     // UI-only cache: actual session inventory always reads a fresh catalog.
-    int encounterPublicationCount(){
+    EncounterCatalogStats encounterPublicationStats(){
         synchronized(encounterCountLock){
             long now=android.os.SystemClock.elapsedRealtime();
             if(encounterCountAt<0||now-encounterCountAt>=30000){
-                encounterCount=encounterCatalog().size();encounterCountAt=now;
+                encounterStats=buildEncounterCatalog().stats();encounterCountAt=now;
             }
-            return encounterCount;
+            return encounterStats;
         }
     }
+    int encounterPublicationCount(){return encounterPublicationStats().total();}
     void invalidateEncounterPublicationCount(){synchronized(encounterCountLock){encounterCountAt=-1;}}
     int offeredCount()throws Exception{return graphCatalog().size();}
     // Keep batches within the existing framed TLS transport, including JSON

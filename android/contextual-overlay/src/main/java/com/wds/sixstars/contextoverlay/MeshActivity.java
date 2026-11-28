@@ -76,6 +76,7 @@ public final class MeshActivity extends Activity {
         publish.addView(RootsUi.text(this,"Listening shares your Tree with connected peers.",13,RootsUi.MUTED,false));
         publish.addView(RootsUi.action(this,"Write a remembrance",()->publish(this,null,this::refresh)));
         publish.addView(RootsUi.action(this,"Publish existing public Tree items",()->PublicTreePublishing.choose(this,this::refresh)));
+        publish.addView(RootsUi.action(this,"Automatic publication settings",()->startActivity(new Intent(this,EncounterActivity.class))));
         LinearLayout nearby=RootsUi.card(this,content);
         nearby.addView(RootsUi.text(this,"Nearby encounters",18,RootsUi.TEXT,true));
         nearby.addView(RootsUi.text(this,"Automatically discover and exchange published knowledge over Bluetooth. Manage bindings and interactions here.",13,RootsUi.MUTED,false));
@@ -83,7 +84,7 @@ public final class MeshActivity extends Activity {
         nearby.addView(RootsUi.action(this,"Receive nearby Axons now",()->{
             status.setText(EncounterService.requestReceive(this));refresh();
         }));
-        nearby.addView(RootsUi.action(this,"Read external knowledge",()->startActivity(new Intent(this,ExternalKnowledgeActivity.class))));
+        nearby.addView(RootsUi.action(this,"External receipt history",()->startActivity(new Intent(this,ExternalKnowledgeActivity.class))));
         nearby.addView(RootsUi.action(this,"Manage nearby exchange",()->startActivity(new Intent(this,EncounterActivity.class))));
         nearby.addView(RootsUi.action(this,"Network Explorer",()->startActivity(new Intent(this,NetworkExplorerActivity.class))));
         LinearLayout listener=RootsUi.card(this,content);

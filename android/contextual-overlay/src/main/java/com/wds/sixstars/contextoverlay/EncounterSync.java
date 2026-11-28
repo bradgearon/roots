@@ -19,6 +19,8 @@ final class EncounterSync {
     private final ExternalKnowledgeStore external;
     private final BooleanSupplier active;
     private final long epoch;
+    private final Context context;
+    private final boolean automaticScope;
     private final NavigableMap<String,MeshItem> catalog;
     private final String root;
     private EncounterBindings.Binding binding;
@@ -38,7 +40,8 @@ final class EncounterSync {
     boolean firstEncounter(){return binding.encounters()==1;}
 
     EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active)throws Exception{
-        this.channel=channel;this.active=active;bindings=EncounterBindings.get(context);
+        this.context=context.getApplicationContext();this.channel=channel;this.active=active;bindings=EncounterBindings.get(context);
+        automaticScope=EncounterSettings.automaticPublication(context);
         tree=TreeRuntime.get(context);epoch=tree.captureEpoch();check();
         external=ExternalKnowledgeStore.get(context);
         catalog=new TreeMap<>(external.catalog());
@@ -55,7 +58,7 @@ final class EncounterSync {
         return MeshItem.hex(hash.digest());
     }
     private void check()throws IOException{
-        if(!active.getAsBoolean()||bindings.blocked(channel.peerId)||tree.captureEpoch()!=epoch)throw new IOException("Encounter stopped or Tree changed");
+        if(!active.getAsBoolean()||bindings.blocked(channel.peerId)||tree.captureEpoch()!=epoch||automaticScope!=EncounterSettings.automaticPublication(context))throw new IOException("Encounter stopped or publication scope/Tree changed");
     }
     private void send(JSONObject message)throws Exception{
         check();channel.send(message.toString().getBytes(StandardCharsets.UTF_8));
@@ -112,8 +115,12 @@ final class EncounterSync {
                     JSONObject data=read();expect(data,"data");
                     MeshItem item=MeshItem.parse(data.getJSONObject("item"));
                     if(item.graph()!=null||!item.id().equals(id))throw new IOException("Unexpected publication");
-                    check();if(external.receive(item,channel.peerId))received++;
-                    // Public items stay outside the private Tree; forward only verified publications.
+                    check();
+                    boolean added=external.receive(item,channel.peerId);
+                    stage="Retaining external reference in main Tree";
+                    check();external.promote(item.id(),tree,epoch);
+                    if(added)received++;
+                    // Acknowledge only after both durable external receipt and main Tree commit.
                     checkpoint(remoteRoot,id);send(message("ack").put("id",id));transferred++;
                 }else known++;
                 after=id;processed++;inspected++;examined++;stage="Receiving inventory";

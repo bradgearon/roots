@@ -14,6 +14,11 @@ import java.util.concurrent.*;
 final class PublicTreePublishing {
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsPublicProjection");t.setDaemon(true);return t;});
     private PublicTreePublishing(){}
+    static boolean structuredOriginal(NativeTree.Master record){
+        if(record==null||!record.key().startsWith("local:x:"))return false;
+        for(NativeTree.Fragment member:record.members())if("record.x.body".equals(member.source()))return true;
+        return false;
+    }
     static MeshItem project(NativeTree.Master record)throws Exception{
         if(!record.key().startsWith("local:x:"))return null;
         String link=XPostLink.forRecord(record);

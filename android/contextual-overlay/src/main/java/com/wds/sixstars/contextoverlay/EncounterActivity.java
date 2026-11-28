@@ -12,7 +12,7 @@ public final class EncounterActivity extends Activity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final ExecutorService work=Executors.newSingleThreadExecutor();
     private TextView status,summary,permission,last;
-    private Switch toggle;
+    private Switch toggle,automaticPublication;
     private LinearLayout peerList,eventList;
     private boolean updating,visible,loading;
     private String active="";
@@ -30,12 +30,14 @@ public final class EncounterActivity extends Activity {
         summary=RootsUi.text(this,"",13,RootsUi.MUTED,false);controls.addView(summary);
         last=RootsUi.text(this,"",13,RootsUi.MUTED,false);controls.addView(last);
         permission=RootsUi.action(this,"Allow nearby exchange",()->EncounterSettings.authorize(this));controls.addView(permission);
-        controls.addView(RootsUi.text(this,"When enabled, Roots discovers and publishes automatically, even while you use other apps. All published topics are included; raw captures and private prompts are excluded.",13,RootsUi.MUTED,false));
+        controls.addView(RootsUi.text(this,"Roots exchanges all eligible published topics automatically. Received records enter your main Tree as external references, without granting private membership.",13,RootsUi.MUTED,false));
+        automaticPublication=new Switch(this);automaticPublication.setText("Automatically publish linked original posts");automaticPublication.setTextColor(RootsUi.TEXT);controls.addView(automaticPublication);
+        controls.addView(RootsUi.text(this,"No per-record approval or topic filter once enabled. Unlinked posts, private notes and other screen text are excluded. Only enable for public, redistributable captures.",13,RootsUi.MUTED,false));
         controls.addView(RootsUi.action(this,"Receive nearby Axons now",()->{
             Toast.makeText(this,EncounterService.requestReceive(this),Toast.LENGTH_LONG).show();update();
         }));
         controls.addView(RootsUi.action(this,"Publish existing public Tree items",()->PublicTreePublishing.choose(this,this::update)));
-        controls.addView(RootsUi.action(this,"External knowledge · bring items into my Tree",()->startActivity(new android.content.Intent(this,ExternalKnowledgeActivity.class))));
+        controls.addView(RootsUi.action(this,"External knowledge · source and receipt history",()->startActivity(new android.content.Intent(this,ExternalKnowledgeActivity.class))));
         controls.addView(RootsUi.action(this,"Network Explorer · browse public nodes",()->startActivity(new android.content.Intent(this,NetworkExplorerActivity.class))));
         LinearLayout peers=RootsUi.card(this,content);peers.addView(RootsUi.text(this,"Bound Axons",18,RootsUi.TEXT,true));
         peers.addView(RootsUi.text(this,"Bindings persist offline. Block a peer to stop future exchange; previously transferred knowledge remains.",13,RootsUi.MUTED,false));
@@ -46,6 +48,9 @@ public final class EncounterActivity extends Activity {
             .setPositiveButton("Clear",(d,w)->mutate(()->EncounterBindings.get(this).clearHistory())).show()));
         eventList=RootsUi.column(this);history.addView(eventList);
         shell.addView(RootsUi.action(this,"‹ Roots Mesh",this::finish));setContentView(shell);
+        automaticPublication.setOnCheckedChangeListener((button,on)->{
+            if(updating)return;EncounterSettings.configureAutomaticPublication(this,on,this::update);update();
+        });
         toggle.setOnCheckedChangeListener((button,on)->{
             if(updating)return;EncounterSettings.setEnabled(this,on);
             if(on){if(EncounterSettings.eligible(this))EncounterSettings.startIfAllowed(this);else EncounterSettings.authorize(this);}
@@ -60,14 +65,19 @@ public final class EncounterActivity extends Activity {
     }
     private void update(){
         boolean supported=EncounterService.available(this),enabled=EncounterSettings.enabled(this),eligible=EncounterSettings.eligible(this);
-        updating=true;toggle.setChecked(enabled);toggle.setEnabled(supported);updating=false;
+        updating=true;toggle.setChecked(enabled);toggle.setEnabled(supported);
+        automaticPublication.setChecked(EncounterSettings.automaticPublication(this));automaticPublication.setEnabled(supported);updating=false;
         status.setText(!supported?"Requires Android 12+ and BLE":!enabled?"Off":!eligible?"On · awaiting one-time permission":EncounterService.status());
         last.setText(EncounterService.lastResult());permission.setVisibility(supported&&enabled&&!eligible?android.view.View.VISIBLE:android.view.View.GONE);
         if(loading||work.isShutdown())return;loading=true;
         work.execute(()->{
             EncounterBindings.Snapshot next=EncounterBindings.get(this).snapshot();
             String counts;
-            try{counts=MeshPeer.get(this).encounterPublicationCount()+" local publications · "+ExternalKnowledgeStore.get(this).count()+" external records";}
+            try{
+                MeshPeer.EncounterCatalogStats stats=MeshPeer.get(this).encounterPublicationStats();
+                counts=stats.total()+" local offers · "+stats.automatic()+" automatic · "+stats.unlinked()+" originals without exact links · "+ExternalKnowledgeStore.get(this).count()+" external receipts";
+                if(!EncounterSettings.automaticPublication(this))counts+=" · automatic publication off";
+            }
             catch(Exception|LinkageError failure){counts="Public catalog unavailable";}
             final String publicationCounts=counts;
             runOnUiThread(()->{
