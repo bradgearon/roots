@@ -52,16 +52,19 @@ final class XPostMetadata {
         private int remaining;
         Probe(int limit){remaining=limit;}
         Bundle read(AccessibilityNodeInfo node,boolean diagnostic){
+            return read(node,diagnostic,null);
+        }
+        Bundle read(AccessibilityNodeInfo node,boolean diagnostic,Bundle outcomes){
             Bundle result=new Bundle();
-            if(remaining<=0)return result;
+            if(remaining<=0&&outcomes==null)return result;
             List<String> advertised=node.getAvailableExtraData();
             if(advertised==null)return result;
             List<String> keys=new java.util.ArrayList<>(advertised);
             // Real post metadata has priority over framework-only identifiers.
             keys.sort(java.util.Comparator.comparingInt(key->remoteKey(key)?0:TEST_TAG.equals(key)?1:2));
             for(String key:keys){
-                if(remaining<=0)break;
                 if(!remoteKey(key)&&!TEST_TAG.equals(key)&&!(diagnostic&&SEMANTICS_ID.equals(key)))continue;
+                if(remaining<=0){outcome(outcomes,key,"not requested (scan budget)");continue;}
                 remaining--;
                 // Refresh a separate node snapshot. The live reader's geometry
                 // and text must not change partway through grouping.
@@ -69,21 +72,29 @@ final class XPostMetadata {
                 try{
                     Rect before=new Rect(),after=new Rect();
                     node.getBoundsInScreen(before);
-                    if(!copy.refreshWithExtraData(key,new Bundle()))continue;
+                    if(!copy.refreshWithExtraData(key,new Bundle())){
+                        outcome(outcomes,key,"refresh returned false");continue;
+                    }
                     copy.getBoundsInScreen(after);
                     if(!before.equals(after)||node.getWindowId()!=copy.getWindowId()||
                         !Objects.equals(node.getViewIdResourceName(),copy.getViewIdResourceName())||
                         !Objects.equals(string(node.getText()),string(copy.getText()))||
-                        !Objects.equals(string(node.getContentDescription()),string(copy.getContentDescription())))continue;
+                        !Objects.equals(string(node.getContentDescription()),string(copy.getContentDescription()))){
+                        outcome(outcomes,key,"node changed during refresh");continue;
+                    }
                     Object value=copy.getExtras().get(key);
                     if(value instanceof CharSequence)result.putCharSequence(key,value.toString());
                     else if(value instanceof Long)result.putLong(key,(Long)value);
                     else if(value instanceof Integer)result.putInt(key,(Integer)value);
                     else if(value instanceof android.net.Uri)result.putString(key,value.toString());
-                }catch(RuntimeException ignored){/* Optional app-provided metadata. */}
+                    outcome(outcomes,key,result.containsKey(key)?"returned":value==null?"no value returned":"unsupported value type "+value.getClass().getSimpleName());
+                }catch(RuntimeException error){outcome(outcomes,key,"refresh failed: "+error.getClass().getSimpleName());}
                 finally{copy.recycle();}
             }
             return result;
+        }
+        private static void outcome(Bundle outcomes,String key,String detail){
+            if(outcomes!=null)outcomes.putString(key,detail);
         }
     }
     private static String string(CharSequence value){return value==null?null:value.toString();}
