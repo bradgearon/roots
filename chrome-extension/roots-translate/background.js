@@ -254,8 +254,68 @@ function cleanTreePost(raw) {
   // Bound the full UTF-8 envelope, not just JavaScript string lengths.
   return new TextEncoder().encode(JSON.stringify(out)).length<=90*1024?out:null;
 }
+const experienceDomOrigins=["http://*/*","https://*/*"];
+const experienceDomId="roots-experience-dom-v1";
+async function browserExperienceEnabled(){
+  const settings=await chrome.storage.local.get(["experienceDom"]);
+  return settings.experienceDom===true&&await chrome.permissions.contains({origins:experienceDomOrigins});
+}
+async function configureExperienceDom(enabled){
+  if(enabled&&!await chrome.permissions.contains({origins:experienceDomOrigins}))
+    return {ok:false,error:"site_permission_required"};
+  await chrome.storage.local.set({experienceDom:enabled});
+  const scripts=await chrome.scripting.getRegisteredContentScripts({ids:[experienceDomId]});
+  if(!enabled){
+    if(scripts.length)await chrome.scripting.unregisterContentScripts({ids:[experienceDomId]});
+    return {ok:true,enabled:false};
+  }
+  if(!scripts.length)await chrome.scripting.registerContentScripts([{
+    id:experienceDomId,matches:experienceDomOrigins,js:["experience-dom.js"],
+    allFrames:false,runAt:"document_idle",persistAcrossSessions:true
+  }]);
+  // Pick up the current page without waiting for a reload. Restricted pages
+  // and incognito tabs remain untouched; normal navigation uses registration.
+  const tabs=await chrome.tabs.query({active:true,lastFocusedWindow:true});
+  const tab=tabs[0];
+  if(tab?.id&&!tab.incognito&&/^https?:\/\//.test(tab.url||""))
+    await chrome.scripting.executeScript({target:{tabId:tab.id},files:["experience-dom.js"]}).catch(()=>{});
+  return {ok:true,enabled:true};
+}
+async function experienceForeground(sender){
+  if(sender.id!==chrome.runtime.id||sender.frameId!==0||sender.tab?.incognito||
+     sender.documentLifecycle&&sender.documentLifecycle!=="active"||!Number.isInteger(sender.tab?.id))return false;
+  try{
+    const url=new URL(sender.url);
+    if(!["http:","https:"].includes(url.protocol))return false;
+    const tab=await chrome.tabs.get(sender.tab.id),win=await chrome.windows.get(tab.windowId);
+    return tab.active&&!tab.incognito&&win.focused&&tab.url===sender.url;
+  }catch{return false;}
+}
+function cleanExperienceSnapshot(raw,sender){
+  if(!raw||typeof raw.documentKey!=="string"||!/^[0-9a-f-]{36}$/i.test(raw.documentKey)||
+     !Array.isArray(raw.rows)||raw.rows.length<1||raw.rows.length>80)return null;
+  let host;
+  try{host=new URL(sender.url).hostname;}catch{return null;}
+  if(!host||host.length>253)return null;
+  let total=0;const rows=[];
+  for(const r of raw.rows){
+    if(typeof r?.text!=="string"||!r.text.trim()||r.text.includes("\0")||r.text.length>1800||
+       !Array.isArray(r.bounds)||r.bounds.length!==4||!r.bounds.every(n=>Number.isSafeInteger(n)&&n>=0&&n<=32768)||
+       r.bounds[0]>=r.bounds[2]||r.bounds[1]>=r.bounds[3])return null;
+    total+=r.text.length;if(total>16000)return null;
+    rows.push({text:r.text,bounds:r.bounds});
+  }
+  const snapshot={documentKey:raw.documentKey,host,rows};
+  return new TextEncoder().encode(JSON.stringify(snapshot)).length<=96*1024?snapshot:null;
+}
+chrome.permissions.onRemoved.addListener(()=>{
+  void (async()=>{if(!await chrome.permissions.contains({origins:experienceDomOrigins}))await configureExperienceDom(false);})().catch(()=>{});
+});
+
 async function treeCommand(request){
   switch(request.operation){
+    case "experienceDomStatus":return {ok:true,enabled:await browserExperienceEnabled()};
+    case "experienceDomEnable":return configureExperienceDom(request.enabled===true);
     case "viewStatus":case "viewRecords":case "viewFeed":case "viewScreens":case "viewWeights":
     case "viewBranches":case "viewAddBranch":case "viewRemoveBranch":case "viewCompile":{
       const source=request.source;
@@ -304,6 +364,20 @@ async function treeCommand(request){
   }
 }
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if(request?.type==="rootsExperienceSettings"||request?.type==="rootsExperienceObserve"){
+    (async()=>{
+      if(!await browserExperienceEnabled()||!await experienceForeground(sender)){
+        sendResponse({ok:false,error:"capture_off"});return;
+      }
+      if(request.type==="rootsExperienceSettings"){
+        sendResponse(await treeCall("/experience/browser/status"));return;
+      }
+      const snapshot=cleanExperienceSnapshot(request.snapshot,sender);
+      if(!snapshot){sendResponse({ok:false,error:"invalid_snapshot"});return;}
+      sendResponse(await treeCall("/experience/browser/observe","POST",snapshot));
+    })().catch(()=>sendResponse({ok:false,error:"tree_service_unavailable"}));
+    return true;
+  }
   if(request?.type==="rootsTreeSettings"||request?.type==="rootsTreeObserve"){
     (async()=>{
       if(!await foregroundTreeSender(sender)){sendResponse({ok:false,error:"not_foreground"});return;}
