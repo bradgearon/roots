@@ -285,12 +285,16 @@ struct OcrLane::Impl {
         for(int y:starts(pixels.height,limit))for(int x:starts(pixels.width,limit)){
             if(GetForegroundWindow()!=hwnd){output.clear();state="source-changed";return false;}
             const int width=std::min(limit,pixels.width-x),height=std::min(limit,pixels.height-y);
-            const auto* src=pixels.data.data()+static_cast<size_t>(y)*pixels.width+x;
+            std::vector<uint8_t> tilePixels(static_cast<size_t>(width)*height);
+            for(int row=0;row<height;++row)
+                std::memcpy(tilePixels.data()+static_cast<size_t>(row)*width,
+                    pixels.data.data()+static_cast<size_t>(y+row)*pixels.width+x,width);
+            const auto* src=tilePixels.data();
             std::vector<SurfaceText> rows;
-            bool ok=portable.available()&&portable.recognize(src,width,height,pixels.width,rows);
+            bool ok=portable.available()&&portable.recognize(src,width,height,width,rows);
             if(!ok&&engine){
                 rows.clear();
-                try{ok=windowsRecognize(src,width,height,pixels.width,rows);}
+                try{ok=windowsRecognize(src,width,height,width,rows);}
                 catch(...){engine=nullptr;rows.clear();}
             }
             if(!ok){allTiles=false;continue;}
