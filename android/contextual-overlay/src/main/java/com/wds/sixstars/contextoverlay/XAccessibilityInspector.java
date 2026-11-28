@@ -19,13 +19,14 @@ final class XAccessibilityInspector {
     private static final long WINDOW_MS=90000, SAMPLE_MS=1500;
     private static final int MAX_REPORT=90000,MAX_VALUE=4000,MAX_FRAMES=6,MAX_COPY=11000;
     private static long request,deadline,nextSample,accepted;
+    private static boolean previousSettled;
     private static final java.util.ArrayDeque<Frame> frames=new java.util.ArrayDeque<>();
     private record Frame(String header,String body,String attributes){}
     record Snapshot(String status,String latest,String report,String attributes){}
     private XAccessibilityInspector(){}
 
     static synchronized void arm(){
-        request++;deadline=SystemClock.elapsedRealtime()+WINDOW_MS;nextSample=0;
+        request++;deadline=SystemClock.elapsedRealtime()+WINDOW_MS;nextSample=0;previousSettled=false;
     }
     static synchronized void cancel(){request++;deadline=0;nextSample=0;accepted=0;frames.clear();}
     static synchronized boolean armed(){return deadline>SystemClock.elapsedRealtime();}
@@ -43,36 +44,41 @@ final class XAccessibilityInspector {
         Frame latest=frames.getFirst();
         return new Snapshot(status,latest.header()+latest.body(),report.toString(),latest.attributes());
     }
-    static synchronized Scan begin(boolean captureEnabled){
+    static synchronized Scan begin(boolean captureEnabled,boolean settled){
         long now=SystemClock.elapsedRealtime();
-        if((!captureEnabled&&!armed())||now<nextSample)return null;
-        nextSample=now+SAMPLE_MS;
-        return new Scan(request,captureEnabled);
+        if(!captureEnabled&&!armed())return null;
+        if(now<nextSample&&!(settled&&!previousSettled))return null;
+        nextSample=now+SAMPLE_MS;previousSettled=settled;
+        return new Scan(request,captureEnabled,settled);
     }
     static synchronized void finish(Scan scan,boolean stillForeground,boolean bounded){
         if(scan==null||scan.request!=request||(!scan.automatic&&!armed())||!stillForeground||scan.count==0)return;
         String body=scan.format();
         Frame previous=frames.peekFirst();
-        if(previous!=null&&previous.body().equals(body))return;
-        String header="Snapshot "+(++accepted)+" · "+java.time.Instant.now()+"\n"+
+        String serialized=scan.serialized();
+        if(previous!=null&&previous.body().equals(body)&&previous.attributes().equals(serialized))return;
+        String header="Snapshot "+(++accepted)+" · "+java.time.Instant.now()+(scan.settled?" · settled":" · moving")+"\n"+
             "Nodes inspected: "+scan.count+" · nodes with text or description: "+scan.values.size()+(bounded||scan.truncated?" · report bounded":"")+"\n";
-        frames.addFirst(new Frame(header,body,scan.serialized()));
+        frames.addFirst(new Frame(header,body,serialized));
         while(frames.size()>MAX_FRAMES)frames.removeLast();
     }
 
     private record Value(String path,String text,String description){}
     static final class Scan {
         final long request;
-        final boolean automatic;
+        final boolean automatic,settled;
         final List<Value> values=new ArrayList<>();
         final List<String> cards=new ArrayList<>();
         final List<String> metadata=new ArrayList<>();
         final org.json.JSONArray attributes=new org.json.JSONArray();
         int attributeChars;
-        final XPostMetadata.Probe metadataProbe=new XPostMetadata.Probe(12);
+        final XPostMetadata.Probe metadataProbe;
         int count;
         boolean truncated;
-        Scan(long request,boolean automatic){this.request=request;this.automatic=automatic;}
+        Scan(long request,boolean automatic,boolean settled){
+            this.request=request;this.automatic=automatic;this.settled=settled;
+            metadataProbe=new XPostMetadata.Probe(settled?12:0);
+        }
 
         Bundle node(AccessibilityNodeInfo node,String path,Rect bounds){
             count++;
@@ -115,15 +121,20 @@ final class XAccessibilityInspector {
                 requested=metadataProbe.read(node,true,outcomes);
                 StringBuilder probe=new StringBuilder(path+" · "+(node.getViewIdResourceName()==null?"conversation card":node.getViewIdResourceName()));
                 extras(probe,"requested",requested,0);extras(probe,"probe",outcomes,0);
+                if(!settled)field(probe,"state","metadata request deferred until scrolling settles");
                 metadata.add(probe.toString());
                 extras(line,"requested",requested,0);
                 extras(line,"probe",outcomes,0);
             }
             try{
                 org.json.JSONObject actual=new org.json.JSONObject();
-                actual.put("path",path).put("text",value==null?org.json.JSONObject.NULL:clip(value))
+                actual.put("path",path).put("resourceId",node.getViewIdResourceName())
+                    .put("className",clip(node.getClassName())).put("bounds",bounds.toShortString())
+                    .put("windowId",node.getWindowId()).put("visible",visible).put("clickable",node.isClickable())
+                    .put("childCount",node.getChildCount()).put("text",value==null?org.json.JSONObject.NULL:clip(value))
                     .put("contentDescription",description==null?org.json.JSONObject.NULL:clip(description))
                     .put("attributes",line.toString()).put("frameworkNode",clip(node.toString()));
+                if(Build.VERSION.SDK_INT>=33)actual.put("uniqueId",node.getUniqueId());
                 int size=actual.toString().length();
                 if(attributeChars+size<=MAX_REPORT){attributes.put(actual);attributeChars+=size;}else truncated=true;
             }catch(org.json.JSONException ignored){}
