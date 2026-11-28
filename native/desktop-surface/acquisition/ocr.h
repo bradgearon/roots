@@ -21,7 +21,10 @@ public:
     // Returns false when there was no new readable frame. Never writes a bitmap.
     // desktopBounds is nonempty only when the capture-to-screen transform
     // was verified. OCR output itself retains capture-frame coordinates.
-    bool read(HWND window, std::vector<SurfaceText>& output, RECT& desktopBounds);
+    bool read(HWND window, std::vector<SurfaceText>& output, RECT& desktopBounds,
+              const std::vector<RECT>& masks);
+    // Stable diagnostics; contains no captured pixels or text.
+    const char* status() const noexcept;
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;
