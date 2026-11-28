@@ -112,7 +112,7 @@ final class XKnowledgeRecords {
         Map<String,NativeTree.Observation> out=new LinkedHashMap<>();
         for(XTimelineCardRecords.Post post:posts)
             for(XTimelineCardRecords.Field field:post.fields())
-                add(out,post.key(),field.role(),field.value(),at);
+                add(out,post.key(),field.role(),field.value(),at,field.role().equals("body")?post.language():"");
         return new ArrayList<>(out.values());
     }
     static List<NativeTree.Observation> assemble(List<TextCandidate> bodies,List<Sample> samples,long at){
@@ -211,11 +211,13 @@ final class XKnowledgeRecords {
         return null;
     }
     private static void add(Map<String,NativeTree.Observation> out,String key,String role,String value,long at){
+        add(out,key,role,value,at,"");
+    }
+    private static void add(Map<String,NativeTree.Observation> out,String key,String role,String value,long at,String suppliedLanguage){
         for(String text:KnowledgeText.fragments(value)){
             String source="record.x."+role;
             String id=source+"\u001f"+key+"\u001f"+text;
-            String language=role.equals("link")?"":XVisibleTextReader.languageHint(text);
-            if(role.equals("body")&&language.isEmpty())language=KnowledgeLanguage.englishHint(text);
+            String language=role.equals("link")?"":PostLanguage.hint(text,suppliedLanguage);
             out.putIfAbsent(id,new NativeTree.Observation(source,key,text,language,at));
         }
     }
