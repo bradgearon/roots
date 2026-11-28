@@ -652,26 +652,17 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         panel.setBackgroundColor(RootsUi.BG);
         panel.setPadding(dp(16),dp(12),dp(16),dp(12));
         panel.addView(RootsUi.text(this,snapshot.status(),14,RootsUi.TEXT,true));
-        panel.addView(RootsUi.text(this,"Automatically records recent snapshots while local capture is on. Scroll X normally. Preview shows the latest sample; Copy report includes the rolling trace.",13,RootsUi.MUTED,false));
+        panel.addView(RootsUi.text(this,"Automatically records recent snapshots while local capture is on. Scroll X normally. Copy report shows post text first. Copy node attributes exports the latest accessibility snapshot as JSON.",13,RootsUi.MUTED,false));
         Button copy=button("Copy report");
         copy.setEnabled(!snapshot.report().isEmpty());
         copy.setAlpha(copy.isEnabled()?1f:0.45f);
-        copy.setOnClickListener(v->{
-            android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-            if(clipboard==null)return;
-            try{
-                android.content.ClipData clip=android.content.ClipData.newPlainText("X accessibility scrolling trace",snapshot.report());
-                if(android.os.Build.VERSION.SDK_INT>=33){
-                    android.os.PersistableBundle extras=new android.os.PersistableBundle();
-                    extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);
-                }
-                clipboard.setPrimaryClip(clip);
-                android.widget.Toast.makeText(this,"Timeline report copied",android.widget.Toast.LENGTH_SHORT).show();
-            }catch(RuntimeException error){
-                android.widget.Toast.makeText(this,"Could not copy the report.",android.widget.Toast.LENGTH_LONG).show();
-            }
-        });
+        copy.setOnClickListener(v->copyInspectorReport("X timeline report",snapshot.report()));
         panel.addView(copy);
+        Button attributes=button("Copy node attributes (JSON)");
+        attributes.setEnabled(!snapshot.attributes().isEmpty());
+        attributes.setAlpha(attributes.isEnabled()?1f:0.45f);
+        attributes.setOnClickListener(v->copyInspectorReport("X accessibility node attributes",snapshot.attributes()));
+        panel.addView(attributes);
         if(!snapshot.latest().isEmpty()){
             TextView detail=RootsUi.text(this,snapshot.latest(),13,RootsUi.TEXT,false);
             detail.setTypeface(android.graphics.Typeface.MONOSPACE);
@@ -692,6 +683,18 @@ public final class OverlayTranslationSettingsActivity extends Activity {
             XAccessibilityInspector.arm();
             android.widget.Toast.makeText(this,"Scroll X normally, then return to the inspector.",android.widget.Toast.LENGTH_LONG).show();
         }).show();
+    }
+
+    private void copyInspectorReport(String label,String report){
+        android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if(clipboard==null||report.isEmpty())return;
+        try{
+            // Diagnostic reports are plain text, not password/secret clips.
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label,report));
+            android.widget.Toast.makeText(this,"Report copied",android.widget.Toast.LENGTH_SHORT).show();
+        }catch(RuntimeException error){
+            android.widget.Toast.makeText(this,"Could not copy the report.",android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     private boolean accessibilityEnabled() {
