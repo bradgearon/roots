@@ -652,7 +652,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         panel.setBackgroundColor(RootsUi.BG);
         panel.setPadding(dp(16),dp(12),dp(16),dp(12));
         panel.addView(RootsUi.text(this,snapshot.status(),14,RootsUi.TEXT,true));
-        panel.addView(RootsUi.text(this,"Automatically records recent snapshots while local capture is on. Scroll X normally. Copy report shows post text first. Copy node attributes exports the latest accessibility snapshot as JSON.",13,RootsUi.MUTED,false));
+        panel.addView(RootsUi.text(this,"Automatically records recent snapshots while local capture is on. Scroll X normally. Copy report shows post text first. Copy node attributes exports a recent snapshot, preferring settled post text and span payloads.",13,RootsUi.MUTED,false));
         Button copy=button("Copy report");
         copy.setEnabled(!snapshot.report().isEmpty());
         copy.setAlpha(copy.isEnabled()?1f:0.45f);
