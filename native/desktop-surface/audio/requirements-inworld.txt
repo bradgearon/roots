@@ -1,0 +1,3 @@
+# Optional isolated reference environment; not installed by Roots launch.
+# Choose the matching CPU/CUDA PyTorch wheel before installing this package.
+inworld-voice-isolation==1.0.0
