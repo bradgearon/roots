@@ -121,6 +121,27 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
             var last=records.LastOrDefault();
             return Results.Json(new {ok=true,items=records,nextBeforeMs=last?.observedMs??0,nextBeforeSequence=last?.sequence??0});
         });
+        group.MapGet("/view/{source}/screens",(string source,string? term,long? beforeMs,long? beforeSequence,int? limit,long? agent)=>{
+            if(source!="experience")return Results.BadRequest(new {ok=false,error="invalid_source"});
+            long ms=Math.Max(0,beforeMs??0),seq=Math.Max(0,beforeSequence??0),branch=Math.Max(0,agent??0);
+            uint count=(uint)Math.Clamp(limit??12,1,12);
+            var rows=DesktopExperienceTree.Screens(term??"",ms,seq,count,branch);
+            var screens=rows.GroupBy(r=>r.MasterSequence).Select(g=>{
+                var fragments=g.Select(r=>r.Fragment).ToArray();
+                var observations=fragments.GroupBy(f=>f.ExternalId).Select(eventGroup=>{
+                    var members=eventGroup.OrderBy(f=>f.Sequence).ToArray();
+                    var body=members.First(f=>f.Source=="record.experience.body");
+                    return new {sequence=body.Sequence,key=eventGroup.Key,observedMs=body.ObservedMs,members};
+                }).OrderBy(o=>o.sequence).ToArray();
+                return new {sequence=g.Key,observedMs=observations.Max(o=>o.observedMs),
+                    process=fragments.FirstOrDefault(f=>f.Source=="record.experience.process")?.Body??"Desktop",
+                    session=fragments.FirstOrDefault(f=>f.Source=="record.experience.parent")?.Body??"",
+                    legacy=!fragments.Any(f=>f.Source=="record.experience.screen"),observations};
+            }).OrderByDescending(g=>g.observedMs).ThenByDescending(g=>g.sequence).ToArray();
+            var last=screens.LastOrDefault();
+            return Results.Json(new {ok=true,items=screens,nextBeforeMs=last?.observedMs??0,
+                nextBeforeSequence=last?.sequence??0,hasMore=screens.Length==count});
+        });
         group.MapGet("/view/{source}/feed",(string source,string? term,long? beforeMs,long? beforeSequence,int? limit,long? agent)=>{
             if(source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_source"});
             long ms=Math.Max(0,beforeMs??0),seq=Math.Max(0,beforeSequence??0),branch=Math.Max(0,agent??0);
