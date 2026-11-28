@@ -527,12 +527,13 @@ public final class XVisibleTextReader {
 
     private static void addAuthor(Map<String, TextCandidate> names, XAuthorInfo info) {
         TextCandidate c=TextCandidate.forAuthor(info,names.size());
-        TextCandidate existing=names.get(c.fingerprint);
+        String occurrence=c.fingerprint+"@"+c.bounds.flattenToString();
+        TextCandidate existing=names.get(occurrence);
         if(existing==null || !existing.author.inlineSafe && info.inlineSafe
                 || existing.author.inlineSafe==info.inlineSafe &&
                     (existing.avatarBounds.isEmpty() && !c.avatarBounds.isEmpty()
                         || !existing.author.truncated && info.truncated))
-            names.put(c.fingerprint,c);
+            names.put(occurrence,c);
     }
 
     private static PostCard findCard(AccessibilityNodeInfo node, Rect body, int width, int height) {
