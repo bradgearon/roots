@@ -283,6 +283,7 @@ async function treeCommand(request){
     case "invitations":return treeCall("/mesh/invitations");
     case "bind":return treeCall("/mesh/bind","POST",{invitation:String(request.invitation||"").slice(0,1024)});
     case "unbind":return treeCall("/mesh/unbind","POST",{pin:String(request.pin||"")});
+    case "public-block":return treeCall("/mesh/public-block","POST",{pin:String(request.pin||""),blocked:request.blocked===true});
     case "receive":return treeCall("/mesh/receive","POST",{},1800000);
     case "records":case "feed":{
       const params=new URLSearchParams({term:String(request.term||"").slice(0,512),
