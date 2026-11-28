@@ -31,6 +31,8 @@ final class FastestComputeRouter implements TranslationProvider {
     private final LocalPLaMoTranslationProvider local;
     private final ThreadPoolExecutor routes=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(3));
     private final Map<String,Estimate> timings=new HashMap<>();
+    private long detectorRetryAfter;
+    private String detectorRoute="";
     private static final class Estimate {double ms;long at;int count;}
     static synchronized FastestComputeRouter get(Context context){
         if(instance==null)instance=new FastestComputeRouter(context.getApplicationContext());
@@ -173,8 +175,29 @@ final class FastestComputeRouter implements TranslationProvider {
                 network==null?"No active Wi-Fi":!key.contains(":")?"Desktop TLS connection key required":
                 !remote?"Network not remembered":"Measured local preference";
             String desktop="desktop:"+base+":"+fingerprint;
+            String language=PostLanguage.hint(text,source);
+            if(remote&&authorized(base,key)&&network.equals(wifi())){
+                long now=SystemClock.elapsedRealtime();
+                if(!desktop.equals(detectorRoute)){detectorRoute=desktop;detectorRetryAfter=0;}
+                if(now>=detectorRetryAfter){
+                    try{
+                        JSONObject detected=socket.detect(network,base,key,PostLanguage.clean(text));
+                        if(authorized(base,key)&&network.equals(wifi()))
+                            language=PostLanguage.resolve(text,source,detected.optString("language"),
+                                detected.optDouble("confidence",0),detected.optBoolean("reliable",false));
+                    }catch(Exception unavailable){
+                        detectorRetryAfter=SystemClock.elapsedRealtime()+15000;
+                    }
+                }
+            }
+            if(!prefs.enabled()){finish(callback,finished,null,"Translation permission is off.");return;}
+            if(target.equalsIgnoreCase(language)){
+                if(finished.compareAndSet(false,true))callback.alreadyLocalized(text,target);
+                return;
+            }
+            final String effectiveSource=language;
             if(remote&&preferRemote(desktop,phone,text.length())){
-                if(remoteTranslate(network,base,key,desktop,text,source,target,callback,finished))return;
+                if(remoteTranslate(network,base,key,desktop,text,effectiveSource,target,callback,finished))return;
                 remote=false;reason="Fallback after desktop attempt";
             }
             final boolean tryDesktop=remote;
@@ -183,7 +206,7 @@ final class FastestComputeRouter implements TranslationProvider {
             final String localReason=reason;
             InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin(
                 phone.contains(":vulkan:")?"Phone · Vulkan":"Phone · CPU","PLaMo","Translation",localReason);
-            local.translate(text,source,target,new Result(){
+            local.translate(text,effectiveSource,target,new Result(){
                 @Override public void started(){attempt.running("Running");if(!finished.get())callback.started();}
                 @Override public void partial(String prefix){if(!finished.get()&&prefs.enabled())callback.partial(prefix);}
                 @Override public void completed(String translated,String error){
@@ -195,7 +218,7 @@ final class FastestComputeRouter implements TranslationProvider {
                     }
                     if(tryDesktop&&authorized(base,key)){
                         try{routes.execute(()->{
-                            if(!remoteTranslate(network,base,key,desktop,text,source,target,callback,finished))
+                            if(!remoteTranslate(network,base,key,desktop,text,effectiveSource,target,callback,finished))
                                 finish(callback,finished,null,error==null?"No translation returned.":error);
                         });return;}catch(java.util.concurrent.RejectedExecutionException ignored){}
                     }
