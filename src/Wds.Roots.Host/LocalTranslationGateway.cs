@@ -19,14 +19,16 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
 {
     private readonly int _port;
     private readonly bool _lan;
+    private readonly DesktopRootsHost? _roots;
     private readonly PLaMoLocalTranslationService _translator;
     private WebApplication? _app;
     private System.Security.Cryptography.X509Certificates.X509Certificate2? _identity;
 
-    public LocalTranslationGateway(int port, string llamaChatEndpoint, bool lan = false)
+    public LocalTranslationGateway(int port, string llamaChatEndpoint, bool lan = false, DesktopRootsHost? roots = null)
     {
         _port = port;
         _lan = lan;
+        _roots = roots;
         _translator = new PLaMoLocalTranslationService(llamaChatEndpoint);
     }
 
@@ -138,6 +140,7 @@ internal sealed class LocalTranslationGateway : IAsyncDisposable
             }
         });
 
+        DesktopRootsHost.Map(app, secret, _port + 1, _roots);
         await app.StartAsync(cancellationToken);
         _app = app;
         Console.WriteLine("LOCAL TRANSLATION WebSocket ws://127.0.0.1:" + (_port + 1) + "/api/translation/v1/socket");
