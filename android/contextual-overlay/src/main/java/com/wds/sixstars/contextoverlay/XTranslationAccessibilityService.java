@@ -43,6 +43,9 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private long lastTimelineScrollAt=-1L;
     private final XSceneGeometryClock geometryClock=new XSceneGeometryClock();
     private int sceneWindowId=-1;
+    private static final long CACHE_REFRESH_INTERVAL_MS=350L;
+    private long lastGeometryCacheRefresh=-1;
+    private boolean geometryCacheDirty=true;
     // Event-driven normal scans. A low-frequency, foreground-only recovery
     // repairs a stale scene when X stops emitting scroll/content events.
     private static final long CAPTURE_RECOVERY_MS=4000L, SCENE_RECOVERY_MS=900L;
@@ -130,6 +133,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private void stopCaptureRecovery(){
         main.removeCallbacks(captureRecovery);captureRecoveryScheduled=false;unknownRootChecks=0;
         main.removeCallbacks(staleGeometry);geometryClock.reset();sceneWindowId=-1;
+        geometryCacheDirty=true;lastGeometryCacheRefresh=-1;
     }
     private void recoverCapture(){
         captureRecoveryScheduled=false;
@@ -269,6 +273,12 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 }
             }catch(RuntimeException ignored){}
         }
+        // A video/ad resize can reflow every post below it without a
+        // scroll event. Refresh cached X geometry on structural changes as
+        // well as motion. Coalescing and the refresh budget bound IPC.
+        if(kind==AccessibilityEvent.TYPE_VIEW_SCROLLED||kind==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED||
+                kind==AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
+            geometryCacheDirty=true;
         if (kind == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
             long now=SystemClock.uptimeMillis();
             long eventTime=event.getEventTime()>0?Math.min(now,event.getEventTime()):now;
@@ -343,7 +353,8 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private void publishAutoWindowTarget() {
         if (renderer == null || preferences == null || !preferences.autoPreview()) return;
         AccessibilityWindowInfo xWindow = foregroundApplicationWindow();
-        if (xWindow == null || !isXRoot(xWindow.getRoot())) {
+        if (xWindow == null || !isXRoot(xWindow.getRoot())||
+                !readerStatus.startsWith("X active;")||xWindow.getId()!=reader.lastOverlayWindow()) {
             sceneWindowId=-1;
             renderer.setAutoTargetWindow(-1, null);
             return;
@@ -351,7 +362,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         Rect bounds = new Rect();
         xWindow.getBoundsInScreen(bounds);
         sceneWindowId=xWindow.getId();
-        renderer.setAutoTargetWindow(sceneWindowId, bounds);
+        renderer.setAutoTargetWindow(sceneWindowId,bounds,reader.lastOverlayOrigin());
     }
 
     /** Only application windows count; keyboards and our overlays do not. */
@@ -453,6 +464,34 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         // Retention requires a positively verified foreground application.
         // Translation can still use its existing active-root fallback.
         AccessibilityNodeInfo foreground=findXApplicationWindow();
+        if(sceneRecoveryEnabled()){
+            if(!screenAllowsCapture()||!isXRoot(foreground)){
+                readerStatus="No verified foreground X for overlay";
+                return Collections.emptyList();
+            }
+            long now=SystemClock.uptimeMillis();
+            boolean due=lastGeometryCacheRefresh<0||now-lastGeometryCacheRefresh>=CACHE_REFRESH_INTERVAL_MS;
+            boolean recovery=lastGeometryCacheRefresh<0||now-lastGeometryCacheRefresh>=SCENE_RECOVERY_MS;
+            if(due&&(geometryCacheDirty||recovery)){
+                // The system cache can contain the pre-reflow positions
+                // even after X's content event. Invalidate this X subtree,
+                // obtain a fresh root, and never reuse that old root object.
+                try{
+                    if(Build.VERSION.SDK_INT>=33){
+                        if(!clearCachedSubtree(foreground))clearCache();
+                        foreground=findXApplicationWindow();
+                    }else if(!foreground.refresh())foreground=findXApplicationWindow();
+                    lastGeometryCacheRefresh=now;geometryCacheDirty=false;
+                }catch(RuntimeException error){
+                    readerStatus="X geometry refresh unavailable";
+                    return Collections.emptyList();
+                }
+                if(!isXRoot(foreground)){
+                    readerStatus="X window changed during geometry refresh";
+                    return Collections.emptyList();
+                }
+            }
+        }
         boolean captureRequested=captureEnabled();
         boolean screenReady=captureRequested&&screenAllowsCapture();
         boolean retain=screenReady&&isXRoot(foreground);
@@ -460,7 +499,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
             "Waiting for verified foreground X":"Screen locked or off; capture waiting");
         long epoch=retain?treeRuntime.captureEpoch():-1L;
         XAccessibilityInspector.Scan inspection=isXRoot(foreground)&&screenAllowsCapture()?XAccessibilityInspector.begin(retain,lastTimelineScrollAt<0||SystemClock.uptimeMillis()-lastTimelineScrollAt>=SETTLED_SCAN_MS):null;
-        AccessibilityNodeInfo root = retain||inspection!=null?foreground:getRootInActiveWindow();
+        AccessibilityNodeInfo root = isXRoot(foreground)?foreground:getRootInActiveWindow();
         if (!isXRoot(root)) {
             // Android may report the keyboard or our tiny language/More
             // control as the active window while X remains the foreground
@@ -485,6 +524,14 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 lastCaptureScanUptime=SystemClock.uptimeMillis();
                 for(TextCandidate candidate:found)candidate.knowledgeEpoch=epoch;
                 for(TextCandidate candidate:reader.lastDiscovered())candidate.knowledgeEpoch=epoch;
+            }
+        }
+        if(sceneRecoveryEnabled()){
+            AccessibilityWindowInfo current=foregroundApplicationWindow();
+            if(!screenAllowsCapture()||current==null||current.getId()!=reader.lastOverlayWindow()||!isXRoot(current.getRoot())){
+                readerStatus="X window changed during geometry scan";
+                geometryCacheDirty=true;
+                return Collections.emptyList();
             }
         }
         readerStatus = found.isEmpty()
