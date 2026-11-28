@@ -286,6 +286,16 @@ public final class XVisibleTextReader {
             raw.add(new TextCandidate(text,PostLanguage.hint(text,body.language()),bounds,postBounds,
                 body.order(),300,true,false,true));
         }
+        for(XTimelineCardRecords.Node body:joined.quotedBodies().values()){
+            String text=TextFingerprint.normalized(body.text());
+            Rect bounds=cardNodeBounds.get(body.order());
+            if(bounds==null||text.isEmpty()||text.length()>MAX_SOURCE_CHARS)continue;
+            raw.removeIf(candidate->candidate.order==body.order());
+            // Each embedded body has its own overlay bounds, not the outer
+            // conversation's full card rectangle or its master record key.
+            raw.add(new TextCandidate(text,PostLanguage.hint(text,body.language()),bounds,bounds,
+                body.order(),290,true,false,true));
+        }
         // The raw lane remains intact. Structural associations are added
         // only after resolving the same measured post/header candidates.
         // Associate each readable body with its nearest profile image. The
