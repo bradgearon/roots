@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cwctype>
+#include <cwchar>
 #include <cstdint>
 #include <cstdlib>
 #ifdef ROOTS_SURFACE_OCR
@@ -73,7 +74,7 @@ static Target target(const std::set<std::wstring>& excluded) {
     DWORD session=0, own=0;
     if(!ProcessIdToSessionId(pid,&session)||!ProcessIdToSessionId(GetCurrentProcessId(),&own)||session!=own)return {};
     HANDLE p=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid);if(!p)return {};
-    wchar_t buf[32768]; DWORD len=32768; FILETIME c,e,k,u;
+    wchar_t buf[32768]; DWORD len=32768; FILETIME c{},e{},k{},u{};
     bool ok=QueryFullProcessImageNameW(p,0,buf,&len)&&GetProcessTimes(p,&c,&e,&k,&u);
     CloseHandle(p);if(!ok)return {};
     std::wstring name(buf,len);auto slash=name.find_last_of(L"\\/");
@@ -87,47 +88,123 @@ static Target target(const std::set<std::wstring>& excluded) {
     if(GetForegroundWindow()!=hwnd)return {};
     return {hwnd,pid,time.QuadPart,std::move(name)};
 }
-// UIA reads display names of static text only, never value/text patterns,
-// passwords, edit or document subtrees. A failure fences the OCR fallback.
-static bool walk(IUIAutomationTreeWalker* walker,IUIAutomationElement* parent,const RECT& window,
-        std::vector<SurfaceText>& rows,int& visits,int depth,bool& sensitive) {
-    if(depth>18||visits>=384){sensitive=true;return false;}
+// Capture visible, non-editable accessibility text without reading values,
+// raw keystrokes or hidden nodes. Unsafe subtrees are excluded individually;
+// incomplete inspection blocks OCR, not safe text already acquired.
+static std::wstring nameOf(IUIAutomationElement* element) {
+    BSTR value=nullptr;
+    if(FAILED(element->get_CurrentName(&value))||!value){if(value)SysFreeString(value);return {};}
+    std::wstring result(value,SysStringLen(value));SysFreeString(value);return result;
+}
+static bool ownViewName(const std::wstring& name) {
+    // Prevent our rendered knowledge from becoming fresh captured knowledge.
+    // This is a presentation identity, not a process-name exclusion.
+    const std::wstring title=L"Roots \u00b7 Tree";
+    return name==title||name.starts_with(title+L" - ");
+}
+static bool usableText(const std::wstring& value) {
+    return !value.empty()&&value.size()<=2000&&value.find(L'\0')==std::wstring::npos&&
+        std::any_of(value.begin(),value.end(),[](wchar_t ch){return !iswspace(ch);});
+}
+static std::wstring textKey(const std::wstring& value) {
+    std::wstring out;bool space=false;
+    for(auto ch:value){
+        if(iswspace(ch)){space=!out.empty();continue;}
+        if(space){out+=L' ';space=false;}
+        out+=static_cast<wchar_t>(towlower(ch));
+    }
+    return out;
+}
+static bool sameTextAt(const SurfaceText& a,const SurfaceText& b) {
+    if(textKey(a.text)!=textKey(b.text))return false;
+    RECT overlap{};
+    if(!IntersectRect(&overlap,&a.bounds,&b.bounds))return false;
+    auto area=[](const RECT& r){return static_cast<double>(r.right-r.left)*(r.bottom-r.top);};
+    const auto small=std::min(area(a.bounds),area(b.bounds));
+    return small>0&&area(overlap)>=small*0.6;
+}
+static void addText(std::vector<SurfaceText>& rows,std::wstring value,const RECT& bounds) {
+    if(rows.size()>=256||!usableText(value))return;
+    SurfaceText row{std::move(value),bounds};
+    if(std::none_of(rows.begin(),rows.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
+        rows.push_back(std::move(row));
+}
+static bool editableDocument(IUIAutomationElement* element) {
+    // Never read the value. A writable ValuePattern or TextEditPattern marks
+    // the document as an editable subtree, not ordinary browser prose.
+    ComPtr<IUnknown> raw;
+    if(SUCCEEDED(element->GetCurrentPattern(UIA_ValuePatternId,&raw))&&raw){
+        ComPtr<IUIAutomationValuePattern> value;
+        BOOL readOnly=FALSE;
+        if(FAILED(raw.As(&value))||FAILED(value->get_CurrentIsReadOnly(&readOnly))||!readOnly)return true;
+    }
+    raw.Reset();
+    return SUCCEEDED(element->GetCurrentPattern(UIA_TextEditPatternId,&raw))&&raw;
+}
+static bool labelKind(CONTROLTYPEID kind) {
+    return kind==UIA_TextControlTypeId||kind==UIA_HyperlinkControlTypeId||
+        kind==UIA_ButtonControlTypeId||kind==UIA_MenuItemControlTypeId||
+        kind==UIA_TabItemControlTypeId||kind==UIA_CheckBoxControlTypeId||
+        kind==UIA_RadioButtonControlTypeId||kind==UIA_HeaderItemControlTypeId;
+}
+struct UiaScan {
+    std::vector<SurfaceText> rows;
+    int visits=0;
+    bool complete=true,sensitive=false,ownView=false;
+    Clock::time_point deadline=Clock::now()+std::chrono::milliseconds(850);
+    bool within(int depth) const {
+        return depth<=28&&visits<1600&&Clock::now()<deadline;
+    }
+};
+static void walk(IUIAutomationTreeWalker* walker,IUIAutomationElement* parent,
+        const RECT& window,UiaScan& scan,int depth) {
+    if(!scan.within(depth)){scan.complete=false;return;}
     ComPtr<IUIAutomationElement> node;
-    if(FAILED(walker->GetFirstChildElement(parent,&node))){sensitive=true;return false;}
-    while(node && visits<384) {
-        ++visits;
-        BOOL hidden=TRUE,password=TRUE; CONTROLTYPEID kind=0;
+    if(FAILED(walker->GetFirstChildElement(parent,&node))){scan.complete=false;return;}
+    while(node&&!scan.ownView){
+        if(!scan.within(depth)){scan.complete=false;return;}
+        ++scan.visits;
+        BOOL hidden=TRUE,password=TRUE;CONTROLTYPEID kind=0;
         if(FAILED(node->get_CurrentIsOffscreen(&hidden))||FAILED(node->get_CurrentIsPassword(&password))||
-           FAILED(node->get_CurrentControlType(&kind))){sensitive=true;return false;}
-        if(password||kind==UIA_EditControlTypeId||kind==UIA_DocumentControlTypeId) sensitive=true;
-        else if(!hidden) {
-            if(kind==UIA_TextControlTypeId && rows.size()<64) {
-                RECT bounds{},clipped{}; BSTR name=nullptr;
-                if(SUCCEEDED(node->get_CurrentBoundingRectangle(&bounds))&&IntersectRect(&clipped,&bounds,&window)&&
-                   SUCCEEDED(node->get_CurrentName(&name))&&name) {
-                    std::wstring text(name,SysStringLen(name)); SysFreeString(name);
-                    if(!text.empty()&&text.size()<=2000&&text.find(L'\0')==std::wstring::npos&&
-                       std::any_of(text.begin(),text.end(),[](wchar_t ch){return !iswspace(ch);}))
-                        rows.push_back({std::move(text),clipped});
-                } else if(name) SysFreeString(name);
+           FAILED(node->get_CurrentControlType(&kind)))scan.complete=false;
+        else if(!hidden){
+            if(password||kind==UIA_EditControlTypeId||
+               (kind==UIA_DocumentControlTypeId&&editableDocument(node.Get())))scan.sensitive=true;
+            else {
+                if(kind==UIA_DocumentControlTypeId&&ownViewName(nameOf(node.Get()))) {
+                    scan.ownView=true;scan.rows.clear();return;
+                }
+                if(labelKind(kind)&&scan.rows.size()<256){
+                    RECT bounds{},clipped{};
+                    if(SUCCEEDED(node->get_CurrentBoundingRectangle(&bounds))&&IntersectRect(&clipped,&bounds,&window))
+                        addText(scan.rows,nameOf(node.Get()),clipped);
+                }
+                walk(walker,node.Get(),window,scan,depth+1);
             }
-            if(!walk(walker,node.Get(),window,rows,visits,depth+1,sensitive))return false;
         }
+        if(scan.ownView)return;
         ComPtr<IUIAutomationElement> next;
-        if(FAILED(walker->GetNextSiblingElement(node.Get(),&next))){sensitive=true;return false;}
+        if(FAILED(walker->GetNextSiblingElement(node.Get(),&next))){scan.complete=false;return;}
         node=std::move(next);
     }
-    if(node){sensitive=true;return false;}return true;
 }
-static bool uia(IUIAutomation* automation,HWND hwnd,std::vector<SurfaceText>& rows,bool& sensitive) {
-    if(!automation){sensitive=true;return false;}
-    RECT rect{}; if(!GetWindowRect(hwnd,&rect)){sensitive=true;return false;}
-    ComPtr<IUIAutomationElement> root; ComPtr<IUIAutomationTreeWalker> walker;
-    if(FAILED(automation->ElementFromHandle(hwnd,&root))||!root||
-       FAILED(automation->get_ControlViewWalker(&walker))||!walker){sensitive=true;return false;}
-    BOOL pw=TRUE;
-    if(FAILED(root->get_CurrentIsPassword(&pw))||pw){sensitive=true;return false;}
-    int visits=0;return walk(walker.Get(),root.Get(),rect,rows,visits,0,sensitive);
+static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
+    UiaScan scan;
+    RECT rect{};
+    ComPtr<IUIAutomationElement> root;ComPtr<IUIAutomationTreeWalker> walker;
+    if(!automation||!GetWindowRect(hwnd,&rect)||
+       FAILED(automation->ElementFromHandle(hwnd,&root))||!root||
+       FAILED(automation->get_ControlViewWalker(&walker))||!walker){
+        scan.complete=false;return scan;
+    }
+    BOOL pw=TRUE;CONTROLTYPEID kind=0;
+    if(FAILED(root->get_CurrentIsPassword(&pw))||FAILED(root->get_CurrentControlType(&kind))||
+       pw||kind==UIA_EditControlTypeId||(kind==UIA_DocumentControlTypeId&&editableDocument(root.Get()))){
+        scan.sensitive=true;scan.complete=false;return scan;
+    }
+    if(ownViewName(nameOf(root.Get()))){scan.ownView=true;return scan;}
+    walk(walker.Get(),root.Get(),rect,scan,0);
+    return scan;
 }
 static void CALLBACK foreground(HWINEVENTHOOK,DWORD,HWND,LONG,LONG,DWORD,DWORD) {
     PostThreadMessageW(ownerThread,Tick,0,0);
@@ -188,6 +265,7 @@ int wmain(int argc,wchar_t** argv) {
 #else
     if(useOcr)return 4;
 #endif
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     ownerThread=GetCurrentThreadId(); MSG msg{};
     PeekMessageW(&msg,nullptr,WM_USER,WM_USER,PM_NOREMOVE);
     WNDCLASSW wc{};wc.lpfnWndProc=signalProc;wc.hInstance=GetModuleHandleW(nullptr);wc.lpszClassName=L"RootsSurfaceSignals";
@@ -200,7 +278,7 @@ int wmain(int argc,wchar_t** argv) {
     std::thread([]{char c;DWORD n=0;ReadFile(GetStdHandle(STD_INPUT_HANDLE),&c,1,&n,nullptr);PostThreadMessageW(ownerThread,Stop,0,0);}).detach();
     Target current;unsigned long long session=0;
     auto previous=Clock::now(), spanStart=previous;long long startUtc=utc(),lastUtc=startUtc;
-    bool wasIdle=false;std::vector<SurfaceText> seen;std::string seenKind;
+    bool wasIdle=false;std::vector<SurfaceText> seenUia,seenOcr;
     auto close=[&](Clock::time_point end,long long endUtc){
         if(current.hwnd&&end>spanStart&&endUtc>=startUtc)
             emit(wasIdle?"idle":"focused",session,current,startUtc,endUtc,spanStart,end,{},L"Foreground activity");
@@ -216,7 +294,7 @@ int wmain(int argc,wchar_t** argv) {
         const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(now-previous).count();
         const bool gap=elapsed>3000||wall<lastUtc||std::llabs((wall-lastUtc)-elapsed)>3000;
         if(gap||!(next==current)||isIdle!=wasIdle) {
-            close(previous,lastUtc);current=next;++session;spanStart=now;startUtc=wall;seen.clear();seenKind.clear();wasIdle=isIdle;
+            close(previous,lastUtc);current=next;++session;spanStart=now;startUtc=wall;seenUia.clear();seenOcr.clear();wasIdle=isIdle;
 #ifdef ROOTS_SURFACE_OCR
             if(ocr)ocr->reset();
 #endif
@@ -225,23 +303,49 @@ int wmain(int argc,wchar_t** argv) {
         previous=now;lastUtc=wall;
         // Idle is an activity label, not a reason to stop observing an unlocked screen.
         if(!current.hwnd)continue;
-        std::vector<SurfaceText> rows;bool sensitive=false;
-        bool valid=uia(automation.Get(),current.hwnd,rows,sensitive);const char* kind="uia";
+        auto scan=uia(automation.Get(),current.hwnd);
+        std::vector<SurfaceText> optical;RECT captureDesktop{};bool opticalReady=false;
+        // Structured text and OCR are complementary, not mutually exclusive.
+        // Do not OCR windows containing visible sensitive controls or where
+        // inspection could not determine whether such controls are present.
 #ifdef ROOTS_SURFACE_OCR
-        if(ocr && valid && !sensitive && rows.empty()){
-            if(!ocr->read(current.hwnd,rows))continue;
-            kind="ocr";
-        } else if(ocr)ocr->reset();
+        if(ocr&&scan.complete&&!scan.sensitive&&!scan.ownView)
+            opticalReady=ocr->read(current.hwnd,optical,captureDesktop);
+        else if(ocr){ocr->reset();seenOcr.clear();}
 #endif
-        if(!valid||sensitive||!(target(excluded)==current)){seen.clear();seenKind.clear();continue;}
-        if(seenKind!=kind){seen.clear();seenKind=kind;}
-        for(const auto& row:rows){
-            // Compare the previous visible snapshot, not a global text history.
-            // Reappearance after a disappearance receives a fresh occurrence.
-            if(std::find(seen.begin(),seen.end(),row)==seen.end())
-                emit(kind,session,current,wall,wall,now,now,row.bounds,row.text);
+        if(scan.ownView||!(target(excluded)==current)){
+            seenUia.clear();seenOcr.clear();
+#ifdef ROOTS_SURFACE_OCR
+            if(ocr)ocr->reset();
+#endif
+            continue;
         }
-        seen=std::move(rows);
+        for(const auto& row:scan.rows){
+            if(std::none_of(seenUia.begin(),seenUia.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
+                emit("uia",session,current,wall,wall,now,now,row.bounds,row.text);
+        }
+        if(opticalReady){
+            std::vector<SurfaceText> unique;
+            for(const auto& row:optical){
+                SurfaceText mapped=row;
+                const bool known=captureDesktop.right>captureDesktop.left&&captureDesktop.bottom>captureDesktop.top;
+                if(known)OffsetRect(&mapped.bounds,captureDesktop.left,captureDesktop.top);
+                if(known&&std::any_of(scan.rows.begin(),scan.rows.end(),[&](const auto& semantic){return sameTextAt(semantic,mapped);}))continue;
+                if(std::none_of(seenOcr.begin(),seenOcr.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
+                    emit("ocr",session,current,wall,wall,now,now,row.bounds,row.text);
+                unique.push_back(row);
+            }
+            seenOcr=std::move(unique);
+        }
+        if(scan.complete)seenUia=std::move(scan.rows);
+        else {
+            // Partial scans cannot prove a disappearance. Keep bounded
+            // recent visible occurrences to prevent repeated partial reads.
+            for(auto& row:scan.rows)
+                if(std::none_of(seenUia.begin(),seenUia.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
+                    seenUia.push_back(std::move(row));
+            if(seenUia.size()>512)seenUia.erase(seenUia.begin(),seenUia.begin()+(seenUia.size()-512));
+        }
     }
 #ifdef ROOTS_SURFACE_OCR
     ocr.reset();
