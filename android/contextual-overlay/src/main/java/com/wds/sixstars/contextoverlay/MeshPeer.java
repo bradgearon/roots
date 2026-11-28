@@ -330,7 +330,7 @@ final class MeshPeer {
             throw new IOException(tlsIdentityStatus);
         }
         tlsIdentityState=PASS;
-        tlsIdentityStatus="Pinned TLS loopback handshake passed: "+String.join(", ",working)+". Identity "+pin.substring(0,12)+"…."+
+        tlsIdentityStatus="Pinned TLS loopback handshake passed: "+String.join(", ",working)+". Persistent identity "+pin.substring(0,12)+"…."+
             (identity.upgraded()?" TLS identity upgraded. Share the new invitation and update the receiver's Axon binding once.":"");
         SecretKey networkRoot=MeshNetworkAccess.loadOrCreate(app);
         String token=MeshNetworkAccess.enrollment(networkRoot,pin);
@@ -632,19 +632,27 @@ final class MeshPeer {
                         if(response.optInt("version")!=1)throw new Failure("Protocol","The peer returned an unsupported Mesh protocol version.","Update both Roots installations to compatible versions.");
                         trace.pass("Protocol","Mesh protocol version 1 accepted.",android.os.SystemClock.elapsedRealtime());
                         if(response.has("error"))throw protocolFailure(response.optString("error"));
+                        String grantToSave=null;
                         if(response.has("member_token")){
                             String grant=response.getString("member_token");
                             if(!memberVerified||!MeshNetworkAccess.validHex(grant))
                                 throw new Failure("Authentication","The peer returned an invalid member grant.","Update both Roots installations.");
                             if(derivedGrants.size()>=64)derivedGrants.clear();
                             derivedGrants.put(invite.pin(),new DerivedGrant(invite.token(),grant));
+                            grantToSave=grant;
+                            response.remove("member_token");
+                        }else if(memberVerified&&!offered.equals(invite.token())){
+                            // The current receive loop may still carry the
+                            // original invitation, or a previous save failed.
+                            grantToSave=offered;
+                        }
+                        if(grantToSave!=null){
                             try{
-                                if(AxonPeerStore.refreshDerivedGrant(app,invite,grant))
+                                if(AxonPeerStore.refreshDerivedGrant(app,invite,grantToSave))
                                     trace.add(check("Member grant",PASS,"Stable member-specific access saved.",""));
                             }catch(IOException e){
                                 trace.add(check("Member grant",WARN,"Member access received but could not be saved.","Retry the connection check."));
                             }
-                            response.remove("member_token");
                         }
                         if(RuntimeNeed.remaining(stopAt,android.os.SystemClock.elapsedRealtime())<=0)throw new java.net.SocketTimeoutException();
                         trace.pass("Authentication",memberVerified?"Member identity and derived network access accepted.":"The peer accepted the invitation and returned a response.",android.os.SystemClock.elapsedRealtime());
