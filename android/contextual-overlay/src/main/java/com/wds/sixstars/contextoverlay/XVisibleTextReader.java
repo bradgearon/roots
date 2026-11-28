@@ -99,6 +99,7 @@ public final class XVisibleTextReader {
         ArrayDeque<ScanNode> queue = new ArrayDeque<>();
         queue.add(new ScanNode(root,true,"0"));
         boolean detailScreen = false;
+        int detailHeadingBottom=0;
 
         while (!queue.isEmpty()
                 && lastVisited < (detailScreen ? MAX_DETAIL_NODES : MAX_VISITED_NODES)) {
@@ -170,7 +171,8 @@ public final class XVisibleTextReader {
                             node.getClassName()==null?"":node.getClassName().toString(),
                             value==null?"":value.toString(),descriptionValue==null?"":descriptionValue.toString(),
                             conversation,XPostMetadata.timelineHeader(resource),PostTextHeuristics.isPostTextId(resource),
-                            hasBodySpan(value),sourceAllowed,links,reportedLanguage(node,value)));
+                            hasBodySpan(value==null||value.length()==0?descriptionValue:value),
+                            sourceAllowed,links,reportedLanguage(node,value==null||value.length()==0?descriptionValue:value)));
                         cardNodeBounds.put(order,new Rect(observedBounds));
                     }
                 }
@@ -214,8 +216,10 @@ public final class XVisibleTextReader {
                 node.getBoundsInScreen(bounds);
                 if (XPostDetailContextService.isDetailHeading(
                         text, viewId, className, node.isClickable(),
-                        node.isEditable(), bounds.top, bounds.bottom, height))
+                        node.isEditable(), bounds.top, bounds.bottom, height)){
                     detailScreen = true;
+                    detailHeadingBottom=Math.max(detailHeadingBottom,bounds.bottom);
+                }
                 if (!XPostSpatialAnalyzer.onScreen(bounds, width, height)) continue;
                 // X sometimes exposes the OPENED post on detail pages through
                 // one localized container description rather than a TextView.
@@ -296,6 +300,31 @@ public final class XVisibleTextReader {
             raw.add(new TextCandidate(text,PostLanguage.hint(text,body.language()),bounds,bounds,
                 body.order(),290,true,false,true));
         }
+        XPostDetailContextService.OpenedBody opened=null;
+        if(detailScreen){
+            List<XPostDetailContextService.Surface> surfaces=new ArrayList<>();
+            for(XTimelineCardRecords.Node node:cardNodes){
+                Rect box=cardNodeBounds.get(node.order());
+                if(box!=null)surfaces.add(new XPostDetailContextService.Surface(node,box.left,box.top,box.right,box.bottom,
+                    joined.cardByOrder().getOrDefault(node.order(),"")));
+            }
+            opened=XPostDetailContextService.selectOpenedBody(surfaces,width,height,detailHeadingBottom);
+            if(opened!=null){
+                Rect bounds=cardNodeBounds.get(opened.order());
+                if(bounds!=null){
+                    int order=opened.order();
+                    Rect postBounds=new Rect(bounds);
+                    String owner=joined.cardByOrder().get(order);
+                    if(owner!=null&&cardBounds.containsKey(owner))postBounds=cardBounds.get(owner);
+                    raw.removeIf(candidate->candidate.order==order);
+                    // This is a verified detail body, not an arbitrary
+                    // description. The classifier, not the reader, decides
+                    // whether to translate its language.
+                    raw.add(new TextCandidate(opened.text(),opened.language(),bounds,postBounds,
+                        order,400,true,opened.fromDescription(),true));
+                }
+            }
+        }
         // The raw lane remains intact. Structural associations are added
         // only after resolving the same measured post/header candidates.
         // Associate each readable body with its nearest profile image. The
@@ -314,6 +343,17 @@ public final class XVisibleTextReader {
         List<TextCandidate> selected =
                 spatial.locate(associated, width, height, detailScreen);
         lastPostDetail = detailScreen;
+        // Protect the opened tweet from avatar/card deduplication and
+        // reply ranking, even when its only representation is a description.
+        if(opened!=null){
+            TextCandidate primary=null;
+            for(TextCandidate candidate:associated)if(candidate.order==opened.order()){primary=candidate;break;}
+            if(primary!=null){
+                final TextCandidate body=primary;
+                selected.removeIf(other->other.order==body.order||Rect.intersects(other.bounds,body.bounds));
+                selected.add(0,body);
+            }
+        }
         List<TextCandidate> authorNames = independentAuthors(authorSamples, avatars,
                 selected, raw, width, scaledDensity);
         // Keep recognized author roles out of the body compositor even
