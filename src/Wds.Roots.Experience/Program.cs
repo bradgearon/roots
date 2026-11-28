@@ -69,7 +69,7 @@ try
     var start = new ProcessStartInfo(executable)
     {
         UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
-        RedirectStandardOutput = true, StandardOutputEncoding = new UTF8Encoding(false, true)
+        RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = new UTF8Encoding(false, true)
     };
     if (noOcr) start.ArgumentList.Add("--no-ocr");
     foreach (var name in excluded) { start.ArgumentList.Add("--exclude"); start.ArgumentList.Add(name); }
@@ -78,6 +78,14 @@ try
     try
     {
         childJob.Attach(child);
+        // Only native coverage diagnostics are shown; do not log text or
+        // arbitrary backend messages from the diagnostic pipe.
+        child.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is { } line && line.StartsWith("Surface: ", StringComparison.Ordinal))
+                Console.Error.WriteLine(line.Length <= 512 ? line : line[..512]);
+        };
+        child.BeginErrorReadLine();
         Console.WriteLine($"Surface receiver PID {Environment.ProcessId}; native agent PID {child.Id}.");
         while (!cancellation.IsCancellationRequested)
         {
@@ -89,6 +97,8 @@ try
             if (cancellation.IsCancellationRequested) break;
             var rows = observation.ToRows(device, run, ++sequence);
             privateTree.Observe(rows);
+            if (sequence == 1 || sequence % 100 == 0)
+                Console.WriteLine($"Surface: {sequence} events accepted into private Tree (latest source: {SafeConsole(observation.ProcessName)}). ");
         }
         if (!cancellation.IsCancellationRequested)
         {
