@@ -234,9 +234,10 @@ public final class OverlayTranslationCoordinator {
 
     private long priority(Pending p,long now,String backend,double velocity){
         TextCandidate c=p.candidate;
-        return TranslationWorkPriority.score(visible.contains(c.fingerprint),c.authorName,
+        long score=TranslationWorkPriority.score(visible.contains(c.fingerprint),c.authorName,
                 c.bounds.top,c.bounds.bottom,demand.height(),demand.offset(),velocity,
                 latency.predict(backend,c.text.length()),now-p.firstSeen,now-p.lastSeen);
+        return score>0&&c.bodyScore>=400&&currentlyVisible(c)?score+3000:score;
     }
 
     /** Main-thread admission. Select work only when a provider slot is free. */
