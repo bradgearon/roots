@@ -4,12 +4,27 @@ on:
     paths:
       - 'native/desktop-surface/**'
       - 'src/Wds.Roots.Experience/**'
+      - 'src/Wds.Roots.Host/Tree/**'
+      - 'src/Wds.Roots.Tree/**'
+      - 'native/tree-core/**'
+      - 'chrome-extension/roots-translate/**'
       - 'scripts/Build-DesktopSurface.ps1'
       - 'build-surface.cmd'
       - 'launch-surface.cmd'
       - '.github/workflows/desktop-surface.yml'
   workflow_dispatch:
 jobs:
+  native-tree-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SQLite headers
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Compile and test native chronological and weight APIs
+        run: |
+          cmake -S native/tree-core -B build/tree-check -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/tree-check --parallel
+          ctest --test-dir build/tree-check --output-on-failure
   windows-build:
     runs-on: windows-2022
     steps:
@@ -24,6 +39,12 @@ jobs:
           cmake --build build/desktop-surface --config Release --parallel
       - name: Build managed private Tree receiver
         run: dotnet build src/Wds.Roots.Experience -c Release
+      - name: Build host with local Experience view
+        run: dotnet build src/Wds.Roots.Host -c Release
+      - name: Validate extension JavaScript
+        run: |
+          node --check chrome-extension/roots-translate/tree.js
+          node --check chrome-extension/roots-translate/background.js
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
