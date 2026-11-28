@@ -276,6 +276,20 @@ public final class TreeRuntime {
             return added;
         }
     }
+    public long storeBulkExplicit(List<NativeTree.Observation> observations,long expectedEpoch){
+        if(observations.isEmpty()||observations.size()>131072)throw new IllegalArgumentException("Invalid bulk batch");
+        for(NativeTree.Observation observation:observations)if(!valid(observation))throw new IllegalArgumentException("Invalid record");
+        long added=0;
+        try{
+            for(int offset=0;offset<observations.size();offset+=256){
+                synchronized(mutationLock){
+                    if(clearing||captureEpoch.get()!=expectedEpoch)throw new IllegalStateException("Tree changed during bulk retention");
+                    added+=tree().observe(observations.subList(offset,Math.min(offset+256,observations.size())));
+                }
+            }
+            return added;
+        }finally{if(added>0)requestSnapshot();}
+    }
     private static String observationKey(NativeTree.Observation o){
         return o.source()+"\u001f"+o.externalId()+"\u001f"+o.body();
     }

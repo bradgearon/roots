@@ -106,8 +106,10 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
         if(!pending.isEmpty()){
             List<NativeTree.Observation> rows=new ArrayList<>();
             for(Publication publication:pending)rows.addAll(publication.item().receivedRows(publication.peer(),publication.receivedAt()));
-            // 32 items * at most six observations is within native 256-row limit.
-            tree.storeExplicit(rows,epoch);
+            // A logical archive can contain thousands of items. The native
+            // ABI still accepts 256 observations at a time; retain in bounded
+            // native transactions and compile the derived snapshot once.
+            tree.storeBulkExplicit(rows,epoch);
             db.beginTransaction();
             try{
                 ContentValues mark=new ContentValues();mark.put("promoted",1);

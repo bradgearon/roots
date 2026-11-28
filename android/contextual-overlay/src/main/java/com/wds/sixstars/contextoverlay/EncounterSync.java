@@ -23,6 +23,8 @@ final class EncounterSync {
     private boolean peerBulk,peerChunks;
     private KnowledgeManifest offeredManifest,heldManifest;
     private int skippedParts;
+    private ArchiveSizing sizing;
+    private static final int ARCHIVE_PAGE=512;
     private int maxPages=3;
     String transport(){return transport;}
     void close(){if(upgrade!=null)try{upgrade.close();}catch(java.io.IOException ignored){}}
@@ -107,12 +109,12 @@ final class EncounterSync {
         return received;
     }
     private JSONObject capabilities(String op)throws JSONException{
-        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_chunks_v1",true).put("lan_upgrade_v1",!directLan);
+        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_archives_v1",true).put("lan_upgrade_v1",!directLan);
     }
     private void negotiate(JSONObject hello,boolean client)throws Exception{
         peerGraph=hello.optBoolean("root_graph",false);
         peerBulk=peerGraph&&hello.optBoolean("bulk_receive_v1",false);
-        peerChunks=peerBulk&&hello.optBoolean("knowledge_chunks_v1",false);
+        peerChunks=peerBulk&&hello.optBoolean("knowledge_archives_v1",false);
         if(peerGraph){maxItems=32;maxIds=256;maxPages=9;}
         if(peerBulk){maxItems=128;maxIds=2048;maxPages=65;}
         if(peerBulk&&directLan){maxItems=4096;maxIds=65536;maxPages=2049;}
@@ -134,7 +136,11 @@ final class EncounterSync {
             offeredManifest=new KnowledgeManifest(catalog.navigableKeySet());
             Set<String> held=new HashSet<>(catalog.navigableKeySet());held.removeAll(pendingReceipts);
             heldManifest=new KnowledgeManifest(held);
-            maxPages+=KnowledgeManifest.BUCKETS;
+            boolean wifi="Wi-Fi".equals(transport);
+            sizing=new ArchiveSizing(context,channel.peerId,wifi);
+            maxItems=wifi?65536:8192;
+            maxIds=wifi?262144:32768;
+            maxPages=maxIds+KnowledgeManifest.BUCKETS+1;
         }
         check();
     }
@@ -207,85 +213,119 @@ final class EncounterSync {
         }
         send(message("release").put("more_pending",!complete));
     }
-    private List<MeshItem> receiveChunk(List<String> requested)throws Exception{
-        send(message("want_chunk").put("ids",new JSONArray(requested)));
-        JSONObject header=read();expect(header,"chunk");
-        check();byte[] wire=channel.receive();check();
-        List<MeshItem> items=KnowledgeChunk.unpack(wire,header.getString("codec"),header.getString("sha256"),
-            header.getInt("raw_size"),requested,header.getInt("count"));
-        stage="Retaining verified chunk";
-        check();received+=external.retainBatch(items,channel.peerId,tree,epoch);
+    private void sendBytes(byte[] bytes)throws Exception{
+        for(int offset=0;offset<bytes.length;offset+=KnowledgeChunk.FRAME){
+            check();channel.send(Arrays.copyOfRange(bytes,offset,Math.min(bytes.length,offset+KnowledgeChunk.FRAME)));
+        }
+    }
+    private byte[] readBytes(int size,int limit)throws Exception{
+        if(size<1||size>limit)throw new IOException("Invalid archive wire size");
+        byte[] bytes=new byte[size];int offset=0;
+        while(offset<size){
+            check();byte[] frame=channel.receive();check();
+            if(frame.length!=Math.min(KnowledgeChunk.FRAME,size-offset))throw new IOException("Invalid archive frame length");
+            System.arraycopy(frame,0,bytes,offset,frame.length);offset+=frame.length;
+        }
+        return bytes;
+    }
+    private List<MeshItem> receiveArchive(List<String> requested,ArchiveSizing.Budget budget)throws Exception{
+        long start=android.os.SystemClock.elapsedRealtime();
+        stage="Receiving compressed archive";
+        progress.accept("Requesting archive · "+requested.size()+" records · "+(budget.estimatedMs()<0?"measuring device performance":budget.estimatedMs()+" ms estimated for "+budget.records()+" records"));
+        send(message("want_archive").put("count",requested.size()).put("raw_limit",budget.rawBytes()).put("wire_limit",budget.wireBytes()));
+        sendBytes(KnowledgeChunk.encodeIds(requested));
+        JSONObject header=read();expect(header,"archive");
+        int raw=header.getInt("raw_size"),wireSize=header.getInt("wire_size"),count=header.getInt("count");
+        if(raw<2||raw>budget.rawBytes()||count<1||count>requested.size())throw new IOException("Invalid archive header");
+        byte[] wire=readBytes(wireSize,budget.wireBytes());
+        List<MeshItem> items=KnowledgeChunk.unpack(wire,header.getString("codec"),header.getString("sha256"),raw,requested,count,budget.rawBytes(),budget.wireBytes());
+        stage="Retaining verified archive";check();
+        received+=external.retainBatch(items,channel.peerId,tree,epoch);
         for(MeshItem item:items){heldManifest.add(item.id());pendingReceipts.remove(item.id());}
-        check();send(message("chunk_ack").put("sha256",header.getString("sha256")).put("count",items.size()));
+        check();send(message("archive_ack").put("sha256",header.getString("sha256")).put("count",items.size()));
+        long elapsed=Math.max(1,android.os.SystemClock.elapsedRealtime()-start);
+        sizing.observe(items.size(),raw,wireSize,elapsed);
+        ArchiveSizing.Budget next=sizing.budget();
+        progress.accept("Archive · "+items.size()+" records · "+wireSize+" compressed/wire bytes · "+elapsed+" ms · next target "+next.records()+" records (~"+next.estimatedMs()+" ms)");
         return items;
+    }
+    private record Scan(int bucket,KnowledgeManifest.Part remote,List<String> ids,boolean last){}
+    private record CursorProgress(KnowledgeManifest.Part remote,String after,boolean done){}
+    private void saveScans(List<Scan> scans)throws Exception{
+        Map<Integer,CursorProgress> progress=new LinkedHashMap<>();
+        for(Scan scan:scans){
+            String after="";int n=0;
+            for(String id:scan.ids()){
+                if(!heldManifest.has(id))break;after=id;n++;
+            }
+            boolean done=n==scan.ids().size()&&scan.last();
+            if(n>0||done)progress.put(scan.bucket(),new CursorProgress(scan.remote(),done?"":after,done));
+            if(n!=scan.ids().size())break;
+        }
+        for(var entry:progress.entrySet()){
+            check();var value=entry.getValue();
+            external.saveInventoryProgress(channel.peerId,entry.getKey(),value.remote(),heldManifest.part(entry.getKey()),value.after(),value.done());
+        }
+    }
+    private int flushArchives(List<Scan> scans,List<String> wanted)throws Exception{
+        int offset=0;
+        if(wanted.isEmpty())saveScans(scans);
+        while(offset<wanted.size()){
+            ArchiveSizing.Budget budget=sizing.budget();
+            int end=Math.min(wanted.size(),offset+budget.records());
+            List<MeshItem> items=receiveArchive(new ArrayList<>(wanted.subList(offset,end)),budget);
+            offset+=items.size();saveScans(scans);
+        }
+        scans.clear();wanted.clear();report();return offset;
     }
     private void pullChunks()throws Exception{
         stage="Comparing knowledge manifests";
         send(message("manifest"));
         JSONObject reply=read();expect(reply,"manifest");
         List<KnowledgeManifest.Part> remote=KnowledgeManifest.parse(reply.getJSONArray("parts"));
-        remoteTotal=remote.stream().mapToInt(KnowledgeManifest.Part::count).sum();remotePageSeen=true;
+        remoteTotal=0;for(var part:remote)remoteTotal+=part.count();remotePageSeen=true;
         Map<Integer,KnowledgeManifest.Checkpoint> saved=external.inventoryProgress(channel.peerId);
-        int inspected=0,transferred=0;boolean allComplete=true;
-        for(int bucket=0;bucket<KnowledgeManifest.BUCKETS;bucket++){
+        int inspected=0,transferred=0,windowIds=0;
+        boolean allComplete=true;
+        List<Scan> scans=new ArrayList<>();List<String> wanted=new ArrayList<>();
+        outer: for(int bucket=0;bucket<KnowledgeManifest.BUCKETS;bucket++){
             check();
             KnowledgeManifest.Part wantedPart=remote.get(bucket),localPart=heldManifest.part(bucket);
             KnowledgeManifest.Checkpoint prior=saved.get(bucket);
-            // Local additions may invalidate a checkpoint for one partition,
-            // but never force other completed partitions to be scanned again.
             if(wantedPart.count()==0||wantedPart.equals(localPart)||(prior!=null&&prior.complete()&&prior.matches(wantedPart,localPart))){
                 skippedParts++;continue;
             }
-            if(inspected>=maxIds||transferred>=maxItems){allComplete=false;break;}
             String after=prior!=null&&!prior.complete()&&prior.matches(wantedPart,localPart)?prior.after():"";
-            boolean done=false;
-            while(inspected<maxIds&&transferred<maxItems){
+            while(true){
+                int target=Math.min(sizing.budget().records(),maxItems-transferred);
+                if(wanted.size()>=target||windowIds>=16384){
+                    transferred+=flushArchives(scans,wanted);windowIds=0;target=Math.min(sizing.budget().records(),maxItems-transferred);
+                }
+                if(inspected>=maxIds||target<=0){allComplete=false;break outer;}
+                int limit=Math.min(ARCHIVE_PAGE,Math.min(maxIds-inspected,target-wanted.size()));
+                if(limit<1)throw new IOException("Invalid archive inventory budget");
                 stage="Reading changed knowledge partition";
-                send(message("inventory").put("bucket",bucket).put("root",wantedPart.root()).put("after",after));
+                send(message("inventory").put("bucket",bucket).put("root",wantedPart.root()).put("after",after).put("limit",limit));
                 JSONObject answer=read();expect(answer,"inventory");
                 if(answer.getInt("bucket")!=bucket||!wantedPart.root().equals(answer.getString("root"))||answer.getInt("total")!=wantedPart.count())
                     throw new IOException("Manifest partition changed during session");
                 JSONArray ids=answer.getJSONArray("ids");boolean more=answer.getBoolean("more");
-                if(ids.length()>PAGE||(more&&ids.length()==0))throw new IOException("Invalid inventory page");
+                if(ids.length()>limit||(more&&ids.length()==0))throw new IOException("Invalid inventory page");
                 List<String> page=new ArrayList<>();String previous=after;
                 for(int i=0;i<ids.length();i++){
                     String id=ids.getString(i);
                     if(KnowledgeManifest.bucket(id)!=bucket||id.compareTo(previous)<=0)throw new IOException("Invalid partition order");
                     page.add(id);previous=id;
+                    if(!heldManifest.has(id))wanted.add(id);
                 }
-                int position=0;
-                while(position<page.size()&&inspected<maxIds&&transferred<maxItems){
-                    List<String> wanted=new ArrayList<>();
-                    int end=position;
-                    while(end<page.size()&&inspected+end-position<maxIds&&wanted.size()<Math.min(KnowledgeChunk.MAX_ITEMS,maxItems-transferred)){
-                        String id=page.get(end++);
-                        if(!heldManifest.has(id))wanted.add(id);
-                    }
-                    if(end==position)break;
-                    if(!wanted.isEmpty()){
-                        stage="Receiving compressed chunk";
-                        List<MeshItem> items=receiveChunk(wanted);transferred+=items.size();
-                    }
-                    int next=position;
-                    while(next<end&&heldManifest.has(page.get(next))){
-                        after=page.get(next++);inspected++;examined++;
-                    }
-                    if(next==position)throw new IOException("Chunk made no progress");
-                    position=next;
-                    external.saveInventoryProgress(channel.peerId,bucket,wantedPart,heldManifest.part(bucket),after,false);
-                    report();
-                }
-                if(position==page.size()&&!more){
-                    external.saveInventoryProgress(channel.peerId,bucket,wantedPart,heldManifest.part(bucket),"",true);
-                    done=true;break;
-                }
-                if(position<page.size())break;
+                scans.add(new Scan(bucket,wantedPart,page,!more));
+                inspected+=page.size();examined+=page.size();windowIds+=page.size();after=previous;
+                if(!more)break;
             }
-            if(!done){allComplete=false;break;}
         }
+        if(!scans.isEmpty())transferred+=flushArchives(scans,wanted);
         complete=allComplete;
-        send(message("release").put("more_pending",!complete));
-        report();
+        send(message("release").put("more_pending",!complete));report();
     }
     private void serve()throws Exception{
         stage="Serving public inventory";
@@ -311,30 +351,34 @@ final class EncounterSync {
                 }else{
                     after=inventoryCursor(peerGraph,knownRoot,root,after);available=catalog.tailMap(after,false).keySet();
                 }
+                int limit=peerChunks&&request.has("bucket")?request.optInt("limit",ARCHIVE_PAGE):PAGE;
+                if(limit<1||limit>ARCHIVE_PAGE)throw new IOException("Invalid inventory page limit");
                 JSONArray ids=new JSONArray();boolean more=false;offered.clear();
                 for(String id:available){
-                    if(ids.length()==PAGE){more=true;break;}
+                    if(ids.length()==limit){more=true;break;}
                     ids.put(id);offered.add(id);
                 }
                 JSONObject inventory=message("inventory").put("root",inventoryRoot).put("ids",ids).put("more",more).put("total",total);
                 if(peerChunks&&request.has("bucket"))inventory.put("bucket",bucket);
                 send(inventory);
-            }else if("want_chunk".equals(op)&&peerChunks){
-                JSONArray ids=request.getJSONArray("ids");
-                if(ids.length()<1||ids.length()>KnowledgeChunk.MAX_ITEMS||items+ids.length()>maxItems)throw new IOException("Invalid chunk request");
-                List<MeshItem> wanted=new ArrayList<>();Set<String> unique=new HashSet<>();
-                for(int i=0;i<ids.length();i++){
-                    String id=ids.getString(i);
-                    if(!unique.add(id)||!offered.contains(id)||!catalog.containsKey(id))throw new IOException("Invalid chunk member request");
-                    wanted.add(catalog.get(id));
+            }else if("want_archive".equals(op)&&peerChunks){
+                int count=request.getInt("count"),rawLimit=request.getInt("raw_limit"),wireLimit=request.getInt("wire_limit");
+                if(count<1||count>KnowledgeChunk.MAX_ITEMS||count>maxItems-items)throw new IOException("Invalid archive request");
+                KnowledgeChunk.limits(rawLimit,wireLimit);
+                List<String> ids=KnowledgeChunk.decodeIds(readBytes(count*32,KnowledgeChunk.MAX_ITEMS*32),count);
+                List<MeshItem> wanted=new ArrayList<>(count);
+                // Any ID in the frozen, authorized public catalog may be
+                // requested; the archive can span many inventory partitions.
+                for(String id:ids){
+                    MeshItem item=catalog.get(id);if(item==null)throw new IOException("Record not offered");wanted.add(item);
                 }
-                KnowledgeChunk.Packed chunk=KnowledgeChunk.pack(wanted);
-                send(message("chunk").put("codec",chunk.codec()).put("sha256",chunk.sha()).put("raw_size",chunk.rawSize()).put("count",chunk.count()));
-                check();channel.send(chunk.bytes());
-                JSONObject ack=read();expect(ack,"chunk_ack");
-                if(!chunk.sha().equals(ack.getString("sha256"))||chunk.count()!=ack.getInt("count"))throw new IOException("Invalid chunk receipt");
-                for(int i=0;i<chunk.count();i++)offered.remove(wanted.get(i).id());
-                items+=chunk.count();sent+=chunk.count();report();
+                KnowledgeChunk.Packed archive=KnowledgeChunk.pack(wanted,rawLimit,wireLimit);
+                send(message("archive").put("codec",archive.codec()).put("sha256",archive.sha()).put("raw_size",archive.rawSize())
+                    .put("wire_size",archive.bytes().length).put("count",archive.count()));
+                sendBytes(archive.bytes());
+                JSONObject ack=read();expect(ack,"archive_ack");
+                if(!archive.sha().equals(ack.getString("sha256"))||archive.count()!=ack.getInt("count"))throw new IOException("Invalid archive receipt");
+                items+=archive.count();sent+=archive.count();report();
             }else if("want".equals(op)){
                 String id=request.getString("id");
                 if(++items>maxItems||!offered.remove(id)||!catalog.containsKey(id))throw new IOException("Invalid or excessive want");
