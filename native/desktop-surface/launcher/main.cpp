@@ -245,6 +245,45 @@ static ComPtr<IUIAutomationElementArray> cached(IUIAutomation* u,IUIAutomationEl
 static bool masked(const RECT& r,const std::vector<RECT>& masks) {
     return std::any_of(masks.begin(),masks.end(),[&](const RECT& m){RECT overlap{};return IntersectRect(&overlap,&r,&m)!=FALSE;});
 }
+// A provider may not support cached raw-view queries (some older Win32
+// controls do not). Preserve useful static text through a bounded ordinary
+// control walk. Unknown or editable subtrees are skipped, never inspected.
+static void fallbackWalk(IUIAutomationTreeWalker* walker,IUIAutomationElement* root,const RECT& window,
+        UiaScan& scan,int depth,int& visits,Clock::time_point deadline) {
+    if(depth>22||visits>=768||Clock::now()>=deadline||scan.rows.size()>=256||scan.ownView)return;
+    ComPtr<IUIAutomationElement> node;
+    if(FAILED(walker->GetFirstChildElement(root,&node)))return;
+    while(node&&visits<768&&Clock::now()<deadline&&scan.rows.size()<256&&!scan.ownView){
+        ++visits;
+        BOOL hidden=TRUE,password=TRUE;CONTROLTYPEID type=0;
+        if(SUCCEEDED(node->get_CurrentIsOffscreen(&hidden))&&!hidden&&
+           SUCCEEDED(node->get_CurrentIsPassword(&password))&&!password&&
+           SUCCEEDED(node->get_CurrentControlType(&type))&&type!=UIA_EditControlTypeId&&
+           !((type==UIA_DocumentControlTypeId||type==UIA_CustomControlTypeId||type==UIA_ComboBoxControlTypeId)
+              &&editableDocument(node.Get()))){
+            if(type==UIA_DocumentControlTypeId&&ownViewName(nameOf(node.Get()))){
+                scan.ownView=true;scan.rows.clear();return;
+            }
+            if(labelKind(type)||type==UIA_ListItemControlTypeId||type==UIA_DataItemControlTypeId){
+                RECT bounds{},clip{};
+                if(SUCCEEDED(node->get_CurrentBoundingRectangle(&bounds))&&
+                   IntersectRect(&clip,&bounds,&window)&&!masked(clip,scan.masks))
+                    addText(scan.rows,nameOf(node.Get()),clip);
+            }
+            fallbackWalk(walker,node.Get(),window,scan,depth+1,visits,deadline);
+        }
+        ComPtr<IUIAutomationElement> next;
+        if(FAILED(walker->GetNextSiblingElement(node.Get(),&next)))return;
+        node=std::move(next);
+    }
+}
+static void fallbackUia(IUIAutomation* automation,IUIAutomationElement* root,const RECT& rect,UiaScan& scan){
+    ComPtr<IUIAutomationTreeWalker> walker;
+    if(SUCCEEDED(automation->get_ControlViewWalker(&walker))&&walker){
+        int visits=0;
+        fallbackWalk(walker.Get(),root,rect,scan,0,visits,Clock::now()+std::chrono::milliseconds(750));
+    }
+}
 static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
     UiaScan scan;
     RECT rect{};
@@ -283,7 +322,7 @@ static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
         }
     }
     // Do not fall back to unredacted pixels when the safety query failed.
-    if(!scan.maskReady)return scan;
+    if(!scan.maskReady){fallbackUia(automation,root.Get(),rect,scan);return scan;}
 
     ComPtr<IUIAutomationCondition> labels;
     for(auto type:{UIA_TextControlTypeId,UIA_HyperlinkControlTypeId,UIA_ButtonControlTypeId,
@@ -300,7 +339,7 @@ static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
     labels=combine(automation,labels.Get(),noPassword.Get(),true);
     auto nodes=cached(automation,root.Get(),labels.Get(),true,ok);
     count=0;
-    if(!ok||(nodes&&FAILED(nodes->get_Length(&count)))||count<0)return scan;
+    if(!ok||(nodes&&FAILED(nodes->get_Length(&count)))||count<0){fallbackUia(automation,root.Get(),rect,scan);return scan;}
     scan.complete=count<=8192;
     for(int k=0;k<std::min(count,8192);++k){
         ComPtr<IUIAutomationElement> node;RECT bounds{},clip{};CONTROLTYPEID type=0;
@@ -322,6 +361,7 @@ static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
     // Visible read-only ranges are a secondary semantic path (e.g. terminals).
     if(scan.rows.empty()&&scan.complete&&scan.masks.empty())
         readVisibleRanges(root.Get(),rect,scan.rows,Clock::now()+std::chrono::milliseconds(500));
+    if(scan.rows.empty()&&!scan.ownView)fallbackUia(automation,root.Get(),rect,scan);
     return scan;
 }
 static void CALLBACK foreground(HWINEVENTHOOK,DWORD,HWND,LONG,LONG,DWORD,DWORD) {
