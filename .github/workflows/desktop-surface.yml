@@ -50,6 +50,7 @@ jobs:
         run: |
           node --check chrome-extension/roots-translate/tree.js
           node --check chrome-extension/roots-translate/background.js
+          node --check chrome-extension/roots-translate/experience-dom.js
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
