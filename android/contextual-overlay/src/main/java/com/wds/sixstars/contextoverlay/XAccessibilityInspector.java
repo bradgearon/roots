@@ -21,7 +21,7 @@ final class XAccessibilityInspector {
     private static long request,deadline,nextSample,accepted;
     private static boolean previousSettled;
     private static final java.util.ArrayDeque<Frame> frames=new java.util.ArrayDeque<>();
-    private record Frame(String header,String body,String attributes){}
+    private record Frame(String header,String body,String attributes,int spanNodes,boolean settled){}
     record Snapshot(String status,String latest,String report,String attributes){}
     private XAccessibilityInspector(){}
 
@@ -42,7 +42,14 @@ final class XAccessibilityInspector {
             report.append(block);
         }
         Frame latest=frames.getFirst();
-        return new Snapshot(status,latest.header()+latest.body(),report.toString(),latest.attributes());
+        // A fast scroll can expose empty recycled cards as the latest frame.
+        // Prefer a settled frame with actual span data for detailed export.
+        Frame detailed=latest;
+        for(Frame frame:frames)if(frame.spanNodes()>0){
+            if(detailed.spanNodes()==0||frame.settled()&&!detailed.settled())detailed=frame;
+            if(detailed.settled())break;
+        }
+        return new Snapshot(status,latest.header()+latest.body(),report.toString(),detailed.attributes());
     }
     static synchronized Scan begin(boolean captureEnabled,boolean settled){
         long now=SystemClock.elapsedRealtime();
@@ -59,7 +66,7 @@ final class XAccessibilityInspector {
         if(previous!=null&&previous.body().equals(body)&&previous.attributes().equals(serialized))return;
         String header="Snapshot "+(++accepted)+" · "+java.time.Instant.now()+(scan.settled?" · settled":" · moving")+"\n"+
             "Nodes inspected: "+scan.count+" · nodes with text or description: "+scan.values.size()+(bounded||scan.truncated?" · report bounded":"")+"\n";
-        frames.addFirst(new Frame(header,body,serialized));
+        frames.addFirst(new Frame(header,body,serialized,scan.spanDetails.size(),scan.settled));
         while(frames.size()>MAX_FRAMES)frames.removeLast();
     }
 
@@ -70,6 +77,7 @@ final class XAccessibilityInspector {
         final List<Value> values=new ArrayList<>();
         final List<String> cards=new ArrayList<>();
         final List<String> metadata=new ArrayList<>();
+        final List<String> spanDetails=new ArrayList<>();
         final org.json.JSONArray attributes=new org.json.JSONArray();
         int attributeChars;
         final XPostMetadata.Probe metadataProbe;
@@ -102,6 +110,14 @@ final class XAccessibilityInspector {
                 .append(" window=").append(node.getWindowId());
             if(Build.VERSION.SDK_INT>=33)field(line,"uniqueId",node.getUniqueId());
             field(line,"text",value);field(line,"description",description);
+            org.json.JSONArray textSpans=XSpanAttributes.read(value),descriptionSpans=XSpanAttributes.read(description);
+            String textSpanSummary=XSpanAttributes.summary(textSpans),descriptionSpanSummary=XSpanAttributes.summary(descriptionSpans);
+            if(!textSpanSummary.isEmpty()||!descriptionSpanSummary.isEmpty()){
+                StringBuilder detail=new StringBuilder(path);
+                if(!textSpanSummary.isEmpty())detail.append("\n  text: ").append(clip(value)).append("\n  ").append(textSpanSummary.replace("\n","\n  "));
+                if(!descriptionSpanSummary.isEmpty())detail.append("\n  description: ").append(clip(description)).append("\n  ").append(descriptionSpanSummary.replace("\n","\n  "));
+                spanDetails.add(detail.toString());
+            }
             spans(line,"text",value);spans(line,"description",description);
             field(line,"hint",node.getHintText());
             if(Build.VERSION.SDK_INT>=28){
@@ -133,6 +149,7 @@ final class XAccessibilityInspector {
                     .put("windowId",node.getWindowId()).put("visible",visible).put("clickable",node.isClickable())
                     .put("childCount",node.getChildCount()).put("text",value==null?org.json.JSONObject.NULL:clip(value))
                     .put("contentDescription",description==null?org.json.JSONObject.NULL:clip(description))
+                    .put("textSpans",textSpans).put("descriptionSpans",descriptionSpans)
                     .put("attributes",line.toString()).put("frameworkNode",clip(node.toString()));
                 if(Build.VERSION.SDK_INT>=33)actual.put("uniqueId",node.getUniqueId());
                 int size=actual.toString().length();
@@ -151,6 +168,12 @@ final class XAccessibilityInspector {
             }
             out.append("\nOther visible text:\n");
             appendValues(out,values,cards,"",7400);
+            out.append("\nClickable span payloads (local IDs, not remote post IDs):\n");
+            if(spanDetails.isEmpty())out.append("  No clickable spans returned in this scan.\n");
+            for(String detail:spanDetails){
+                if(out.length()+detail.length()>8800){out.append("[More spans in JSON export.]\n");break;}
+                out.append(detail).append('\n');
+            }
             out.append("\nPost metadata (read-only):\n");
             for(String value:metadata){
                 if(out.length()+value.length()>9800){out.append("[Further metadata in node attributes.]\n");break;}
@@ -160,7 +183,8 @@ final class XAccessibilityInspector {
         }
         String serialized(){
             org.json.JSONObject result=new org.json.JSONObject();
-            try{result.put("format","roots.accessibility.node-attributes.v1").put("inspected",count)
+            try{result.put("format","roots.accessibility.node-attributes.v2").put("capturedAt",java.time.Instant.now().toString())
+                .put("settled",settled).put("spanNodes",spanDetails.size()).put("inspected",count)
                 .put("bounded",truncated).put("nodes",attributes);}catch(org.json.JSONException ignored){}
             return result.toString();
         }
