@@ -41,6 +41,13 @@ public final class MeshActivity extends Activity {
     private android.net.ConnectivityManager refreshNetworkManager;
     private android.net.ConnectivityManager.NetworkCallback refreshNetworkCallback;
     private String lastBoundHealth="";
+    private final Runnable refreshNearbyTick=new Runnable(){
+        @Override public void run(){
+            if(!foreground||isDestroyed())return;
+            refreshNearbyStatus();
+            refreshHandler.postDelayed(this,2000);
+        }
+    };
     private final Runnable refreshBoundTick=new Runnable(){
         @Override public void run(){
             if(!foreground||isDestroyed())return;
@@ -105,7 +112,7 @@ public final class MeshActivity extends Activity {
         analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         LinearLayout inbound=RootsUi.card(this,content);
         inbound.addView(RootsUi.text(this,"Receive knowledge",18,RootsUi.TEXT,true));
-        inbound.addView(RootsUi.text(this,"Use your saved Axon connection, or paste up to eight invitations to add or refresh peers. Leave the invitation box empty to use saved access. Only missing content is requested; private interests stay on this device.",13,RootsUi.MUTED,false));
+        inbound.addView(RootsUi.text(this,"With no entered invitation, Receive can refresh nearby public Axons as well as the selected private LAN Axon. Private LAN interests stay on this device.",13,RootsUi.MUTED,false));
         invitations=new EditText(this);invitations.setHint("Optional: new or refreshed peer invitations");invitations.setMinLines(2);
         invitations.setSaveEnabled(false); // Credentials use encrypted private storage, never Android view state.
         if(android.os.Build.VERSION.SDK_INT>=26)invitations.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
@@ -173,7 +180,7 @@ public final class MeshActivity extends Activity {
         }catch(Exception e){status.setText("Invalid Roots Mesh invitation.");}
     }
     @Override protected void onResume(){
-        super.onResume();foreground=true;foregroundGeneration++;MeshServingService.addObserver(servingObserver);MeshServingService.restore(this);refresh();scheduleBoundRefresh(0);
+        super.onResume();foreground=true;foregroundGeneration++;MeshServingService.addObserver(servingObserver);MeshServingService.restore(this);refresh();scheduleBoundRefresh(0);refreshHandler.removeCallbacks(refreshNearbyTick);refreshHandler.post(refreshNearbyTick);
         refreshNetworkManager=(android.net.ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
         if(refreshNetworkManager!=null){
             android.net.ConnectivityManager.NetworkCallback callback=new android.net.ConnectivityManager.NetworkCallback(){
@@ -190,7 +197,7 @@ public final class MeshActivity extends Activity {
         }
     }
     @Override protected void onPause(){
-        foreground=false;foregroundGeneration++;MeshServingService.removeObserver(servingObserver);refreshHandler.removeCallbacks(refreshBoundTick);
+        foreground=false;foregroundGeneration++;MeshServingService.removeObserver(servingObserver);refreshHandler.removeCallbacks(refreshBoundTick);refreshHandler.removeCallbacks(refreshNearbyTick);
         if(refreshNetworkManager!=null&&refreshNetworkCallback!=null)
             try{refreshNetworkManager.unregisterNetworkCallback(refreshNetworkCallback);}catch(RuntimeException ignored){}
         refreshNetworkCallback=null;refreshNetworkManager=null;super.onPause();
@@ -249,7 +256,7 @@ public final class MeshActivity extends Activity {
         servingStatus.setText(MeshServingService.status(this)+(listening?" · "+mesh.tlsIdentityStatus():""));
         enable(serve,!serving&&!busy);enable(copy,serving&&listening);enable(stop,serving);
         receive.setEnabled(!busy&&(NativeTree.available()||EncounterService.available(this)));
-        nearbyStatus.setText(EncounterBindings.get(this).availableCount()+" nearby Axon(s) · "+EncounterService.status()+"\n"+EncounterService.lastResult());
+        refreshNearbyStatus();
         invitations.setEnabled(!busy);interests.setEnabled(!busy);useAxon.setEnabled(!busy);
         String summary=mesh.connectionSummary();
         String state=mesh.connectionStateKey();
@@ -263,6 +270,10 @@ public final class MeshActivity extends Activity {
         updateDiagnosticActions();
         // Keep completed receive/start errors visible when returning to this screen.
         if(!busy&&status.getText().length()==0)status.setText(NativeTree.available()?mesh.status():"Native Tree unavailable. Connection testing is still available.");
+    }
+    private void refreshNearbyStatus(){
+        if(nearbyStatus==null)return;
+        nearbyStatus.setText(EncounterBindings.get(this).availableCount()+" nearby Axon(s) · "+EncounterService.status()+"\n"+EncounterService.lastResult());
     }
     private void refreshSavedAxon(){
         try{
@@ -456,7 +467,7 @@ public final class MeshActivity extends Activity {
     private void showAxon(){
         if(busy||!NativeTree.available())return;
         final AxonSubscription subscription;
-        try{subscription=AxonSubscription.load(this);if(subscription==null){axonStatus.setText("No saved .axon subscription");return;}}
+        try{subscription=AxonSubscription.load(this);if(subscription==null){axonStatus.setText("No private LAN .axon subscription. Nearby Axons use all published topics; see Manage nearby exchange.");return;}}
         catch(Exception e){axonStatus.setText(e.getMessage());return;}
         final String lang=new OverlayPreferences(this).targetLanguage();
         axonStatus.setText("Calculating local flow…");
@@ -475,8 +486,8 @@ public final class MeshActivity extends Activity {
         // of the manually saved private LAN subscription. Explicit LAN input
         // remains authoritative and is never silently replaced.
         final boolean noDraft=invitations.getText().toString().trim().isEmpty();
-        final boolean nearby=noDraft&&EncounterBindings.get(this).availableCount()>0;
         final boolean lanSelected=useAxon.isChecked()&&new java.io.File(getNoBackupFilesDir(),"subscription.axon").isFile();
+        final boolean nearby=EncounterReceivePolicy.nearby(noDraft,lanSelected,EncounterBindings.get(this).availableCount(),EncounterService.available(this)&&EncounterSettings.enabled(this));
         String nearbyRequest=nearby?EncounterService.requestReceive(this):"";
         if(nearby&&(!lanSelected||!NativeTree.available())){
             status.setText(nearbyRequest);refresh();return;
