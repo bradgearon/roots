@@ -256,6 +256,11 @@ public final class TreeRuntime {
         if(!valid(body)||!valid(text))return false;
         return accept(java.util.Arrays.asList(body,text),epoch);
     }
+    public boolean recordLocalized(String key,String original,String target,long epoch){
+        if(!enabled()||captureEpoch.get()!=epoch||key==null||!key.startsWith("local:x:")||target==null||!target.matches("[a-z]{2,3}"))return false;
+        NativeTree.Observation row=new NativeTree.Observation("record.x."+target+".localized",key,original,target,System.currentTimeMillis());
+        return valid(row)&&accept(java.util.Collections.singletonList(row),epoch);
+    }
     /** Explicit local edits/imports do not require screen-capture permission.
      * Call from a worker, never the accessibility/UI thread. */
     public long storeExplicit(List<NativeTree.Observation> observations){return storeExplicit(observations,captureEpoch.get());}
