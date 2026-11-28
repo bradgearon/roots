@@ -1,0 +1,42 @@
+using Wds.Roots.Tree;
+
+namespace Wds.Roots.Host;
+
+/// <summary>
+/// Local-only view of Surface experience. No catalog, Mesh, export, or
+/// peer-compute reference. The watcher is an independent WAL writer.
+/// </summary>
+internal static class DesktopExperienceTree
+{
+    private static string Database()
+    {
+        string local=Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if(string.IsNullOrWhiteSpace(local))throw new InvalidOperationException("Missing local data directory.");
+        return Path.Combine(local,"Roots","Experience","experience.db");
+    }
+    private static T Read<T>(Func<NativeTree,T> read,T empty)
+    {
+        string path=Database();
+        if(!File.Exists(path))return empty;
+        using var tree=new NativeTree(path);
+        return read(tree);
+    }
+    public static (long Count,long Revision) Status()=>Read(t=>(t.Count(),t.Revision()),(0L,0L));
+    public static IReadOnlyList<RecordMember> Records(string term,long beforeMs,long beforeSequence,uint limit,long agent)
+        =>Read(t=>t.RecordsByTime(term,agent,beforeMs,beforeSequence,limit),Array.Empty<RecordMember>() as IReadOnlyList<RecordMember>);
+    public static IReadOnlyList<BranchAgent> Branches()
+        =>Read(t=>t.Agents(),Array.Empty<BranchAgent>() as IReadOnlyList<BranchAgent>);
+    public static float[] Weights(long sequence)
+        =>Read(t=>t.FragmentWeights(sequence),Array.Empty<float>());
+    public static long AddBranch(string name,string term)
+    {
+        string path=Database();
+        if(!File.Exists(path))throw new InvalidOperationException("Start Surface before creating an Experience branch.");
+        using var tree=new NativeTree(path);return tree.CreateAgent(name,term);
+    }
+    public static void RemoveBranch(long id)
+    {
+        string path=Database();if(!File.Exists(path))return;
+        using var tree=new NativeTree(path);tree.RemoveAgent(id);
+    }
+}
