@@ -98,9 +98,13 @@ final class XPostDetailContextService {
     static OpenedBody selectOpenedBody(java.util.List<Surface> visible,int width,int height,int headingBottom){
         if(width<=0||height<=0)return null;
         int firstReplyTop=height;
+        for(Surface surface:visible)if(surface.node().card()&&!surface.cardOwner().isEmpty()&&surface.top()>headingBottom)
+            firstReplyTop=Math.min(firstReplyTop,surface.top());
         java.util.List<String> excluded=new java.util.ArrayList<>();
         int headerBottom=-1;
-        for(Surface surface:visible){
+        java.util.List<Surface> ordered=new java.util.ArrayList<>(visible);
+        ordered.sort(java.util.Comparator.comparingInt(Surface::top));
+        for(Surface surface:ordered){
             XTimelineCardRecords.Node n=surface.node();
             String r=role(n.id()),cls=n.className().toLowerCase(Locale.ROOT);
             if(n.header()||XAuthorNameHeuristics.isNameId(r)||isReplyContextId(r)
@@ -108,8 +112,6 @@ final class XPostDetailContextService {
                 ||cls.endsWith(".radiobutton")||cls.endsWith(".checkbox")){
                 excluded.add(n.path());
             }
-            if(!surface.cardOwner().isEmpty()&&n.card()&&surface.top()>headingBottom)
-                firstReplyTop=Math.min(firstReplyTop,surface.top());
             String label=surface.value().trim();
             // The opened tweet normally has a stacked account header; a
             // separate @handle is especially useful when the text has no ID.
@@ -129,7 +131,8 @@ final class XPostDetailContextService {
             String text=TextFingerprint.normalized(value);
             if(!n.primary()||text.isEmpty()||text.length()>1100||surface.width()<Math.max(20,width/30)
                 ||surface.height()<8||surface.bottom()<=headingBottom||surface.top()<0||
-                surface.top()>=height||chrome(text,id,n.className()))continue;
+                surface.top()>=height||(!n.bodyRole()&&!n.bodySpan()&&chrome(text,id,n.className()))||
+                (n.bodyRole()||n.bodySpan())&&PostTextHeuristics.isUiLabel(text,id,n.className()))continue;
             boolean excludedPath=false;
             for(String path:excluded)if(within(n.path(),path)){excludedPath=true;break;}
             if(excludedPath)continue;
