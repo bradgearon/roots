@@ -127,7 +127,7 @@ final class AutoOverlaySceneController {
         int nameCount=0;
         for(TextCandidate candidate:candidates){
             if(nameCount>=MAX_VISIBLE)break;
-            if(!candidate.authorName || candidate.author==null || !seen.add(candidate.fingerprint))continue;
+            if(!candidate.authorName || candidate.author==null || !seen.add(candidate.fingerprint+"@"+candidate.bounds.flattenToString()))continue;
             boolean foreign=AutoTranslationEligibilityService.accepts(candidate,preferences.targetLanguage());
             if(!foreign&&!candidate.author.truncated)continue;
             Rect n=candidate.bounds, avatar=candidate.avatarBounds;
@@ -149,7 +149,7 @@ final class AutoOverlaySceneController {
             boolean translatable = AutoTranslationEligibilityService.accepts(
                     candidate, preferences.targetLanguage());
             if ((!translatable && !translations.containsKey(candidate.fingerprint))
-                    || !seen.add(candidate.fingerprint)) continue;
+                    || !seen.add(candidate.fingerprint+"@"+candidate.bounds.flattenToString())) continue;
             AutoInlinePlacementService.Placement rectangle =
                     AutoInlinePlacementService.locate(
                             candidate.bounds.left, candidate.bounds.top,
@@ -171,13 +171,17 @@ final class AutoOverlaySceneController {
 
         if (scrolling) expanded.hide();
         long previousVersion = positions.version();
-        positions.publish(observations, scrolling, nowMs);
+        positions.publishScene(observations, scrolling, nowMs);
         // A missing stationary post gets 1.1 seconds' grace. There may be no
         // later accessibility event, so expire it with ONE delayed frame.
         main.removeCallbacks(pruneMissing);
         long nextExpiry = positions.nextExpiryDelayMs(nowMs);
         if (nextExpiry >= 0L) main.postDelayed(pruneMissing, nextExpiry);
-        if (previousVersion != positions.version()) frames.request();
+        if (previousVersion != positions.version()) {
+            // A previously rendered buffer describes obsolete geometry.
+            surfaces.invalidateGeometry();
+            frames.request();
+        }
     }
 
     private final Runnable pruneMissing = () -> {
@@ -195,6 +199,7 @@ final class AutoOverlaySceneController {
         if (destroyed) return;
         expanded.hide();
         positions.applyMeasuredScroll(deltaX, deltaY);
+        surfaces.invalidateGeometry();
         frames.request();
     }
 
@@ -212,7 +217,7 @@ final class AutoOverlaySceneController {
 
     /** A translation arrives without any AccessibilityService tree scan. */
     void publishPartial(String id,String prefix){
-        if(destroyed||!positions.contains(id)||prefix==null||prefix.trim().isEmpty()||translations.containsKey(id))return;
+        if(destroyed||!positions.containsContent(id)||prefix==null||prefix.trim().isEmpty()||translations.containsKey(id))return;
         TranslationState state=partials.get(id);
         if(state==null){state=new TranslationState(id);partials.put(id,state);}
         if(!prefix.equals(state.translation)){state.translation=prefix;state.invalidateLayout();frames.request();}
@@ -220,7 +225,7 @@ final class AutoOverlaySceneController {
     void clearPartial(String id){if(partials.remove(id)!=null)frames.request();}
     void publishTranslation(String fingerprint, String translation) {
         if (destroyed || fingerprint == null || translation == null ||
-                translation.trim().isEmpty() || !positions.contains(fingerprint)) return;
+                translation.trim().isEmpty() || !positions.containsContent(fingerprint)) return;
         clearPartial(fingerprint);
         TranslationState state = translations.get(fingerprint);
         if (state == null) {
@@ -247,10 +252,11 @@ final class AutoOverlaySceneController {
 
         int translatedCount=0;
         for (AutoOverlayPositionStore.Located item : located) {
-            boolean name=item.id.startsWith("name:");
-            TranslationState state=translations.get(item.id);
-            boolean streaming=state==null&&partials.containsKey(item.id);
-            if(streaming)state=partials.get(item.id);
+            String content=AutoOverlayPositionStore.contentId(item.id);
+            boolean name=content.startsWith("name:");
+            TranslationState state=translations.get(content);
+            boolean streaming=state==null&&partials.containsKey(content);
+            if(streaming)state=partials.get(content);
             if(state==null || state.translation==null){
                 // A clipped original is still useful while its translation
                 // is pending, already localized, or uncertain.
@@ -259,7 +265,7 @@ final class AutoOverlaySceneController {
                     ensureNameAction(item.id,item.authorName,item.nameDetails,palette);
                 }else removeNameAction(item.id);
                 removeTweetAction(item.id);
-                if(preferences.showTranslationActivity() && activeTranslations.contains(item.id)){
+                if(preferences.showTranslationActivity() && activeTranslations.contains(content)){
                     // A tiny touch-through dot inside the current source rectangle.
                     int size=Math.min(dp(7),Math.min(item.rectangle.width,item.rectangle.height));
                     if(size>0)painted.add(new AutoOverlaySceneView.TextItem(
@@ -368,7 +374,7 @@ final class AutoOverlaySceneController {
                     placement.width, placement.height, false);
             params.setTitle("Roots clipped tweet details");
             view.setOnClickListener(v -> {
-                TranslationState state = translations.get(id);
+                TranslationState state = translations.get(AutoOverlayPositionStore.contentId(id));
                 if (state == null || state.translation == null) return;
                 expanded.toggleTweet(id, state.translation);
                 if (expanded.isShowing("tweet:" + id)) raiseAction(view, params);
