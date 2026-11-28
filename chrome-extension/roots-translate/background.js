@@ -308,6 +308,15 @@ function cleanExperienceSnapshot(raw,sender){
   const snapshot={documentKey:raw.documentKey,host,rows};
   return new TextEncoder().encode(JSON.stringify(snapshot)).length<=96*1024?snapshot:null;
 }
+async function injectFocusedExperience(){
+  if(!await browserExperienceEnabled())return;
+  const tabs=await chrome.tabs.query({active:true,lastFocusedWindow:true});
+  const tab=tabs[0];if(!tab?.id||tab.incognito||!/^https?:\/\//.test(tab.url||""))return;
+  const win=await chrome.windows.get(tab.windowId);
+  if(win.focused)await chrome.scripting.executeScript({target:{tabId:tab.id},files:["experience-dom.js"]}).catch(()=>{});
+}
+chrome.tabs.onActivated.addListener(()=>{void injectFocusedExperience().catch(()=>{});});
+chrome.windows.onFocusChanged.addListener(()=>{void injectFocusedExperience().catch(()=>{});});
 chrome.permissions.onRemoved.addListener(()=>{
   void (async()=>{if(!await chrome.permissions.contains({origins:experienceDomOrigins}))await configureExperienceDom(false);})().catch(()=>{});
 });
