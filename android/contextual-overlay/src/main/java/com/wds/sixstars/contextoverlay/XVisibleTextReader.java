@@ -119,7 +119,7 @@ public final class XVisibleTextReader {
                     if (child != null) queue.add(new ScanNode(child,sourceAllowed,inspector==null?null:entry.path()+"/"+i));
                 }
                 android.os.Bundle inspectedMetadata=null;
-                if(inspector!=null&&!inspector.truncated&&node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())){
+                if(inspector!=null&&node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())){
                     try{
                         Rect bounds=new Rect();node.getBoundsInScreen(bounds);
                         if(node.isVisibleToUser()||XPostSpatialAnalyzer.onScreen(bounds,width,height)||order==1)
