@@ -18,15 +18,16 @@ final class XTimelineCardRecords {
     private static final Pattern TIME=Pattern.compile("(?i)(?:[·•]\\s*)?(?:\\d+\\s*[smhdwy]|\\d{1,2}\\s+[\\p{L}]{3,12}(?:\\s+\\d{2,4})?|[\\p{L}]{3,12}\\s+\\d{1,2}(?:,?\\s+\\d{2,4})?)");
     private static final Pattern COUNT=Pattern.compile("(?i)\\d[\\d,.\\s]*(?:[kmb万億])?");
     record Node(int order,String path,String id,String className,String text,String description,
-                boolean card,boolean header,boolean bodyRole,boolean bodySpan,boolean primary,List<String> links){
+                boolean card,boolean header,boolean bodyRole,boolean bodySpan,boolean primary,List<String> links,String language){
         Node{
             id=id==null?"":id;className=className==null?"":className;
             text=text==null?"":text;description=description==null?"":description;
             links=links==null?List.of():List.copyOf(links);
+            language=PostLanguage.code(language);
         }
     }
     record Field(String role,String value){}
-    record Post(String cardPath,int bodyOrder,String key,String body,List<Field> fields){}
+    record Post(String cardPath,int bodyOrder,String key,String body,List<Field> fields,String language){}
     record Result(List<Post> posts,Map<Integer,String> cardByOrder){}
 
     static boolean under(String path,String parent){
@@ -76,9 +77,7 @@ final class XTimelineCardRecords {
         }
         if(header==null)return null;
         String author="",handle="",time="";
-        List<Node> headerNodes=new ArrayList<>();
         for(Node n:nodes)if(n.primary()&&under(n.path(),header.path())){
-            headerNodes.add(n);
             String value=n.text().trim();
             if(HANDLE.matcher(value).matches()){
                 if(!handle.isEmpty()&&!handle.equalsIgnoreCase(value))return null;
@@ -90,13 +89,22 @@ final class XTimelineCardRecords {
         // No provisional author-only key for a clipped header: otherwise the
         // same post is duplicated when its @handle comes into view later.
         if(handle.isEmpty())return null;
+        // Quoted/embedded headers can be exposed without a named container.
+        // Their descendants are context, not this card's source or body.
+        java.util.Set<String> contextBranches=new java.util.HashSet<>();
+        for(Node n:nodes)if((n.header()&&!under(n.path(),header.path()))||"Quote".equalsIgnoreCase(n.description().trim())){
+            String sub=branch(n.path(),card);if(!sub.isEmpty()&&!sub.equals(header.path()))contextBranches.add(sub);
+        }
         Node body=null;int best=0;boolean ambiguous=false;
         for(Node n:nodes){
             if(!n.primary()||n.text().isBlank()||under(n.path(),header.path())
                 ||n.text().length()>4000)continue;
             String direct=branch(n.path(),card);
-            if(direct.isEmpty()||pathCompare(direct,header.path())<=0)continue;
-            int strength=n.bodyRole()?4:n.bodySpan()&&parent(n.path()).equals(card)?3:0;
+            if(direct.isEmpty()||contextBranches.contains(direct)||pathCompare(direct,header.path())<=0)continue;
+            String text=n.text().trim();
+            boolean directText=parent(n.path()).equals(card)&&n.className().endsWith("TextView")&&!isControl(text)
+                &&!COUNT.matcher(text).matches()&&!HANDLE.matcher(text).matches()&&!TIME.matcher(text).matches();
+            int strength=n.bodyRole()?4:n.bodySpan()&&parent(n.path()).equals(card)?3:directText?1:0;
             if(strength==0)continue;
             if(strength>best){body=n;best=strength;ambiguous=false;}
             else if(strength==best&&!TextFingerprint.normalized(body.text()).equals(TextFingerprint.normalized(n.text())))ambiguous=true;
@@ -110,7 +118,7 @@ final class XTimelineCardRecords {
         List<Field> fields=new ArrayList<>();
         put(fields,"body",original);put(fields,"author",author);put(fields,"handle",handle);put(fields,"time",time);
         String link="";boolean conflict=false;
-        for(Node n:nodes)if(n.primary()){
+        for(Node n:nodes)if(n.primary()&&!contextBranches.contains(branch(n.path(),card))){
             // Explicit links only. Never treat a URL appearing in post prose or
             // a quoted card as the source of this conversation.
             for(String url:n.links()){
@@ -143,7 +151,7 @@ final class XTimelineCardRecords {
             // Reply/Repost/Like/Impressions each live in their own sibling
             // branch in the observed X Compose tree.
             String count="";boolean countConflict=false;
-            if(!metric.isEmpty()&&!metricConflict){
+            if(!metric.isEmpty()&&!metricConflict&&!contextBranches.contains(sub)){
                 for(Node n:members)if(n.primary()&&COUNT.matcher(n.text().trim()).matches()){
                     String value=n.text().trim();
                     if(!count.isEmpty()&&!count.equals(value))countConflict=true;
@@ -158,10 +166,10 @@ final class XTimelineCardRecords {
                 if(!value.isEmpty()&&!value.equals(author)&&!value.equals(handle)&&!value.equals(time)
                     &&!value.equals(original)&&!isControl(value)&&!COUNT.matcher(value).matches()
                     &&!HANDLE.matcher(value).matches()&&!TIME.matcher(value).matches())
-                    put(fields,n.primary()?"text":"context",value);
+                    put(fields,n.primary()&&!contextBranches.contains(sub)?"text":"context",value);
             }
         }
-        return new Post(card,body.order(),key,original,List.copyOf(fields));
+        return new Post(card,body.order(),key,original,List.copyOf(fields),PostLanguage.hint(original,body.language()));
     }
     private static boolean isMedia(String description){
         String s=description.toLowerCase(java.util.Locale.ROOT);
