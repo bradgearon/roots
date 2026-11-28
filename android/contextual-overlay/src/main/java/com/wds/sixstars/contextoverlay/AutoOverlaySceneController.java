@@ -177,11 +177,9 @@ final class AutoOverlaySceneController {
         main.removeCallbacks(pruneMissing);
         long nextExpiry = positions.nextExpiryDelayMs(nowMs);
         if (nextExpiry >= 0L) main.postDelayed(pruneMissing, nextExpiry);
-        if (previousVersion != positions.version()) {
-            // A previously rendered buffer describes obsolete geometry.
-            surfaces.invalidateGeometry();
-            frames.request();
-        }
+        if (previousVersion != positions.version()) frames.request();
+        // The compositor compares the actual painted text. Changes to an
+        // untranslated candidate or a badge must not blank other translations.
     }
 
     private final Runnable pruneMissing = () -> {
@@ -198,18 +196,20 @@ final class AutoOverlaySceneController {
     void measuredScroll(int deltaX, int deltaY) {
         if (destroyed) return;
         expanded.hide();
-        positions.applyMeasuredScroll(deltaX, deltaY);
-        surfaces.invalidateGeometry();
-        frames.request();
+        // Accessibility scroll events are delivered asynchronously. Their
+        // displacement may already be included in the last measured bounds,
+        // or may belong to a nested scroller. Do not offset the painted scene.
+        // The service schedules a new authoritative geometry snapshot.
     }
 
     /** No reliable delta reported: hide until the next measured snapshot. */
     void uncertainScroll() {
         if (destroyed) return;
         expanded.hide();
+        if(!positions.isTrusted())return;
         positions.suspendUntilMeasured();
-        // Do not wait for a GPU buffer to become available to erase stale
-        // screen coordinates. The next measured snapshot can repaint.
+        // Reserved for a genuinely unverified window/geometry, not every
+        // scroll event or minor candidate update.
         surfaces.present(java.util.Collections.emptyList());
         for(String id:new java.util.HashSet<>(controls.keySet()))removeControls(id);
         frames.request();
