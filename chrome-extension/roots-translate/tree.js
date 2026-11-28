@@ -131,7 +131,7 @@ async function refreshSelected(force=false){
       else if(previous){selectedAgent=0;await load(true);}
     }
     const canRefresh=el("liveKnowledge").checked&&pages<=1&&!loading&&!el("items").querySelector("details[open]")&&!el("term").matches(":focus");
-    if(changed&&canRefresh){await load(true,true);viewRevision=state.revision;}
+    if(changed&&canRefresh){await load(true,true);if(epoch===viewEpoch&&source===selectedSource)viewRevision=state.revision;}
     else if(changed){el("knowledgeSummary").textContent+=" · new data available";}
     else viewRevision=state.revision;
   }catch(e){if(epoch===viewEpoch)el("knowledgeSummary").textContent="View unavailable · "+e.message;}
@@ -198,9 +198,13 @@ handle("listen","click",async()=>{await command("listen",{enabled:!latest?.mesh?
 handle("receive","click",async()=>{await command("receive");status("Receive started in the desktop host.");await refresh();});
 handle("bind","submit",async()=>{await command("bind",{invitation:el("invitation").value.trim()});el("invitation").value="";status("Axon bound.");await refresh();});
 handle("branch","submit",async()=>{await command("viewAddBranch",{source:selectedSource,name:el("branchName").value,term:el("branchTerm").value});el("branchName").value="";el("branchTerm").value="";await refreshSelected(true);});
-handle("compile","click",async()=>{el("compile").disabled=true;try{const r=await command("compile",{language:el("language").value});status(r.available?"Localized Tree snapshot compiled.":"No localized knowledge yet.");}finally{el("compile").disabled=false;}});
+handle("compile","click",async()=>{el("compile").disabled=true;const source=selectedSource;try{
+  const r=await command("viewCompile",{source,language:el("language").value});
+  status(source==="experience"?(r.available?"Private Experience GGUF compiled · revision "+r.revision:"No current Experience snapshot published; retry after capture settles."):(r.available?"Localized Tree snapshot compiled.":"No localized knowledge yet."));
+}finally{el("compile").disabled=false;}});
 handle("knowledgeSource","change",async()=>{
   selectedSource=el("knowledgeSource").value;viewRevision=null;branchSignature="";selectedAgent=0;
+  el("compile").textContent=selectedSource==="experience"?"Compile private Experience GGUF":"Compile localized GGUF";
   el("branchFilter").replaceChildren(new Option("All branches","0"));
   el("items").replaceChildren();generation++;loading=false;
   await Promise.all([refreshSelected(true),load(true)]);
