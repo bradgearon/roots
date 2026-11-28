@@ -13,7 +13,16 @@ section{padding:18px 0;border-bottom:1px solid #384352}
 input:not([type=checkbox]),button,select{border:1px solid #536071;border-radius:7px;background:#1d2632;color:inherit;padding:8px 12px;font:inherit}
 input:not([type=checkbox]){min-width:140px;flex:1}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}a{color:#80c6f4}
 small,.muted{color:#aeb9c6}article{padding:18px 0;border-bottom:1px solid #384352;overflow-wrap:anywhere}
-article p{white-space:pre-wrap;margin:8px 0}details{color:#b7c4d3;margin-top:8px}details p{font-size:13px}
+article p{white-space:pre-wrap;margin:8px 0}
+.timeline-day{position:sticky;top:0;z-index:1;background:#10141b;padding:12px 0 7px;margin:10px 0 0;color:#aeb9c6;font-size:13px;letter-spacing:.04em;border-bottom:1px solid #384352}
+.screen-card{border:1px solid #384352;border-radius:10px;background:#151c25;margin:12px 0;padding:15px 17px}
+.screen-preview{padding-left:12px;border-left:2px solid #4c768d;margin:12px 0;color:#dce4ee}
+.screen-preview p{margin:4px 0;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.screen-observation{border-top:1px solid #384352;padding:10px 0}
+.screen-observation p{font-size:14px;color:#e8eaf0}
+.screen-card>details>summary{cursor:pointer;color:#9bcce5;font-weight:600}
+.screen-card>details>summary:hover{color:#fff}
+details{color:#b7c4d3;margin-top:8px}details p{font-size:13px}
 #message{min-height:1.5em}
 .weight-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;font:12px ui-monospace,monospace;margin:8px 0}
 .weight-grid span{padding:4px;border-radius:3px;background:#1d2632;text-align:center}
@@ -48,7 +57,7 @@ article p{white-space:pre-wrap;margin:8px 0}details{color:#b7c4d3;margin-top:8px
 <section><h2>Branches</h2>
 <form id="branch" class="row"><input id="branchName" placeholder="Name" aria-label="Branch name" maxlength="160" required><input id="branchTerm" placeholder="Interest" aria-label="Branch interest" maxlength="512" required><button>Create branch</button></form>
 <div id="branches"></div></section>
-<section><h2>Knowledge</h2>
-<form id="search" class="row"><input id="term" placeholder="Search the Tree" aria-label="Search" maxlength="512"><button>Search</button><select id="view" aria-label="Knowledge view"><option value="records">Grouped records</option><option value="feed">All fragments</option></select><select id="branchFilter" aria-label="Filter by branch"><option value="0">All branches</option></select></form>
+<section><h2>Knowledge timeline</h2><p class="muted" id="timelineOrder">Newest first · by observation time</p>
+<form id="search" class="row"><input id="term" placeholder="Search the Tree" aria-label="Search" maxlength="512"><button>Search</button><select id="view" aria-label="Knowledge view"><option value="screens" hidden disabled>Screen groups</option><option value="records" selected>Grouped records</option><option value="feed">All fragments</option></select><select id="branchFilter" aria-label="Filter by branch"><option value="0">All branches</option></select></form>
 <div id="items"></div><button id="more" hidden>Load more</button></section>
 </main><script src="tree.js"></script></body></html>
