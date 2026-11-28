@@ -41,7 +41,7 @@ final class XKnowledgeRecords {
     static boolean hasPostMetadataRole(String id){
         String role=roleId(id);
         return !secondaryRole(role)&&(isPermalinkRole(role)||PostTextHeuristics.isPostContainerId(role)
-            ||PostTextHeuristics.isPostTextId(role));
+            ||PostTextHeuristics.isPostTextId(role)||XPostMetadata.timelineHeader(id));
     }
     private static void sourceLink(List<Sample> out,String link,String id,Rect bounds){
         if(link.isEmpty()||bounds.isEmpty())return;
@@ -87,12 +87,12 @@ final class XKnowledgeRecords {
     static void sampleMetadata(List<Sample> out,android.os.Bundle extras,String id,Rect bounds){
         if(extras==null||!hasPostMetadataRole(id))return;
         for(String key:extras.keySet()){
-            String name=key.toLowerCase(Locale.ROOT);
-            name=name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf(':'))+1)
-                .replace("_","");
+            String name=XPostMetadata.keyRole(key);
             try{
                 Object value=extras.get(key);
-                if(name.matches("(tweet|post|status)(id|idstr)")){
+                if(XPostMetadata.TEST_TAG.equals(key)){
+                    sourceLink(out,XPostMetadata.linkFromTag(value),id,bounds);
+                }else if(name.matches("(tweet|post|status)(id|idstr)")){
                     sourceLink(out,XPostLink.fromRemoteId(value),id,bounds);
                 }else if(name.matches("(tweet|post|status)(url|uri|link|permalink)|permalink")&&value!=null){
                     sourceLink(out,XPostLink.canonical(value.toString()),id,bounds);
