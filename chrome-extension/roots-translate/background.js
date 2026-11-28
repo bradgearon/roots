@@ -217,13 +217,14 @@ async function treeCall(path, method="GET", body, timeout=10000) {
   const settings=await chrome.storage.local.get(["token"]);
   if(!validToken(settings.token))return {ok:false,error:"configure_token"};
   try{
+    const signal=AbortSignal.timeout(timeout);
     const response=await fetch(TREE_BASE+path,{
       method,headers:{"Content-Type":"application/json","X-SixStars-Token":settings.token},
-      body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)
+      body:body===undefined?undefined:JSON.stringify(body),signal
     });
     const result=await response.json().catch(()=>({}));
     return {...result,ok:response.ok&&result.ok!==false,error:response.ok?result.error:(result.error||"HTTP "+response.status)};
-  }catch{return {ok:false,error:"tree_service_unavailable"};}
+  }catch(e){return {ok:false,error:e?.name==="TimeoutError"?"tree_query_timeout":"tree_service_unavailable"};}
 }
 function allowedTreePage(sender) {
   return sender.id===chrome.runtime.id&&
@@ -253,14 +254,130 @@ function cleanTreePost(raw) {
   // Bound the full UTF-8 envelope, not just JavaScript string lengths.
   return new TextEncoder().encode(JSON.stringify(out)).length<=90*1024?out:null;
 }
+const experienceDomOrigins=["http://*/*","https://*/*"];
+const experienceDomId="roots-experience-dom-v1";
+async function browserExperienceEnabled(){
+  const settings=await chrome.storage.local.get(["experienceDom"]);
+  return settings.experienceDom===true&&await chrome.permissions.contains({origins:experienceDomOrigins});
+}
+async function configureExperienceDom(enabled){
+  if(enabled&&!await chrome.permissions.contains({origins:experienceDomOrigins}))
+    return {ok:false,error:"site_permission_required"};
+  await chrome.storage.local.set({experienceDom:enabled});
+  const scripts=await chrome.scripting.getRegisteredContentScripts({ids:[experienceDomId]});
+  if(!enabled){
+    if(scripts.length)await chrome.scripting.unregisterContentScripts({ids:[experienceDomId]});
+    return {ok:true,enabled:false};
+  }
+  if(!scripts.length)await chrome.scripting.registerContentScripts([{
+    id:experienceDomId,matches:experienceDomOrigins,js:["experience-dom.js"],
+    allFrames:false,runAt:"document_idle",persistAcrossSessions:true
+  }]);
+  // Pick up the current page without waiting for a reload. Restricted pages
+  // and incognito tabs remain untouched; normal navigation uses registration.
+  const tabs=await chrome.tabs.query({active:true,lastFocusedWindow:true});
+  const tab=tabs[0];
+  if(tab?.id&&!tab.incognito&&/^https?:\/\//.test(tab.url||""))
+    await chrome.scripting.executeScript({target:{tabId:tab.id},files:["experience-dom.js"]}).catch(()=>{});
+  return {ok:true,enabled:true};
+}
+async function experienceForeground(sender){
+  if(sender.id!==chrome.runtime.id||sender.frameId!==0||sender.tab?.incognito||
+     sender.documentLifecycle&&sender.documentLifecycle!=="active"||!Number.isInteger(sender.tab?.id))return false;
+  try{
+    const url=new URL(sender.url);
+    if(!["http:","https:"].includes(url.protocol))return false;
+    const tab=await chrome.tabs.get(sender.tab.id),win=await chrome.windows.get(tab.windowId);
+    return tab.active&&!tab.incognito&&win.focused&&tab.url===sender.url;
+  }catch{return false;}
+}
+function cleanExperienceSnapshot(raw,sender){
+  if(!raw||typeof raw.documentKey!=="string"||!/^[0-9a-f-]{36}$/i.test(raw.documentKey)||
+     !Array.isArray(raw.rows)||raw.rows.length<1||raw.rows.length>80)return null;
+  let host;
+  try{host=new URL(sender.url).hostname;}catch{return null;}
+  if(!host||host.length>253)return null;
+  let total=0;const rows=[];
+  for(const r of raw.rows){
+    if(typeof r?.text!=="string"||!r.text.trim()||r.text.includes("\0")||r.text.length>1800||
+       !Array.isArray(r.bounds)||r.bounds.length!==4||!r.bounds.every(n=>Number.isSafeInteger(n)&&n>=0&&n<=32768)||
+       r.bounds[0]>=r.bounds[2]||r.bounds[1]>=r.bounds[3])return null;
+    total+=r.text.length;if(total>16000)return null;
+    const row={text:r.text,bounds:r.bounds};
+    // Accept legacy extension snapshots, but do not invent their page order.
+    const fields=["anchor","start","end","pageX","pageY","order"];
+    if(fields.some(k=>r[k]!==undefined)){
+      if(!fields.every(k=>Number.isSafeInteger(r[k]))||
+         r.anchor<1||r.anchor>1000000000||r.start<0||r.end<=r.start||r.end>1000000000||
+         Math.abs(r.pageX)>1000000000||Math.abs(r.pageY)>1000000000||r.order<0||r.order>1000000000)return null;
+      for(const k of fields)row[k]=r[k];
+    }
+    rows.push(row);
+  }
+  // Carry only the generation issued by the local capture settings route.
+  if(typeof raw.captureEpoch!=="string"||!/^[0-9a-f]{32}$/i.test(raw.captureEpoch)||
+     typeof raw.captureRun!=="string"||!/^[0-9a-f]{32}$/i.test(raw.captureRun))return null;
+  const snapshot={documentKey:raw.documentKey,host,rows,captureEpoch:raw.captureEpoch,captureRun:raw.captureRun};
+  return new TextEncoder().encode(JSON.stringify(snapshot)).length<=96*1024?snapshot:null;
+}
+async function injectFocusedExperience(){
+  if(!await browserExperienceEnabled())return;
+  const tabs=await chrome.tabs.query({active:true,lastFocusedWindow:true});
+  const tab=tabs[0];if(!tab?.id||tab.incognito||!/^https?:\/\//.test(tab.url||""))return;
+  const win=await chrome.windows.get(tab.windowId);
+  if(win.focused)await chrome.scripting.executeScript({target:{tabId:tab.id},files:["experience-dom.js"]}).catch(()=>{});
+}
+chrome.tabs.onActivated.addListener(()=>{void injectFocusedExperience().catch(()=>{});});
+chrome.windows.onFocusChanged.addListener(()=>{void injectFocusedExperience().catch(()=>{});});
+chrome.permissions.onRemoved.addListener(()=>{
+  void (async()=>{if(!await chrome.permissions.contains({origins:experienceDomOrigins}))await configureExperienceDom(false);})().catch(()=>{});
+});
+
 async function treeCommand(request){
   switch(request.operation){
+    case "experienceCaptureStatus":return treeCall("/experience/capture");
+    case "experienceCaptureSet":
+      return typeof request.enabled==="boolean"?treeCall("/experience/capture","POST",{enabled:request.enabled},20000):{ok:false,error:"invalid_setting"};
+    case "experienceDomStatus":return {ok:true,enabled:await browserExperienceEnabled()};
+    case "experienceDomEnable":return configureExperienceDom(request.enabled===true);
+    case "viewStatus":case "viewRecords":case "viewFeed":case "viewScreens":case "viewPage":case "viewWeights":
+    case "viewBranches":case "viewAddBranch":case "viewRemoveBranch":case "viewCompile":{
+      const source=request.source;
+      if(source!=="experience"&&source!=="knowledge")return {ok:false,error:"invalid_source"};
+      const path="/view/"+source;
+      const positive=v=>Number.isSafeInteger(v)&&v>0?v:0;
+      switch(request.operation){
+        case "viewStatus":return treeCall(path+"/status");
+        case "viewRecords":case "viewFeed":case "viewScreens":{
+          if(request.operation==="viewScreens"&&source!=="experience")return {ok:false,error:"invalid_source"};
+          const params=new URLSearchParams({term:String(request.term||"").slice(0,512),
+            beforeMs:String(positive(request.beforeMs)),beforeSequence:String(positive(request.beforeSequence)),
+            agent:String(positive(request.agent)),limit:request.operation==="viewScreens"?"12":"30"});
+          const endpoint=request.operation==="viewScreens"?"/screens":request.operation==="viewRecords"?"/records":"/feed";
+          return treeCall(path+endpoint+"?"+params,"GET",undefined,20000);
+        }
+        case "viewPage":{
+          if(source!=="experience"||typeof request.parent!=="string"||!request.parent.startsWith("local:experience:browser:")||request.parent.length>512)
+            return {ok:false,error:"invalid_page"};
+          const params=new URLSearchParams({parent:request.parent,afterOrder:String(request.afterOrder||"").slice(0,128),
+            afterSequence:String(positive(request.afterSequence)),limit:"100"});
+          return treeCall(path+"/page?"+params,"GET",undefined,20000);
+        }
+        case "viewWeights":return positive(request.sequence)?treeCall(path+"/weights/"+request.sequence):{ok:false,error:"invalid_sequence"};
+        case "viewCompile":return treeCall(path+"/compile","POST",{language:String(request.language||"en").slice(0,3)},60000);
+        case "viewBranches":return treeCall(path+"/branches");
+        case "viewAddBranch":return treeCall(path+"/branches","POST",{name:String(request.name||"").slice(0,160),term:String(request.term||"").slice(0,512)});
+        case "viewRemoveBranch":return positive(request.id)?treeCall(path+"/branches/"+request.id,"DELETE"):{ok:false,error:"invalid_branch"};
+      }
+      break;
+    }
     case "status":return treeCall("/status");
     case "capture":return treeCall("/capture","POST",{enabled:request.enabled===true});
     case "listen":return treeCall("/mesh/listen","POST",{enabled:request.enabled===true});
     case "invitations":return treeCall("/mesh/invitations");
     case "bind":return treeCall("/mesh/bind","POST",{invitation:String(request.invitation||"").slice(0,1024)});
     case "unbind":return treeCall("/mesh/unbind","POST",{pin:String(request.pin||"")});
+    case "public-block":return treeCall("/mesh/public-block","POST",{pin:String(request.pin||""),blocked:request.blocked===true});
     case "receive":return treeCall("/mesh/receive","POST",{},1800000);
     case "records":case "feed":{
       const params=new URLSearchParams({term:String(request.term||"").slice(0,512),
@@ -278,6 +395,20 @@ async function treeCommand(request){
   }
 }
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if(request?.type==="rootsExperienceSettings"||request?.type==="rootsExperienceObserve"){
+    (async()=>{
+      if(!await browserExperienceEnabled()||!await experienceForeground(sender)){
+        sendResponse({ok:false,error:"capture_off"});return;
+      }
+      if(request.type==="rootsExperienceSettings"){
+        sendResponse(await treeCall("/experience/browser/status"));return;
+      }
+      const snapshot=cleanExperienceSnapshot(request.snapshot,sender);
+      if(!snapshot){sendResponse({ok:false,error:"invalid_snapshot"});return;}
+      sendResponse(await treeCall("/experience/browser/observe","POST",snapshot));
+    })().catch(()=>sendResponse({ok:false,error:"tree_service_unavailable"}));
+    return true;
+  }
   if(request?.type==="rootsTreeSettings"||request?.type==="rootsTreeObserve"){
     (async()=>{
       if(!await foregroundTreeSender(sender)){sendResponse({ok:false,error:"not_foreground"});return;}

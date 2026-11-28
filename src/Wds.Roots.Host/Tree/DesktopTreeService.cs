@@ -38,6 +38,12 @@ internal sealed class DesktopTreeService : IDisposable
     { lock(_gate) return _tree.Query(term,0,before,limit); }
     public IReadOnlyList<RecordMember> Records(string term,long before,uint limit)
     { lock(_gate) return _tree.Records(term,0,before,limit); }
+    public IReadOnlyList<Fragment> FeedByTime(string term,long beforeMs,long beforeSequence,uint limit,long agent=0)
+    { lock(_gate) return _tree.QueryByTime(term,agent,beforeMs,beforeSequence,limit); }
+    public IReadOnlyList<RecordMember> RecordsByTime(string term,long beforeMs,long beforeSequence,uint limit,long agent=0)
+    { lock(_gate) return _tree.RecordsByTime(term,agent,beforeMs,beforeSequence,limit); }
+    public float[] FragmentWeights(long sequence)
+    { lock(_gate) return _tree.FragmentWeights(sequence); }
     public IReadOnlyList<BranchAgent> Branches() { lock(_gate) return _tree.Agents(); }
     public long AddBranch(string name,string term) { lock(_gate) return _tree.CreateAgent(name,term); }
     public void RemoveBranch(long id) { lock(_gate) _tree.RemoveAgent(id); }

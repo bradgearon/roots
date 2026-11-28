@@ -79,6 +79,7 @@ public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient 
     string manifestRelativePath = "config/runtime.json") : IDisposable
 {
     private readonly List<Process> _owned = [];
+    private ChildProcessJob? _childJob;
     private readonly SemaphoreSlim _provisionGate = new(1, 1);
     private RuntimeConfig? _config;
     private AiHardwareProfile? _hardware;
@@ -137,8 +138,22 @@ public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient 
             process.OutputDataReceived += (_, e) => { if (e.Data != null) Console.WriteLine($"[{spec.Name}] {e.Data}"); };
             process.ErrorDataReceived += (_, e) => { if (e.Data != null) Console.WriteLine($"[{spec.Name}] {e.Data}"); };
             process.Exited += (_, _) => Report($"[{spec.Name}] exited");
-            process.Start();
-            _owned.Add(process);
+            _childJob ??= ChildProcessJob.Create();
+            bool started = false;
+            try
+            {
+                started = process.Start();
+                if (!started) throw new InvalidOperationException("Could not start owned service " + spec.Name);
+                _childJob.Attach(process);
+                _owned.Add(process);
+            }
+            catch
+            {
+                // Containment failure must not strand a new service.
+                try { if (started && !process.HasExited) process.Kill(entireProcessTree: true); }
+                finally { process.Dispose(); }
+                throw;
+            }
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
         }
@@ -440,10 +455,14 @@ public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient 
 
     public void Dispose()
     {
-        foreach (Process p in _owned)
+        try
         {
-            try { if (!p.HasExited) p.Kill(true); } catch { }
-            p.Dispose();
+            foreach (Process p in _owned)
+            {
+                try { if (!p.HasExited) p.Kill(true); } catch { }
+                p.Dispose();
+            }
         }
+        finally { _childJob?.Dispose(); }
     }
 }

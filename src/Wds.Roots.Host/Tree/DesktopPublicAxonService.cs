@@ -9,6 +9,8 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.DataProtection;
 using Wds.Roots.Tree;
 
+using Receipt = Wds.Roots.Host.DesktopPublicAxonReceipt;
+
 namespace Wds.Roots.Host;
 
 internal sealed record MeshReceiveResult(int Peers,ulong Inserted,int Missing,int Failed);
@@ -20,7 +22,6 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
 {
     const int Page=32,MaxItems=4096,MaxIds=65536,MaxReceipts=100000;
     sealed record Peer(string Id,string Root,string After,long Received,bool Blocked,string Host,string Via,string Status,long LastSeen);
-    sealed record Receipt(JsonElement Item,string Peer,long At,bool Promoted);
     readonly DesktopTreeService _tree;
     readonly string _root,_directory,_peerDirectory,_receiptDirectory;
     readonly byte[] _privateKey;
@@ -75,9 +76,10 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
             try
             {
                 if(new FileInfo(path).Length>256*1024)continue;
-                var receipt=JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path))??throw new InvalidDataException();
+                var receipt=JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path),Receipt.Options)??throw new InvalidDataException();
+                if(!ValidReceipt(receipt))continue;
                 var item=DesktopPublicItem.Parse(receipt.Item);
-                if(Path.GetFileNameWithoutExtension(path)!=item.Id||!MeshGraphItem.IsHash(receipt.Peer))continue;
+                if(Path.GetFileNameWithoutExtension(path)!=item.Id)continue;
                 _receipts[item.Id]=receipt;
             }catch(Exception){/* malformed receipt does not prevent other peers */}
         }

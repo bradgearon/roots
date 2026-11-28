@@ -1,5 +1,6 @@
 #include "roots_tree.h"
 #include <cmath>
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -36,7 +37,7 @@ struct reader {
     std::string str(){auto n=u64();need(n<100000,"unbounded metadata");std::string s;for(uint64_t i=0;i<n;++i)s+=static_cast<char>(byte());return s;}
 };
 void check_gguf(const std::filesystem::path &path,size_t n,int64_t revision,
-                const std::vector<item> &expected,bool structured=false){
+                const std::vector<item> &expected,bool structured=false,roots_tree *tree=nullptr){
     reader r(path);
     need(r.byte()=='G'&&r.byte()=='G'&&r.byte()=='U'&&r.byte()=='F',"GGUF magic");
     need(r.u32()==3&&r.u64()==1,"GGUF version/count");
@@ -91,7 +92,21 @@ void check_gguf(const std::filesystem::path &path,size_t n,int64_t revision,
     }
     need(r.str()=="node.embedding"&&r.u32()==2&&r.u64()==128&&r.u64()==n&&r.u32()==0&&r.u64()==0,"tensor descriptor");
     while(static_cast<uint64_t>(r.f.tellg())%32)need(r.byte()==0,"padding");
-    for(size_t i=0;i<n;++i){double norm=0;for(unsigned j=0;j<128;++j){auto b=r.u32();float v;std::memcpy(&v,&b,4);need(std::isfinite(v),"finite tensor");norm+=double(v)*v;}need(std::abs(norm-1.0)<1e-4,"vector norm");}
+    for(size_t i=0;i<n;++i){
+        float weights[128]{};
+        if(tree){
+            const auto &key=arrays["roots.node.keys"][i];
+            need(key.rfind("fragment:",0)==0,"fragment key");
+            ok(roots_tree_fragment_weights(tree,std::stoll(key.substr(9)),weights,128));
+        }
+        double norm=0;
+        for(unsigned j=0;j<128;++j){
+            auto b=r.u32();float v;std::memcpy(&v,&b,4);
+            need(std::isfinite(v),"finite tensor");norm+=double(v)*v;
+            if(tree)need(v==weights[j],"displayed weight must match GGUF tensor");
+        }
+        need(std::abs(norm-1.0)<1e-4,"vector norm");
+    }
     need(r.f.get()==EOF,"unexpected tensor bytes");
 }
 }
@@ -117,7 +132,223 @@ int main(){
             need(records.size()==2&&records[0].first<cursor,"whole master paging");
             auto path=dir/"structured.gguf";int64_t revision=0;
             ok(roots_tree_compile(t,path.u8string().c_str(),&revision));
-            check_gguf(path,4,revision,query(t),true);
+            check_gguf(path,4,revision,query(t),true,t);
+            ok(roots_tree_clear(t));
+        }
+        {
+            // Ingestion order is deliberately different from capture time.
+            roots_observation timed[]={
+                {"record.experience.body","local:experience:newer","same text","",30},
+                {"record.experience.process","local:experience:newer","app.exe","",30},
+                {"record.experience.body","local:experience:older","old text","",10},
+                {"record.experience.body","local:experience:tie","same text","",30}};
+            size_t n=0;ok(roots_tree_observe(t,timed,4,&n));need(n==4,"timed rows");
+            auto tie=query(t,"same text").front().seq;
+            std::vector<std::pair<int64_t,std::string>> records;
+            ok(roots_tree_records_time(t,"",0,0,0,1,record_member,&records));
+            need(records.size()==1&&records[0].first==tie,"time tie-breaker");
+            records.clear();
+            ok(roots_tree_records_time(t,"",0,30,tie,1,record_member,&records));
+            need(records.size()==2&&records[0].second=="same text","second time page contains whole record");
+            auto newer=records[0].first;records.clear();
+            ok(roots_tree_records_time(t,"",0,30,newer,1,record_member,&records));
+            need(records.size()==1&&records[0].second=="old text","out-of-order observation is last");
+            std::vector<item> rows;
+            ok(roots_tree_query_time(t,"",0,0,0,2,collect,&rows));
+            need(rows.size()==2&&rows[0].seq==tie&&rows[1].body=="app.exe","raw timestamp order");
+            auto cursor=rows.back().seq;rows.clear();
+            ok(roots_tree_query_time(t,"",0,30,cursor,2,collect,&rows));
+            need(rows.size()==2&&rows[0].seq==newer&&rows[1].body=="old text","raw time cursor");
+            float a[128]{},b[128]{};
+            ok(roots_tree_fragment_weights(t,tie,a,128));ok(roots_tree_fragment_weights(t,newer,b,128));
+            double norm=0;for(size_t k=0;k<128;++k){need(a[k]==b[k],"same text has same weights");norm+=double(a[k])*a[k];}
+            need(std::abs(norm-1.0)<1e-4,"normalized weights");
+            need(roots_tree_fragment_weights(t,tie,a,127)==ROOTS_TREE_INVALID,"weight buffer size");
+            int64_t branch=0;ok(roots_tree_agent_create(t,"Same","same",&branch));records.clear();
+            ok(roots_tree_records_time(t,"",branch,0,0,10,record_member,&records));
+            need(records.size()==3,"branch matches grouped records");
+            ok(roots_tree_clear(t));
+        }
+        {
+            // A screen is an acquisition pass, not one OCR line. Explicit
+            // monotonic keys distinguish passes at the same wall-clock time.
+            // Legacy lines sharing a parent/session and timestamp still group.
+            roots_observation screenRows[]={
+                {"record.experience.body","local:experience:one","Alpha menu","",50},
+                {"record.experience.kind","local:experience:one","observation","",50},
+                {"record.experience.parent","local:experience:one","session-a","",50},
+                {"record.experience.screen","local:experience:one","session-a:screen:100","",50},
+                {"record.experience.body","local:experience:two","Beta subtitle","",50},
+                {"record.experience.kind","local:experience:two","observation","",50},
+                {"record.experience.parent","local:experience:two","session-a","",50},
+                {"record.experience.screen","local:experience:two","session-a:screen:100","",50},
+                {"record.experience.body","local:experience:three","Another screen","",50},
+                {"record.experience.kind","local:experience:three","observation","",50},
+                {"record.experience.parent","local:experience:three","session-a","",50},
+                {"record.experience.screen","local:experience:three","session-a:screen:101","",50},
+                {"record.experience.body","local:experience:old-a","Legacy one","",10},
+                {"record.experience.kind","local:experience:old-a","observation","",10},
+                {"record.experience.parent","local:experience:old-a","session-b","",10},
+                {"record.experience.body","local:experience:old-b","Legacy two","",10},
+                {"record.experience.kind","local:experience:old-b","observation","",10},
+                {"record.experience.parent","local:experience:old-b","session-b","",10},
+                {"record.experience.body","local:experience:other","Different session","",10},
+                {"record.experience.kind","local:experience:other","observation","",10},
+                {"record.experience.parent","local:experience:other","session-c","",10},
+                {"record.experience.body","local:experience:interval","Foreground activity","",99},
+                {"record.experience.kind","local:experience:interval","activity.interval","",99}};
+            size_t n=0;ok(roots_tree_observe(t,screenRows,sizeof(screenRows)/sizeof(screenRows[0]),&n));
+            need(n==sizeof(screenRows)/sizeof(screenRows[0]),"screen fixture persisted");
+            std::vector<std::pair<int64_t,std::string>> groups;
+            ok(roots_tree_screens_time(t,"",0,0,0,1,record_member,&groups));
+            need(groups.size()==4&&groups[0].second=="Another screen","newest screen and time tie-breaker");
+            auto cursor=groups[0].first;groups.clear();
+            ok(roots_tree_screens_time(t,"",0,50,cursor,1,record_member,&groups));
+            need(groups.size()==8&&groups[0].second=="Alpha menu"&&groups[4].second=="Beta subtitle","complete screen group");
+            auto firstScreen=groups[0].first;groups.clear();
+            ok(roots_tree_screens_time(t,"Beta subtitle",0,0,0,1,record_member,&groups));
+            need(groups.size()==8&&groups[0].first==firstScreen,"search returns whole screen context");
+            int64_t branch=0;ok(roots_tree_agent_create(t,"Alpha","Alpha menu",&branch));groups.clear();
+            ok(roots_tree_screens_time(t,"",branch,0,0,1,record_member,&groups));
+            need(groups.size()==8,"branch matches whole screen context");
+            groups.clear();
+            ok(roots_tree_screens_time(t,"",0,50,firstScreen,1,record_member,&groups));
+            need(groups.size()==3&&groups[0].second=="Different session","legacy sessions do not merge");
+            cursor=groups[0].first;groups.clear();
+            ok(roots_tree_screens_time(t,"",0,10,cursor,1,record_member,&groups));
+            need(groups.size()==6&&groups[0].second=="Legacy one"&&groups[3].second=="Legacy two","legacy screen grouping");
+            cursor=groups[0].first;groups.clear();
+            ok(roots_tree_screens_time(t,"",0,10,cursor,1,record_member,&groups));
+            need(groups.empty(),"screen pages exclude activity intervals");
+            ok(roots_tree_clear(t));
+        }
+        {
+            roots_observation observations[]={
+                {"record.experience.body","local:experience:repeat:one","HELLO_DIALOGUE_SENTINEL","",10},
+                {"record.experience.kind","local:experience:repeat:one","observation","",10},
+                {"record.experience.parent","local:experience:repeat:one","session-one","",10},
+                {"record.experience.screen","local:experience:repeat:one","screen-one","",10},
+                {"record.experience.process","local:experience:repeat:one","INTERNAL_METADATA_SENTINEL","",10},
+                {"record.experience.body","local:experience:repeat:two","HELLO_DIALOGUE_SENTINEL","",20},
+                {"record.experience.kind","local:experience:repeat:two","observation","",20},
+                {"record.experience.screen","local:experience:repeat:two","screen-two","",20},
+                {"record.experience.body","local:experience:activity","ACTIVITY_ONLY_SENTINEL","",30},
+                {"record.experience.kind","local:experience:activity","activity.interval","",30}};
+            size_t added=0;ok(roots_tree_observe(t,observations,10,&added));need(added==10,"experience observation fixture");
+            auto bodies=query(t,"HELLO_DIALOGUE_SENTINEL");
+            need(bodies.size()==2,"two independent dialogue occurrences");
+            int64_t count=0;ok(roots_tree_text_occurrences(t,bodies.front().seq,&count));need(count==2,"exact occurrence count");
+            auto projection=dir/"experience-content.gguf";int64_t rev=0;
+            ok(roots_tree_compile_experience(t,projection.u8string().c_str(),&rev));
+            {
+                std::ifstream input(projection,std::ios::binary);
+                std::string bytes((std::istreambuf_iterator<char>(input)),std::istreambuf_iterator<char>());
+                for(auto expected:{"HELLO_DIALOGUE_SENTINEL","experience-content-private","is.occurrence.of","screen:screen-one"})
+                    need(bytes.find(expected)!=std::string::npos,"experience content or relation missing");
+                for(auto excluded:{"INTERNAL_METADATA_SENTINEL","ACTIVITY_ONLY_SENTINEL"})
+                    need(bytes.find(excluded)==std::string::npos,"operational text in content projection");
+            }
+            auto snapshot=dir/"experience-backup.db";int64_t snapshotRevision=0;
+            ok(roots_tree_backup(t,snapshot.u8string().c_str(),&snapshotRevision));
+            need(snapshotRevision==rev,"snapshot revision");
+            need(!std::filesystem::exists(snapshot.u8string()+"-wal"),"backup is self-contained");
+            need(roots_tree_backup(t,snapshot.u8string().c_str(),&snapshotRevision)==ROOTS_TREE_INVALID,"backup never overwrites");
+            ok(roots_tree_clear(t));
+            roots_tree *copy=nullptr;ok(roots_tree_open(snapshot.u8string().c_str(),&copy));
+            int64_t copied=0;auto result=roots_tree_count(copy,&copied);roots_tree_close(copy);
+            ok(result);need(copied==10,"backup retains committed observations after original changes");
+        }
+        {
+            // Scroll down, then back above the first acquired screen. Page
+            // reading must follow document position rather than capture time.
+            const char *parent="local:experience:browser:fixture:page";
+            const char *top="local:experience:browser:fixture:page:line:top";
+            const char *middle="local:experience:browser:fixture:page:line:middle";
+            const char *bottom="local:experience:browser:fixture:page:line:bottom";
+            auto put=[&](const char *id,const char *text,const char *order,const char *position,int64_t at){
+                roots_observation rows[]={
+                    {"record.experience.body",id,text,"",at},
+                    {"record.experience.kind",id,"observation","",at},
+                    {"record.experience.parent",id,parent,"",at},
+                    {"record.experience.page-order",id,order,"",at},
+                    {"record.experience.page-key",id,position,"",at}};
+                size_t n=0;ok(roots_tree_observe(t,rows,5,&n));need(n==5,"page line");
+            };
+            put(bottom,"Bottom","0000000300","bottom-position",10);
+            put(top,"Top","0000000000","top-position",20);
+            put(middle,"Middle","0000000150","middle-position",30);
+            int64_t seen=0;
+            ok(roots_tree_experience_seen(t,top,"different-position",&seen));need(seen==1,"existing anchor survives scroll/reflow");
+            ok(roots_tree_experience_seen(t,"local:experience:browser:fixture:page:line:recreated","top-position",&seen));
+            need(seen==1,"recreated DOM node at same position");
+            ok(roots_tree_experience_seen(t,"local:experience:browser:fixture:page:line:other","other-position",&seen));
+            need(seen==0,"distinct placement remains new");
+            std::vector<std::pair<int64_t,std::string>> page;
+            ok(roots_tree_experience_page(t,parent,"",0,2,record_member,&page));
+            need(page.size()==10&&page[0].second=="Top"&&page[5].second=="Middle","page order independent of ingestion order");
+            auto cursor=page[5].first;page.clear();
+            ok(roots_tree_experience_page(t,parent,"0000000150",cursor,2,record_member,&page));
+            need(page.size()==5&&page[0].second=="Bottom","stable forward page cursor");
+            page.clear();
+            ok(roots_tree_experience_page(t,parent,"0000000300",query(t,"Bottom").front().seq,2,record_member,&page));
+            need(page.empty(),"end of page");
+            ok(roots_tree_clear(t));
+        }
+        {
+            // Reproduce a real-sized Experience timeline (76,500 fragments).
+            // The former query scanned the whole namespace for each event,
+            // which could time out even with a few minutes of screen capture.
+            constexpr int events=10500;
+            constexpr int perScreen=30;
+            constexpr int perBatch=32;
+            for(int start=0;start<events;start+=perBatch){
+                struct fixture {std::string id,screen,body,parent;int64_t at;bool legacy;};
+                std::vector<fixture> values;values.reserve(perBatch);
+                std::vector<roots_observation> batch;batch.reserve(perBatch*8);
+                for(int i=start;i<std::min(events,start+perBatch);++i){
+                    auto parent="local:experience:scale:session:"+std::to_string(i/500);
+                    values.push_back({"local:experience:scale:event:"+std::to_string(i),
+                        parent+":screen:"+std::to_string(i/perScreen),
+                        "Visible line "+std::to_string(i)+(i==5678?" needle":""),
+                        parent,1700000000000LL+(i/perScreen)*1000LL,i<7500});
+                }
+                for(const auto &v:values){
+                    auto add=[&](const char *source,const char *body){
+                        batch.push_back({source,v.id.c_str(),body,"",v.at});
+                    };
+                    add("record.experience.body",v.body.c_str());
+                    add("record.experience.kind","observation");
+                    add("record.experience.parent",v.parent.c_str());
+                    add("record.experience.process","chrome.exe");
+                    add("record.experience.origin","windows.ocr");
+                    add("record.experience.interval","observed");
+                    add("record.experience.evidence","fixture bounds");
+                    if(!v.legacy)add("record.experience.screen",v.screen.c_str());
+                }
+                size_t n=0;ok(roots_tree_observe(t,batch.data(),batch.size(),&n));
+                need(n==batch.size(),"large timeline ingestion");
+            }
+            int64_t count=0;ok(roots_tree_count(t,&count));need(count==76500,"large timeline size");
+            const auto began=std::chrono::steady_clock::now();
+            std::vector<std::pair<int64_t,std::string>> groups;
+            ok(roots_tree_screens_time(t,"",0,0,0,12,record_member,&groups));
+            need(groups.size()==2880,"large timeline returns complete newest screens");
+            need(groups.front().second=="Visible line 10470","large timeline newest first");
+            auto last=groups.back().first;
+            std::set<int64_t> firstPage;for(const auto &g:groups)firstPage.insert(g.first);
+            groups.clear();
+            ok(roots_tree_screens_time(t,"",0,1700000000000LL+338000LL,last,12,record_member,&groups));
+            need(!groups.empty(),"large timeline older page");
+            for(const auto &g:groups)need(firstPage.count(g.first)==0,"large timeline no duplicate screen pages");
+            groups.clear();
+            ok(roots_tree_screens_time(t,"needle",0,0,0,12,record_member,&groups));
+            need(groups.size()==210,"large timeline search retains entire legacy screen");
+            int64_t branch=0;ok(roots_tree_agent_create(t,"Needle","needle",&branch));
+            std::vector<std::pair<int64_t,std::string>> branchGroups;
+            ok(roots_tree_screens_time(t,"",branch,0,0,12,record_member,&branchGroups));
+            need(groups==branchGroups,"large timeline branch filter retains context");
+            const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-began).count();
+            std::cout<<"Large Experience timeline regression: "<<elapsed<<" ms for paging/search/branch checks\n";
             ok(roots_tree_clear(t));
         }
         {

@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Wds.Roots.Tree;
 
+using Receipt = Wds.Roots.Host.DesktopPublicAxonReceipt;
+
 namespace Wds.Roots.Host;
 
 internal sealed partial class DesktopPublicAxonService
@@ -14,39 +16,68 @@ internal sealed partial class DesktopPublicAxonService
     string ProfileFile(string peer)=>Path.Combine(_peerDirectory,peer+".transfer.json");
     sealed record ArchiveScan(int Bucket,DesktopKnowledgeManifest.Part Remote,List<string> Ids,bool Last);
 
+    // Older individual receipts used PascalCase; compressed receipts were
+    // always written with WireOptions (camelCase). Accept both on recovery.
+    static bool ValidReceipt(Receipt? receipt)
+        =>receipt!=null&&receipt.Item.ValueKind==JsonValueKind.Object&&
+            !string.IsNullOrEmpty(receipt.Peer)&&MeshGraphItem.IsHash(receipt.Peer)&&receipt.At>=0;
+
     void LoadArchiveReceipts()
     {
         Directory.CreateDirectory(ArchiveDirectory);
         if(!OperatingSystem.IsWindows())File.SetUnixFileMode(ArchiveDirectory,UnixFileMode.UserRead|UnixFileMode.UserWrite|UnixFileMode.UserExecute);
+        int archives=0,failedArchives=0,invalidRows=0,overBudget=0,loaded=0;
         // Committed archives take precedence over recovery copies and old receipts.
-        foreach(string path in Directory.EnumerateFiles(ArchiveDirectory,"*.gz").OrderBy(p=>p.EndsWith(".pending.gz",StringComparison.Ordinal)?0:1))
+        foreach(string path in Directory.EnumerateFiles(ArchiveDirectory,"*.gz")
+            .OrderBy(p=>p.EndsWith(".pending.gz",StringComparison.Ordinal)?0:1))
         {
             try
             {
-                if(new FileInfo(path).Length>64*1024*1024)continue;
+                if(new FileInfo(path).Length>64*1024*1024)throw new InvalidDataException("Receipt archive exceeds compressed budget.");
                 using var file=File.OpenRead(path);
                 using var gzip=new GZipStream(file,CompressionMode.Decompress);
                 using var output=new MemoryStream();
                 byte[] buffer=new byte[65536];int n;
                 while((n=gzip.Read(buffer))>0)
                 {
-                    if(output.Length+n>64*1024*1024)throw new InvalidDataException("Receipt archive exceeds budget.");
+                    if(output.Length+n>64*1024*1024)throw new InvalidDataException("Receipt archive exceeds decompression budget.");
                     output.Write(buffer,0,n);
                 }
-                var receipts=JsonSerializer.Deserialize<Receipt[]>(output.ToArray())??[];
-                if(receipts.Length>DesktopKnowledgeArchive.MaxItems)continue;
+                output.Position=0;
+                using var document=JsonDocument.Parse(output);
+                if(document.RootElement.ValueKind!=JsonValueKind.Array||
+                    document.RootElement.GetArrayLength()>DesktopKnowledgeArchive.MaxItems)
+                    throw new InvalidDataException("Invalid receipt archive member count.");
                 bool committed=!path.EndsWith(".pending.gz",StringComparison.Ordinal);
-                foreach(var receipt in receipts)
+                foreach(var row in document.RootElement.EnumerateArray())
                 {
-                    var item=DesktopPublicItem.Parse(receipt.Item);
-                    if(!MeshGraphItem.IsHash(receipt.Peer)||receipt.At<0)continue;
-                    if(_receipts.TryGetValue(item.Id,out var old)&&old.Promoted)continue;
-                    if(_receipts.Count>=MaxReceipts&&!_receipts.ContainsKey(item.Id))continue;
-                    _receipts[item.Id]=receipt with{Promoted=committed};
+                    // A single malformed receipt must not discard the rest
+                    // of an otherwise readable archive. Preserve files in place.
+                    try
+                    {
+                        var receipt=row.Deserialize<Receipt>(Receipt.Options);
+                        if(!ValidReceipt(receipt)){invalidRows++;continue;}
+                        var item=DesktopPublicItem.Parse(receipt!.Item);
+                        if(_receipts.TryGetValue(item.Id,out var old)&&old.Promoted)continue;
+                        if(_receipts.Count>=MaxReceipts&&!_receipts.ContainsKey(item.Id)){overBudget++;continue;}
+                        if(!_receipts.ContainsKey(item.Id))loaded++;
+                        _receipts[item.Id]=receipt with{Promoted=committed};
+                    }
+                    catch(Exception e) when(e is JsonException or InvalidDataException or InvalidOperationException or ArgumentException or KeyNotFoundException or FormatException or OverflowException)
+                    {invalidRows++;}
                 }
+                archives++;
             }
-            catch(Exception e){Console.Error.WriteLine("Public Axon receipt archive skipped: "+e.GetType().Name);}
+            catch(Exception e) when(e is IOException or JsonException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException)
+            {
+                failedArchives++;
+                // File identifier only; never emit the receipt content.
+                if(failedArchives<=3)Console.Error.WriteLine("Public Axon receipt archive unreadable: "+Path.GetFileName(path)+" ("+e.GetType().Name+")");
+            }
         }
+        Console.WriteLine("Public Axon archive recovery: "+archives+" archives read, "+loaded+
+            " unique receipts restored, "+_receipts.Values.Count(r=>!r.Promoted)+" pending; "+
+            failedArchives+" unreadable archives, "+invalidRows+" invalid rows, "+overBudget+" over storage limit.");
     }
     static void WriteReceiptArchive(string path,IReadOnlyList<Receipt> receipts)
     {
@@ -55,7 +86,7 @@ internal sealed partial class DesktopPublicAxonService
         {
             using(var file=new FileStream(temp,FileMode.CreateNew,FileAccess.Write,FileShare.None))
             {
-                using(var gzip=new GZipStream(file,CompressionLevel.Fastest,true))JsonSerializer.Serialize(gzip,receipts,DesktopPublicItem.WireOptions);
+                using(var gzip=new GZipStream(file,CompressionLevel.Fastest,true))JsonSerializer.Serialize(gzip,receipts,Receipt.Options);
                 file.Flush(true);
             }
             if(!OperatingSystem.IsWindows())File.SetUnixFileMode(temp,UnixFileMode.UserRead|UnixFileMode.UserWrite);

@@ -13,8 +13,39 @@ section{padding:18px 0;border-bottom:1px solid #384352}
 input:not([type=checkbox]),button,select{border:1px solid #536071;border-radius:7px;background:#1d2632;color:inherit;padding:8px 12px;font:inherit}
 input:not([type=checkbox]){min-width:140px;flex:1}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}a{color:#80c6f4}
 small,.muted{color:#aeb9c6}article{padding:18px 0;border-bottom:1px solid #384352;overflow-wrap:anywhere}
-article p{white-space:pre-wrap;margin:8px 0}details{color:#b7c4d3;margin-top:8px}details p{font-size:13px}
-#message{min-height:1.5em}#invites{display:flex;gap:8px;flex-wrap:wrap}label{cursor:pointer}
+article p{white-space:pre-wrap;margin:8px 0}
+.timeline-day{position:sticky;top:0;z-index:1;background:#10141b;padding:12px 0 7px;margin:10px 0 0;color:#aeb9c6;font-size:13px;letter-spacing:.04em;border-bottom:1px solid #384352}
+.screen-card{border:1px solid #384352;border-radius:10px;background:#151c25;margin:12px 0;padding:15px 17px}
+.screen-preview{padding-left:12px;border-left:2px solid #4c768d;margin:12px 0;color:#dce4ee}
+.screen-preview p{margin:4px 0;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.screen-observation{border-top:1px solid #384352;padding:10px 0}
+.screen-observation p{font-size:14px;color:#e8eaf0}
+.screen-card>details>summary{cursor:pointer;color:#9bcce5;font-weight:600}
+.screen-card>details>summary:hover{color:#fff}
+.screen-reader,.text-reader{margin-top:0}
+.screen-reader-summary,.text-reader-summary{display:block;cursor:pointer;list-style:none;border-radius:5px}
+.screen-reader-summary::-webkit-details-marker,.text-reader-summary::-webkit-details-marker{display:none}
+.screen-reader-summary:focus-visible,.text-reader-summary:focus-visible{outline:2px solid #80c6f4;outline-offset:4px}
+.reader-hint{display:block;color:#9bcce5;font-size:13px;font-weight:600;margin:8px 0}
+.reader-hint::before{content:"▸ "}
+details[open] > summary > .reader-hint::before{content:"▾ "}
+.screen-reader[open] > summary > .screen-preview{display:none}
+.text-reader-preview{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;color:#e8eaf0;font-size:14px;font-weight:400}
+.text-reader[open] > summary > .text-reader-preview{display:none}
+.text-reader[open] > summary > .reader-hint{margin:0;font-size:12px}
+.full-text{white-space:normal;color:#e8eaf0}
+.full-text p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6;margin:8px 0}
+.full-text button,.screen-reader-content>button{font-size:12px;padding:5px 9px;margin:6px 6px 6px 0}
+.page-reader{border-top:1px solid #384352;padding-top:9px}
+.page-reader .text-reader{border-bottom:1px solid #384352;padding:5px 0}
+.experience-section h4{margin:14px 0 5px;font-size:13px}
+
+details{color:#b7c4d3;margin-top:8px}details p{font-size:13px}
+#message{min-height:1.5em}
+.weight-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;font:12px ui-monospace,monospace;margin:8px 0}
+.weight-grid span{padding:4px;border-radius:3px;background:#1d2632;text-align:center}
+.source-badge{display:inline-block;padding:1px 7px;background:#263548;color:#c7d9e8;border-radius:5px;margin-left:8px;font-size:12px}
+@media(max-width:600px){.weight-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}#invites{display:flex;gap:8px;flex-wrap:wrap}label{cursor:pointer}
 </style>
 </head>
 <body><main>
@@ -26,6 +57,7 @@ article p{white-space:pre-wrap;margin:8px 0}details{color:#b7c4d3;margin-top:8px
 <button id="refresh">Refresh</button>
 <select id="language" aria-label="Local language"><option value="en">English</option><option value="ja">Japanese</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option></select>
 <button id="compile">Compile localized GGUF</button></div>
+<div class="row" style="margin-top:12px"><button type="button" id="experienceCaptureToggle" disabled>Pause Experience capture</button><span class="muted" id="experienceCaptureStatus" role="status">Checking capture state…</span></div>
 </section>
 <section>
 <h2>Mesh</h2>
@@ -35,10 +67,17 @@ article p{white-space:pre-wrap;margin:8px 0}details{color:#b7c4d3;margin-top:8px
 <form id="bind" class="row"><input id="invitation" type="password" placeholder="Paste Roots Mesh invitation" aria-label="Mesh invitation" autocomplete="off" maxlength="1024" required><button>Bind Axon</button></form>
 <div id="peers"></div>
 </section>
+<section><h2>Knowledge source</h2>
+<div class="row"><select id="knowledgeSource" aria-label="Knowledge source"><option value="knowledge">Knowledge · social / received</option><option value="experience">Experience · desktop</option></select>
+<label><input id="liveKnowledge" type="checkbox" checked> Live updates</label>
+<span class="muted" id="knowledgeSummary" role="status"></span></div>
+<p class="muted" id="sourceDescription"></p>
+<div class="row" id="browserExperienceControls" hidden><button id="browserExperience">Enable visible webpage reading</button><span class="muted" id="browserExperienceStatus"></span></div>
+</section>
 <section><h2>Branches</h2>
 <form id="branch" class="row"><input id="branchName" placeholder="Name" aria-label="Branch name" maxlength="160" required><input id="branchTerm" placeholder="Interest" aria-label="Branch interest" maxlength="512" required><button>Create branch</button></form>
 <div id="branches"></div></section>
-<section><h2>Knowledge</h2>
-<form id="search" class="row"><input id="term" placeholder="Search the Tree" aria-label="Search" maxlength="512"><button>Search</button><select id="view" aria-label="Knowledge view"><option value="records">Grouped posts</option><option value="feed">All fragments</option></select></form>
+<section><h2>Knowledge timeline</h2><p class="muted" id="timelineOrder">Newest first · by observation time</p>
+<form id="search" class="row"><input id="term" placeholder="Search the Tree" aria-label="Search" maxlength="512"><button>Search</button><select id="view" aria-label="Knowledge view"><option value="screens" hidden disabled>Screen groups</option><option value="records" selected>Grouped records</option><option value="feed">All fragments</option></select><select id="branchFilter" aria-label="Filter by branch"><option value="0">All branches</option></select></form>
 <div id="items"></div><button id="more" hidden>Load more</button></section>
-</main><script src="tree.js"></script></body></html>
+</main><script src="tree.js"></script><script src="experience-control.js"></script></body></html>

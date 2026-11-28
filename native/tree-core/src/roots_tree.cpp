@@ -15,6 +15,7 @@
 #include <utility>
 #include <tuple>
 #include <unordered_set>
+#include <unordered_map>
 
 struct roots_tree {
     sqlite3 *db=nullptr;
@@ -127,7 +128,7 @@ struct le_writer {
     }
 };
 void write_gguf(std::ofstream &stream,const std::vector<row> &rows,
-                const std::vector<edge> &edges,const std::vector<agent> &agents,int64_t rev,const char *language=nullptr){
+                const std::vector<edge> &edges,const std::vector<agent> &agents,int64_t rev,const char *language=nullptr,bool experience=false){
     static_assert(sizeof(float)==4 && std::numeric_limits<float>::is_iec559,"GGUF requires IEEE f32");
     le_writer w{stream};
     w.byte('G');w.byte('G');w.byte('U');w.byte('F');w.u32(3);
@@ -136,7 +137,7 @@ void write_gguf(std::ofstream &stream,const std::vector<row> &rows,
     w.str("general.alignment");w.u32(4);w.u32(32);
     w.string_kv("roots.vector.profile","roots.lexical.utf8-trigram.f32.v1");
     w.str("roots.tree.revision");w.u32(10);w.u64(static_cast<uint64_t>(rev));
-    w.string_kv("roots.scope",language?"localized-private":"local-private");
+    w.string_kv("roots.scope",experience?"experience-content-private":language?"localized-private":"local-private");
     if(language)w.string_kv("roots.local.language",language);
     w.str("roots.format.version");w.u32(4);w.u32(2);
     w.array_header("roots.node.keys",rows.size());
@@ -187,8 +188,13 @@ roots_tree_result roots_tree_open(const char *path,roots_tree **out){
                    "CREATE TABLE IF NOT EXISTS agents(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,term TEXT NOT NULL);"
                    "CREATE TABLE IF NOT EXISTS branch_members(agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,fragment_seq INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,PRIMARY KEY(agent_id,fragment_seq));"
                    "CREATE INDEX IF NOT EXISTS branch_fragment ON branch_members(fragment_seq);"
+                   "CREATE INDEX IF NOT EXISTS fragment_observed ON fragments(observed_ms DESC,seq DESC);"
                    "CREATE INDEX IF NOT EXISTS fragment_master ON fragments(external_id,seq) WHERE source GLOB 'record.*';"
                    "CREATE INDEX IF NOT EXISTS fragment_master_language ON fragments(external_id,language,seq) WHERE source GLOB 'record.*';"
+                   "CREATE INDEX IF NOT EXISTS fragment_experience_member ON fragments(external_id,source,seq) WHERE source GLOB 'record.experience.*';"
+                   "CREATE INDEX IF NOT EXISTS fragment_experience_text ON fragments(body) WHERE source='record.experience.body';"
+                   "CREATE INDEX IF NOT EXISTS fragment_experience_parent ON fragments(body,external_id) WHERE source='record.experience.parent';"
+                   "CREATE INDEX IF NOT EXISTS fragment_experience_position ON fragments(body) WHERE source='record.experience.page-key';"
                    "CREATE TABLE IF NOT EXISTS work_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,fragment INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,operation TEXT NOT NULL,profile TEXT NOT NULL,priority INTEGER NOT NULL,deadline INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,state INTEGER NOT NULL DEFAULT 0,worker TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,token INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,output TEXT NOT NULL DEFAULT '',UNIQUE(fragment,operation,profile));"
                    "CREATE INDEX IF NOT EXISTS work_dispatch ON work_jobs(operation,state,priority DESC,deadline,id);"
                    "PRAGMA user_version=1;");
@@ -256,6 +262,202 @@ roots_tree_result roots_tree_records(roots_tree *t,const char *term,int64_t agen
         }
     });
 }
+roots_tree_result roots_tree_query_time(roots_tree *t,const char *term,int64_t agent_id,
+        int64_t before_ms,int64_t before_seq,uint32_t limit,roots_fragment_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&agent_id>=0&&before_ms>=0&&before_seq>=0&&limit>0&&limit<=100);
+        require(before_seq!=0||before_ms==0);bounded(term,512);
+        std::vector<row> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,"SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms FROM fragments f "
+                "WHERE (?=0 OR f.observed_ms<? OR (f.observed_ms=? AND f.seq<?)) "
+                "AND instr(lower(f.body),lower(?))>0 AND (?=0 OR EXISTS(SELECT 1 FROM branch_members b WHERE b.fragment_seq=f.seq AND b.agent_id=?)) "
+                "ORDER BY f.observed_ms DESC,f.seq DESC LIMIT ?");
+            s.number(1,before_seq);s.number(2,before_ms);s.number(3,before_ms);s.number(4,before_seq);
+            s.text(5,term);s.number(6,agent_id);s.number(7,agent_id);s.number(8,limit);
+            while(s.next())rows.push_back(read_row(s));
+        }
+        for(const auto &r:rows){roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};if(cb(user,&f))break;}
+    });
+}
+roots_tree_result roots_tree_records_time(roots_tree *t,const char *term,int64_t agent_id,
+        int64_t before_ms,int64_t before_seq,uint32_t limit,roots_record_member_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&agent_id>=0&&before_ms>=0&&before_seq>=0&&limit>0&&limit<=100);
+        require(before_seq!=0||before_ms==0);bounded(term,512);
+        std::vector<std::pair<int64_t,row>> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,
+                "WITH members AS (SELECT * FROM fragments WHERE source GLOB 'record.*' AND external_id GLOB 'local:*'), "
+                "masters AS (SELECT external_id,min(seq) AS master_seq,min(observed_ms) AS observed FROM members GROUP BY external_id "
+                "HAVING (?=0 OR min(observed_ms)<? OR (min(observed_ms)=? AND min(seq)<?)) "
+                "AND max(CASE WHEN instr(lower(body),lower(?))>0 "
+                "AND (?=0 OR EXISTS(SELECT 1 FROM branch_members b WHERE b.fragment_seq=members.seq AND b.agent_id=?)) "
+                "THEN 1 ELSE 0 END)=1 ORDER BY observed DESC,master_seq DESC LIMIT ?) "
+                "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms,m.master_seq "
+                "FROM masters m JOIN members f ON f.external_id=m.external_id ORDER BY m.observed DESC,m.master_seq DESC,f.seq");
+            s.number(1,before_seq);s.number(2,before_ms);s.number(3,before_ms);s.number(4,before_seq);
+            s.text(5,term);s.number(6,agent_id);s.number(7,agent_id);s.number(8,limit);
+            while(s.next())rows.emplace_back(s.integer(6),read_row(s));
+        }
+        for(const auto &entry:rows){const auto &r=entry.second;
+            roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};
+            if(cb(user,entry.first,&f))break;
+        }
+    });
+}
+roots_tree_result roots_tree_screens_time(roots_tree *t,const char *term,int64_t agent_id,
+        int64_t before_ms,int64_t before_seq,uint32_t limit,roots_record_member_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&agent_id>=0&&before_ms>=0&&before_seq>=0&&limit>0&&limit<=100);
+        require(before_seq!=0||before_ms==0);bounded(term,512);
+        std::vector<std::pair<int64_t,row>> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            // Aggregate each observation once instead of correlated scans of
+            // the entire Experience namespace for every body. The dedicated
+            // partial index matches the exact GLOB predicate used here.
+            // A filter selects the complete screen, not just matching lines.
+            statement s(t->db,
+                "WITH observations AS (SELECT external_id,"
+                "min(CASE WHEN source='record.experience.body' THEN seq END) AS event_seq,"
+                "max(CASE WHEN source='record.experience.body' THEN observed_ms END) AS observed_ms,"
+                "min(CASE WHEN source='record.experience.screen' THEN body END) AS screen,"
+                "min(CASE WHEN source='record.experience.parent' THEN body END) AS parent,"
+                "max(CASE WHEN (?1='' OR instr(lower(body),lower(?1))>0) AND "
+                "(?2=0 OR EXISTS(SELECT 1 FROM branch_members m WHERE m.fragment_seq=f.seq AND m.agent_id=?2)) THEN 1 ELSE 0 END) AS matched "
+                "FROM fragments f WHERE source GLOB 'record.experience.*' AND external_id GLOB 'local:experience:*' "
+                "GROUP BY external_id HAVING event_seq IS NOT NULL AND "
+                "max(CASE WHEN source='record.experience.kind' AND body='observation' THEN 1 ELSE 0 END)=1),"
+                "events AS (SELECT external_id,event_seq,observed_ms,"
+                "COALESCE(screen,parent||':legacy-screen:'||observed_ms,external_id) AS screen_key,matched FROM observations),"
+                "screens AS (SELECT screen_key,min(event_seq) AS screen_seq,max(observed_ms) AS observed FROM events GROUP BY screen_key "
+                "HAVING max(matched)=1 AND (?3=0 OR max(observed_ms)<?4 OR (max(observed_ms)=?4 AND min(event_seq)<?3)) "
+                "ORDER BY observed DESC,screen_seq DESC LIMIT ?5) "
+                "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms,g.screen_seq "
+                "FROM screens g JOIN events e ON e.screen_key=g.screen_key "
+                "JOIN fragments f ON f.external_id=e.external_id AND f.source GLOB 'record.experience.*' "
+                "ORDER BY g.observed DESC,g.screen_seq DESC,e.event_seq,f.seq");
+            s.text(1,term);s.number(2,agent_id);s.number(3,before_seq);s.number(4,before_ms);s.number(5,limit);
+            while(s.next())rows.emplace_back(s.integer(6),read_row(s));
+        }
+        for(const auto &entry:rows){const auto &r=entry.second;
+            roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};
+            if(cb(user,entry.first,&f))break;
+        }
+    });
+}
+roots_tree_result roots_tree_experience_seen(roots_tree *t,const char *event_id,const char *position_key,int64_t *out){
+    if(out)*out=0;
+    return guard([&]{
+        require(t&&out);bounded(event_id,512,true);bounded(position_key,128);
+        require(std::string(event_id).rfind("local:experience:browser:",0)==0);
+        std::lock_guard<std::mutex> lock(t->mutex);
+        statement s(t->db,"SELECT EXISTS(SELECT 1 FROM fragments WHERE source='record.experience.body' AND external_id=?1) "
+            "OR (?2<>'' AND EXISTS(SELECT 1 FROM fragments WHERE source='record.experience.page-key' AND body=?2))");
+        s.text(1,event_id);s.text(2,position_key);require(s.next());*out=s.integer(0);
+    });
+}
+roots_tree_result roots_tree_experience_page(roots_tree *t,const char *parent,const char *after_order,
+        int64_t after_seq,uint32_t limit,roots_record_member_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&after_seq>=0&&limit>0&&limit<=100);
+        bounded(parent,512,true);bounded(after_order,128);
+        require(std::string(parent).rfind("local:experience:browser:",0)==0);
+        require((after_seq==0)==(*after_order=='\0'));
+        std::vector<std::pair<int64_t,row>> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,
+                "WITH page AS (SELECT p.external_id,b.seq AS event_seq,o.body AS page_order "
+                "FROM fragments p JOIN fragments b ON b.external_id=p.external_id AND b.source='record.experience.body' "
+                "JOIN fragments o ON o.external_id=p.external_id AND o.source='record.experience.page-order' "
+                "WHERE p.source='record.experience.parent' AND p.body=?1 "
+                "AND EXISTS(SELECT 1 FROM fragments k WHERE k.external_id=p.external_id AND k.source='record.experience.kind' AND k.body='observation') "
+                "AND (?3=0 OR o.body>?2 OR (o.body=?2 AND b.seq>?3)) "
+                "ORDER BY o.body,b.seq LIMIT ?4) "
+                "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms,page.event_seq "
+                "FROM page JOIN fragments f ON f.external_id=page.external_id AND f.source GLOB 'record.experience.*' "
+                "ORDER BY page.page_order,page.event_seq,f.seq");
+            s.text(1,parent);s.text(2,after_order);s.number(3,after_seq);s.number(4,limit);
+            while(s.next())rows.emplace_back(s.integer(6),read_row(s));
+        }
+        for(const auto &entry:rows){const auto &r=entry.second;
+            roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};
+            if(cb(user,entry.first,&f))break;
+        }
+    });
+}
+roots_tree_result roots_tree_fragment_weights(roots_tree *t,int64_t sequence,float *weights,size_t count){
+    return guard([&]{
+        require(t&&sequence>0&&weights&&count==dim);
+        std::string body;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,"SELECT body FROM fragments WHERE seq=?");
+            s.number(1,sequence);require(s.next());body=s.str(0);
+        }
+        const auto values=lexical_vector(body);
+        std::copy(values.begin(),values.end(),weights);
+    });
+}
+roots_tree_result roots_tree_text_occurrences(roots_tree *t,int64_t sequence,int64_t *out){
+    if(out)*out=0;
+    return guard([&]{
+        require(t&&out&&sequence>0);
+        std::lock_guard<std::mutex> lock(t->mutex);
+        statement s(t->db,
+            "SELECT count(*) FROM fragments f WHERE f.source='record.experience.body' "
+            "AND f.body=(SELECT body FROM fragments WHERE seq=? AND source='record.experience.body') "
+            "AND EXISTS(SELECT 1 FROM fragments k WHERE k.source='record.experience.kind' "
+            "AND k.external_id=f.external_id AND k.body='observation')");
+        s.number(1,sequence);require(s.next());*out=s.integer(0);
+    });
+}
+roots_tree_result roots_tree_backup(roots_tree *t,const char *path,int64_t *out){
+    if(out)*out=0;
+    return guard([&]{
+        require(t&&out);bounded(path,32768,true);
+        const auto dest=std::filesystem::u8path(path);
+        require(!std::filesystem::exists(dest));
+        try{
+            sqlite3 *raw=nullptr;
+            const int opened=sqlite3_open_v2(path,&raw,SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_FULLMUTEX,nullptr);
+            std::unique_ptr<sqlite3,decltype(&sqlite3_close)> copy(raw,&sqlite3_close);
+            check(opened);
+            {
+                std::lock_guard<std::mutex> lock(t->mutex);
+                sqlite3_backup *backup=sqlite3_backup_init(copy.get(),"main",t->db,"main");
+                if(!backup)throw std::runtime_error("Could not initialize SQLite backup");
+                int rc=SQLITE_BUSY;
+                for(int attempt=0;attempt<40;++attempt){
+                    rc=sqlite3_backup_step(backup,-1);
+                    if(rc!=SQLITE_BUSY&&rc!=SQLITE_LOCKED)break;
+                    sqlite3_sleep(50);
+                }
+                const int finished=sqlite3_backup_finish(backup);
+                if(rc!=SQLITE_DONE)throw std::runtime_error("SQLite backup did not complete");
+                check(finished);
+            }
+            exec(copy.get(),"PRAGMA journal_mode=DELETE");
+            {
+                statement integrity(copy.get(),"PRAGMA quick_check");
+                if(!integrity.next()||integrity.str(0)!="ok"||integrity.next())
+                    throw std::runtime_error("SQLite backup integrity check failed");
+            }
+            *out=revision_of(copy.get());
+            copy.reset();
+        }catch(...){
+            std::error_code ec;std::filesystem::remove(dest,ec);
+            std::filesystem::remove(std::filesystem::u8path(std::string(path)+"-wal"),ec);
+            std::filesystem::remove(std::filesystem::u8path(std::string(path)+"-shm"),ec);
+            std::filesystem::remove(std::filesystem::u8path(std::string(path)+"-journal"),ec);
+            throw;
+        }
+    });
+}
 roots_tree_result roots_tree_count(roots_tree *t,int64_t *out){return guard([&]{require(t&&out);std::lock_guard<std::mutex> lock(t->mutex);*out=scalar(t->db,"SELECT count(*) FROM fragments");});}
 roots_tree_result roots_tree_revision(roots_tree *t,int64_t *out){return guard([&]{require(t&&out);std::lock_guard<std::mutex> lock(t->mutex);*out=revision_of(t->db);});}
 roots_tree_result roots_tree_agent_create(roots_tree *t,const char *name,const char *term,int64_t *id){
@@ -303,7 +505,7 @@ roots_tree_result roots_tree_relations(roots_tree *t,int64_t id,roots_relation_c
         for(const auto &e:edges)if(cb(user,e.subject.c_str(),e.predicate.c_str(),e.object.c_str()))break;
     });
 }
-static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *out,const char *language){
+static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *out,const char *language,bool experience=false){
     if(out)*out=0;
     return guard([&]{
         require(t&&out);bounded(path,32768,true);if(language)bounded(language,64,true);
@@ -315,7 +517,12 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
             try{
                 rev=revision_of(t->db);
                 // One preferred local-language content node per grouped master.
-                statement s(t->db,language?
+                statement s(t->db,experience?
+                    "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms FROM fragments f "
+                    "WHERE f.source='record.experience.body' AND f.external_id GLOB 'local:experience:*' "
+                    "AND EXISTS(SELECT 1 FROM fragments k WHERE k.source='record.experience.kind' "
+                    "AND k.external_id=f.external_id AND k.body='observation') ORDER BY f.seq":
+                    language?
                     "SELECT seq,source,external_id,body,language,observed_ms FROM fragments f "
                     "WHERE source GLOB 'record.*' AND external_id GLOB 'local:*' AND language=? "
                     "AND (source GLOB 'record.*.understanding' OR "
@@ -337,13 +544,25 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
                     while(branch.next())if(active.count(branch.str(0)))edges.push_back({"master:"+branch.str(0),"is.in","branch:"+std::to_string(branch.integer(1))});
                     statement wants(t->db,"SELECT DISTINCT external_id FROM fragments WHERE source GLOB 'record.*.want' AND external_id GLOB 'local:*'");
                     while(wants.next())if(active.count(wants.str(0)))edges.push_back({"master:"+wants.str(0),"has.state","state:wanted"});
+                }else if(experience){
+                    std::unordered_set<std::string> active;
+                    for(const auto &r:rows)active.insert(r.external);
+                    statement links(t->db,"SELECT external_id,source,body FROM fragments WHERE source IN "
+                        "('record.experience.parent','record.experience.screen') AND external_id GLOB 'local:experience:*'");
+                    while(links.next())if(active.count(links.str(0)))
+                        edges.push_back({"master:"+links.str(0),"is.part.of",
+                            (links.str(1)=="record.experience.screen"?"screen:":"session:")+links.str(2)});
+                    statement branch(t->db,"SELECT DISTINCT f.external_id,b.agent_id FROM branch_members b JOIN fragments f ON f.seq=b.fragment_seq "
+                        "WHERE f.source GLOB 'record.experience.*'");
+                    while(branch.next())if(active.count(branch.str(0)))
+                        edges.push_back({"master:"+branch.str(0),"is.in","branch:"+std::to_string(branch.integer(1))});
                 }else membership_edges(t->db,edges,0);
                 statement a(t->db,"SELECT id,name,term FROM agents ORDER BY id");
                 while(a.next())agents.push_back({a.integer(0),a.str(1),a.str(2)});
                 exec(t->db,"COMMIT");
             }catch(...){sqlite3_exec(t->db,"ROLLBACK",nullptr,nullptr,nullptr);throw;}
         }
-        if(language&&rows.empty()){*out=rev;return;}
+        if((language||experience)&&rows.empty()){*out=rev;return;}
         require(!rows.empty());
         if(language){
             std::unordered_set<std::string> keys;for(const auto &r:rows){keys.insert(fragment_key(r.id));keys.insert("master:"+r.external);}
@@ -356,6 +575,15 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
         // Multiple members of the same master emit the same network edge.
         edges.reserve(edges.size()+rows.size()*5);
         for(const auto &r:rows)add_edges(edges,r);
+        if(experience){
+            // Exact repeats keep independent observation identities but link
+            // to the first occurrence. No speculative semantic merging.
+            std::unordered_map<std::string,int64_t> first;
+            for(const auto &r:rows){
+                auto [entry,inserted]=first.emplace(r.body,r.id);
+                if(!inserted)edges.push_back({fragment_key(r.id),"is.occurrence.of",fragment_key(entry->second)});
+            }
+        }
         auto key=[](const edge &e){return std::tie(e.subject,e.predicate,e.object);};
         std::sort(edges.begin(),edges.end(),[&](const edge &a,const edge &b){return key(a)<key(b);});
         edges.erase(std::unique(edges.begin(),edges.end(),[&](const edge &a,const edge &b){return key(a)==key(b);}),edges.end());
@@ -366,13 +594,14 @@ static roots_tree_result compile_tree(roots_tree *t,const char *path,int64_t *ou
         try{
             std::ofstream file(dest,std::ios::binary|std::ios::out);
             if(!file)throw std::runtime_error("open snapshot");
-            write_gguf(file,rows,edges,agents,rev,language);file.close();if(!file)throw std::runtime_error("close snapshot");
+            write_gguf(file,rows,edges,agents,rev,language,experience);file.close();if(!file)throw std::runtime_error("close snapshot");
             *out=rev;
         }catch(...){std::error_code ec;std::filesystem::remove(dest,ec);throw;}
     });
 }
 
 roots_tree_result roots_tree_compile(roots_tree *t,const char *path,int64_t *out){return compile_tree(t,path,out,nullptr);}
+roots_tree_result roots_tree_compile_experience(roots_tree *t,const char *path,int64_t *out){return compile_tree(t,path,out,nullptr,true);}
 roots_tree_result roots_tree_compile_localized(roots_tree *t,const char *path,const char *language,int64_t *out){
     if(!language||!*language)return ROOTS_TREE_INVALID;
     return compile_tree(t,path,out,language);

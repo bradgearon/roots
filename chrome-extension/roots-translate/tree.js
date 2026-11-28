@@ -1,11 +1,73 @@
 "use strict";
 const el=id=>document.getElementById(id);
 const status=value=>{el("message").textContent=value;};
-let latest=null,before=0,loading=false,refreshing=false,generation=0,query="",mode="records";
+let latest=null,beforeMs=0,beforeSequence=0,loading=false,refreshing=false,generation=0,query="",mode="records";
+let timelineDay="",screenPageSize=12,timelineSection=null;
+let selectedSource="knowledge",selectedAgent=0,pages=0,viewRevision=null,viewRefreshing=false,viewEpoch=0;
 let invitations=[],inviteSignature="",peerSignature="",branchSignature="";
+// This code runs only in the trusted extension Tree page. A previously
+// loaded MV3 worker may not recognize newly added view commands. On that
+// explicit rejection, use the same token-authenticated loopback routes.
+// Never fall back after an ambiguous timeout or failed write.
+async function localViewCommand(operation,args){
+  if(location.href.split(/[?#]/)[0]!==chrome.runtime.getURL("tree.html"))return {ok:false,error:"untrusted_sender"};
+  const source=args.source;
+  if(source!=="experience"&&source!=="knowledge")return {ok:false,error:"invalid_source"};
+  let path="/view/"+source,method="GET",body,timeout=10000;
+  const positive=v=>Number.isSafeInteger(v)&&v>0?v:0;
+  switch(operation){
+    case "viewStatus":path+="/status";break;
+    case "viewRecords":case "viewFeed":case "viewScreens":{
+      if(operation==="viewScreens"&&source!=="experience")return {ok:false,error:"invalid_source"};
+      const params=new URLSearchParams({term:String(args.term||"").slice(0,512),
+        beforeMs:String(positive(args.beforeMs)),beforeSequence:String(positive(args.beforeSequence)),
+        agent:String(positive(args.agent)),limit:operation==="viewScreens"?"12":"30"});
+      path+=(operation==="viewScreens"?"/screens":operation==="viewRecords"?"/records":"/feed")+"?"+params;timeout=20000;break;
+    }
+    case "viewPage":{
+      if(source!=="experience"||typeof args.parent!=="string"||!args.parent.startsWith("local:experience:browser:")||args.parent.length>512)
+        return {ok:false,error:"invalid_page"};
+      const params=new URLSearchParams({parent:args.parent,afterOrder:String(args.afterOrder||"").slice(0,128),
+        afterSequence:String(positive(args.afterSequence)),limit:"100"});
+      path+="/page?"+params;timeout=20000;break;
+    }
+    case "viewWeights":
+      if(!positive(args.sequence))return {ok:false,error:"invalid_sequence"};
+      path+="/weights/"+args.sequence;break;
+    case "viewBranches":path+="/branches";break;
+    case "viewAddBranch":
+      path+="/branches";method="POST";body={name:String(args.name||"").slice(0,160),term:String(args.term||"").slice(0,512)};break;
+    case "viewRemoveBranch":
+      if(!positive(args.id))return {ok:false,error:"invalid_branch"};
+      path+="/branches/"+args.id;method="DELETE";break;
+    case "viewCompile":
+      path+="/compile";method="POST";body={language:String(args.language||"en").slice(0,3)};timeout=60000;break;
+    default:return {ok:false,error:"invalid_operation"};
+  }
+  const settings=await chrome.storage.local.get(["token"]);
+  if(typeof settings.token!=="string"||!/^[0-9a-f]{64}$/i.test(settings.token))return {ok:false,error:"configure_token"};
+  try{
+    const response=await fetch("http://127.0.0.1:8224/api/tree/v1"+path,{
+      method,headers:{"Content-Type":"application/json","X-SixStars-Token":settings.token},
+      credentials:"omit",redirect:"error",cache:"no-store",body:body===undefined?undefined:JSON.stringify(body),
+      signal:AbortSignal.timeout(timeout)
+    });
+    const data=await response.json().catch(()=>({}));
+    return {...data,ok:response.ok&&data.ok!==false,error:response.ok?data.error:(data.error||"HTTP "+response.status)};
+  }catch(e){return {ok:false,error:e?.name==="TimeoutError"?"tree_query_timeout":"tree_service_unavailable"};}
+}
 async function command(operation,args={}){
-  const result=await chrome.runtime.sendMessage({type:"rootsTreeCommand",operation,...args});
-  if(!result?.ok)throw new Error(result?.error||"Desktop Tree unavailable");
+  let result=await chrome.runtime.sendMessage({type:"rootsTreeCommand",operation,...args});
+  if(result?.error==="invalid_operation"&&operation.startsWith("view"))
+    result=await localViewCommand(operation,args);
+  if(!result?.ok){
+    const error=result?.error||"Desktop Tree unavailable";
+    if(error==="invalid_operation")throw new Error("Extension worker is out of date. Reload Roots at chrome://extensions and reopen Tree.");
+    if(error==="HTTP 404"&&operation.startsWith("view"))throw new Error("Restart the updated Roots desktop host (launch.cmd). The source-view API is missing.");
+    if(error==="tree_query_timeout")throw new Error("The Tree timeline query timed out. Use Refresh to retry.");
+    if(error==="tree_operation_failed"&&result?.detail)throw new Error("Tree query failed ("+result.detail+").");
+    throw new Error(error);
+  }
   return result;
 }
 function node(tag,value,cls){
@@ -38,14 +100,48 @@ function linkFor(members){
 function field(members,role){
   return members.filter(f=>f.source.endsWith("."+role)).at(-1)?.body||"";
 }
-function renderRecord(item){
+// Native details/summary is accessible via mouse, touch and keyboard.
+// Captured text remains plain text; never interpret it as HTML.
+function expandableText(value,caption="Read full text",open=false){
+  const details=node("details",undefined,"text-reader");
+  const summary=node("summary",undefined,"text-reader-summary");
+  summary.append(node("span",value||"","text-reader-preview"),node("span",caption,"reader-hint"));
+  const full=node("div",undefined,"full-text");
+  full.append(node("p",value||""),action("Copy text",async()=>{await navigator.clipboard.writeText(value||"");status("Text copied.");}));
+  details.append(summary,full);details.open=open;
+  return details;
+}
+function weightDetails(sequence,source){
+  const details=node("details");details.append(node("summary","Lexical weights · 128 components"));
+  const body=node("div");details.append(body);let requested=false;
+  details.addEventListener("toggle",async()=>{
+    if(!details.open||requested)return;requested=true;body.textContent="Loading native Tree weights…";
+    try{
+      const r=await command("viewWeights",{source,sequence});
+      if(!details.isConnected)return;
+      if(!Array.isArray(r.weights)||r.weights.length!==128)throw new Error("Weights unavailable");
+      body.replaceChildren(node("p","Normalized byte-trigram features used by Roots GGUF compilation; not learned relation strength.","muted"));
+      if(source==="experience"&&Number.isSafeInteger(r.occurrences)&&r.occurrences>0)
+        body.append(node("p",r.occurrences+" exact text occurrence(s) across Experience.","muted"));
+      const grid=node("div",undefined,"weight-grid");
+      r.weights.forEach((w,i)=>{
+        const cell=node("span",Number(w).toFixed(3));cell.title="Weight "+i;
+        if(Number.isFinite(w))cell.style.backgroundColor="rgba(81,171,213,"+(0.12+Math.min(1,Math.max(0,w))*0.7)+")";
+        grid.append(cell);
+      });body.append(grid);
+    }catch(e){requested=false;body.textContent=e.message;}
+  });
+  return details;
+}
+function renderRecord(item,source){
   const members=[...item.members].sort((a,b)=>a.sequence-b.sequence);
   const a=node("article"),body=members.find(f=>f.source.endsWith(".body"))||members[0];
   const lang=el("language").value;
   const localized=members.filter(f=>f.source.endsWith("."+lang+".translation")||f.source.endsWith("."+lang+".localized")).at(-1);
-  a.append(node("strong",[field(members,"author"),field(members,"handle")].filter(Boolean).join(" ")||field(members,"topic")||"Knowledge"));
-  if(body)a.append(node("div",new Date(body.observedMs).toLocaleString(),"muted"));
-  a.append(node("p",localized?.body||body?.body||""));
+  a.append(node("strong",source==="experience"?(field(members,"process")||"Desktop"):[field(members,"author"),field(members,"handle")].filter(Boolean).join(" ")||field(members,"topic")||"Knowledge"));
+  if(source==="experience")a.append(node("span",field(members,"origin").replace("windows.","")||field(members,"kind")||"observation","source-badge"));
+  if(body)a.append(node("div",new Date(item.observedMs??body.observedMs).toLocaleString(),"muted"));
+  a.append(expandableText(localized?.body||body?.body||""));
   const url=linkFor(members);
   if(url){
     const link=node("a","Open original post");
@@ -55,26 +151,207 @@ function renderRecord(item){
   for(const f of members){
     details.append(node("small",f.source+(f.language?" · "+f.language:"")),node("p",f.body));
   }
-  a.append(details);return a;
+  a.append(details);if(body)a.append(weightDetails(body.sequence,source));return a;
 }
-function renderFragment(f){
-  const a=node("article");a.append(node("small",f.source+(f.language?" · "+f.language:"")),node("p",f.body));return a;
+function screenRows(item){
+  return (item.observations||[]).map(observation=>{
+    const members=observation.members||[];
+    const body=members.find(f=>f.source==="record.experience.body");
+    let evidence={};try{evidence=JSON.parse(field(members,"evidence")||"{}");}catch{}
+    return {observation,members,body,evidence,origin:field(members,"origin").replace("windows.","")||"text",
+      order:field(members,"page-order")};
+  }).filter(row=>row.body).sort((a,b)=>{
+    if(a.order&&b.order)return a.order.localeCompare(b.order)||a.body.sequence-b.body.sequence;
+    // Native capture geometries from different coordinate spaces must not
+    // be mixed as if they shared an origin. Sort within each acquisition lane.
+    const as=a.evidence.coordinateSpace||"",bs=b.evidence.coordinateSpace||"";
+    if(as!==bs)return as.localeCompare(bs);
+    const ar=a.evidence.boundsCssPx||a.evidence.boundsPx,br=b.evidence.boundsCssPx||b.evidence.boundsPx;
+    return Array.isArray(ar)&&Array.isArray(br)?ar[1]-br[1]||ar[0]-br[0]||a.body.sequence-b.body.sequence:
+      a.body.sequence-b.body.sequence;
+  });
 }
-async function load(reset=false){
-  if(reset){generation++;query=el("term").value;mode=el("view").value;before=0;el("items").replaceChildren();loading=false;}
+function pageReader(parent){
+  const details=node("details",undefined,"page-reader");
+  details.append(node("summary","Read captured webpage in page order"));
+  const contents=node("div",undefined,"full-text");
+  const info=node("p","Only text actually captured while visible is included. Older captures without page coordinates remain available in their screen groups.","muted");
+  const list=node("div");
+  const more=action("Load next 100 lines",()=>loadPage());
+  const copy=action("Copy loaded page text",async()=>{
+    await navigator.clipboard.writeText(texts.join("\n"));status("Loaded page text copied.");
+  });
+  contents.append(info,list,more,copy);details.append(contents);
+  let cursor="",seq=0,busy=false,started=false,complete=false;const texts=[],seen=new Set();
+  more.hidden=true;copy.hidden=true;
+  async function loadPage(){
+    if(busy||complete)return;
+    busy=true;more.disabled=true;
+    try{
+      const result=await command("viewPage",{source:"experience",parent,afterOrder:cursor,afterSequence:seq});
+      if(!details.isConnected)return;
+      for(const item of result.items||[]){
+        if(seen.has(item.sequence))continue;seen.add(item.sequence);
+        texts.push(item.body);
+        list.append(expandableText(item.body,"Read full line",true));
+      }
+      started=true;
+      complete=!result.hasMore||!result.nextSequence||(result.nextSequence===seq&&result.nextOrder===cursor);
+      cursor=result.nextOrder||"";seq=result.nextSequence||0;
+      info.textContent=texts.length?texts.length+" captured lines loaded in document order."+(complete?"":" More lines are available."):
+        "No ordered text yet. Scroll this webpage with the updated reader enabled; prior observations remain in the screen timeline.";
+      more.hidden=complete;copy.hidden=!texts.length;
+    }catch(e){info.textContent=e.message;more.textContent="Retry page read";more.hidden=false;}
+    finally{busy=false;more.disabled=false;}
+  }
+  details.addEventListener("toggle",()=>{if(details.open&&!started)void loadPage();});
+  return details;
+}
+function renderScreen(item){
+  const a=node("article",undefined,"screen-card");
+  const rows=screenRows(item);
+  const counts=new Map();
+  for(const row of rows)counts.set(row.origin,(counts.get(row.origin)||0)+1);
+  const methods=[...counts].map(([method,count])=>count+" "+method).join(" · ");
+  // Clicking the heading, preview or explicit expand hint opens the whole
+  // screen. The expanded rows contain all stored text, not just the preview.
+  const details=node("details",undefined,"screen-reader");
+  const summary=node("summary",undefined,"screen-reader-summary");
+  const header=node("div",undefined,"row");
+  header.append(node("strong",item.process||"Desktop"),node("span","Screen observations","source-badge"));
+  const host=rows.find(r=>r.origin==="browser.dom")?.evidence.host;
+  if(host)header.append(node("span",String(host),"muted"));
+  summary.append(header,node("div",new Date(item.observedMs).toLocaleTimeString()+" · "+rows.length+" observations"+(methods?" · "+methods:""),"muted"));
+  const preview=node("div",undefined,"screen-preview");
+  for(const row of rows.slice(0,5))preview.append(node("p",row.body.body));
+  if(rows.length>5)preview.append(node("small","+"+(rows.length-5)+" more"));
+  summary.append(preview,node("span","Read full screen · "+rows.length+" observations","reader-hint"));
+  const contents=node("div",undefined,"screen-reader-content");
+  details.append(summary,contents);a.append(details);
+  let populated=false;
+  details.addEventListener("toggle",()=>{
+    if(!details.open||populated)return;populated=true;
+    contents.append(action("Copy full screen text",async()=>{
+      await navigator.clipboard.writeText(rows.map(r=>r.body.body).join("\n"));status("Screen text copied.");
+    }));
+    for(const row of rows){
+      const observation=node("div",undefined,"screen-observation");
+      observation.append(node("small",row.origin),expandableText(row.body.body,"Read full line",true),weightDetails(row.body.sequence,"experience"));
+      const metadata=node("details");metadata.append(node("summary","Source and coordinates"));
+      for(const f of row.members)if(f!==row.body)metadata.append(node("small",f.source),node("p",f.body));
+      observation.append(metadata);contents.append(observation);
+    }
+  });
+  if(item.session?.startsWith("local:experience:browser:")&&rows.some(r=>r.order))a.append(pageReader(item.session));
+  return a;
+}
+function appendTimelineItem(item,source,view){
+  const observed=Number(item.observedMs);
+  if(Number.isFinite(observed)){
+    const date=new Date(observed);
+    const day=date.toLocaleDateString(undefined,{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+    if(day!==timelineDay){
+      timelineDay=day;timelineSection=null;el("items").append(node("h3",day,"timeline-day"));
+    }
+  }
+  if(view!=="screens"){
+    el("items").append(view==="records"?renderRecord(item,source):renderFragment(item,source));return;
+  }
+  const key=item.process+"\u001f"+item.session;
+  const joins=timelineSection&&item.session&&timelineSection.key===key&&
+    timelineSection.last-observed>=0&&timelineSection.last-observed<=60000;
+  if(!joins){
+    const wrapper=node("div",undefined,"experience-section");
+    const heading=node("h4",undefined,"muted");
+    wrapper.append(heading);el("items").append(wrapper);
+    timelineSection={wrapper,heading,key,newest:observed,last:observed,count:0,process:item.process||"Desktop"};
+  }
+  const group=timelineSection;
+  group.last=observed;group.count++;
+  const fmt=ms=>new Date(ms).toLocaleTimeString();
+  group.heading.textContent=group.process+" · "+fmt(group.newest)+(group.count>1?" – "+fmt(group.last):"")+" · "+group.count+" screen"+(group.count===1?"":"s");
+  group.wrapper.append(renderScreen(item));
+}
+function renderFragment(f,source){
+  const a=node("article");a.append(node("small",f.source+(f.language?" · "+f.language:"")),
+    node("div",new Date(f.observedMs).toLocaleString(),"muted"),expandableText(f.body),weightDetails(f.sequence,source));return a;
+}
+async function load(reset=false,live=false){
+  const saved=live?{beforeMs,beforeSequence,pages,timelineDay,timelineSection}:null;
+  if(reset){
+    generation++;
+    if(!live){query=el("term").value;mode=el("view").value;selectedAgent=Number(el("branchFilter").value)||0;}
+    beforeMs=0;beforeSequence=0;pages=0;timelineDay="";timelineSection=null;loading=false;
+  }
   if(loading)return;
-  const gen=generation,previous=before;
+  const gen=generation,previous=beforeSequence,source=selectedSource,view=mode;
   loading=true;el("more").disabled=true;
   try{
-    const data=await command(mode,{term:query,before});
+    const data=await command(view==="screens"?"viewScreens":view==="records"?"viewRecords":"viewFeed",{source,term:query,beforeMs,beforeSequence,agent:selectedAgent});
     if(gen!==generation)return;
-    const rows=data.items||[];
-    for(const item of rows)el("items").append(mode==="records"?renderRecord(item):renderFragment(item));
-    if(reset&&!rows.length)el("items").append(node("p","No matching knowledge yet.","muted"));
-    before=data.nextBefore||0;
-    el("more").hidden=rows.length<30||!before||before===previous;
-  }catch(e){if(gen===generation)status(e.message);}
+    const rows=[...(data.items||[])].sort((a,b)=>Number(b.observedMs)-Number(a.observedMs)||Number(b.sequence)-Number(a.sequence));
+    if(reset){el("items").replaceChildren();timelineDay="";timelineSection=null;}
+    for(const item of rows)appendTimelineItem(item,source,view);
+    if(reset&&!rows.length)el("items").append(node("p",view==="screens"?"No screen text observations yet. Grouped records also shows activity intervals.":"No matching knowledge yet.","muted"));
+    beforeMs=data.nextBeforeMs||0;beforeSequence=data.nextBeforeSequence||0;pages++;
+    el("more").hidden=!(data.hasMore??(rows.length===(view==="screens"?screenPageSize:30)))||!beforeSequence||beforeSequence===previous;
+    status("");return true;
+  }catch(e){if(gen===generation){
+    if(saved){({beforeMs,beforeSequence,pages,timelineDay,timelineSection}=saved);}
+    if(reset&&!live)el("items").replaceChildren(node("p",e.message,"muted"));
+    status(e.message);
+  }return false;}
   finally{if(gen===generation){loading=false;el("more").disabled=false;}}
+}
+async function refreshBrowserExperience(){
+  try{
+    const state=await command("experienceDomStatus");
+    el("browserExperience").dataset.enabled=String(state.enabled===true);
+    el("browserExperience").textContent=state.enabled?"Disable webpage reading":"Enable visible webpage reading";
+    el("browserExperienceStatus").textContent=state.enabled?"Browser reading allowed when Experience capture is on":"Chrome site access required once";
+  }catch(e){el("browserExperienceStatus").textContent=e.message;}
+}
+handle("browserExperience","click",async()=>{
+  const enabled=el("browserExperience").dataset.enabled!=="true";
+  if(enabled){
+    const granted=await chrome.permissions.request({origins:["http://*/*","https://*/*"]});
+    if(!granted){status("Browser reading remains off; site permission was not granted.");return;}
+  }
+  await command("experienceDomEnable",{enabled});
+  await refreshBrowserExperience();
+});
+async function refreshSelected(force=false){
+  if(viewRefreshing&&!force)return;
+  const epoch=++viewEpoch,source=selectedSource;viewRefreshing=true;
+  try{
+    const state=await command("viewStatus",{source});
+    if(epoch!==viewEpoch||source!==selectedSource)return;
+    const changed=viewRevision!==null&&viewRevision!==state.revision;
+    el("knowledgeSummary").textContent=state.count+" fragments · revision "+state.revision;
+    el("sourceDescription").textContent=source==="experience"?"Private desktop observations · click a screen to read all captured text; browser pages can be read in scroll order. Never included in Axon or Mesh exchange.":"Social and received knowledge. Newest observation time first.";
+    const branches=await command("viewBranches",{source});
+    if(epoch!==viewEpoch||source!==selectedSource)return;
+    const signature=source+JSON.stringify(branches.items||[]);
+    if(signature!==branchSignature){
+      branchSignature=signature;el("branches").replaceChildren();
+      const previous=Number(el("branchFilter").value)||0;
+      el("branchFilter").replaceChildren(new Option("All branches","0"));
+      for(const branch of branches.items||[]){
+        el("branchFilter").add(new Option(branch.name,String(branch.id)));
+        const row=node("div",undefined,"row");row.append(node("span",branch.name+" · "+branch.term),action("Remove",async()=>{
+          await command("viewRemoveBranch",{source,id:branch.id});
+          if(source===selectedSource){await refreshSelected(true);await load(true);}
+        }));el("branches").append(row);
+      }
+      if([...el("branchFilter").options].some(o=>Number(o.value)===previous))el("branchFilter").value=String(previous);
+      else if(previous){selectedAgent=0;await load(true);}
+    }
+    const canRefresh=el("liveKnowledge").checked&&pages<=1&&!loading&&!el("items").querySelector("details[open]")&&!el("term").matches(":focus");
+    if(changed&&canRefresh){const loaded=await load(true,true);if(loaded&&epoch===viewEpoch&&source===selectedSource)viewRevision=state.revision;}
+    else if(changed){el("knowledgeSummary").textContent+=" · new data available";}
+    else viewRevision=state.revision;
+  }catch(e){if(epoch===viewEpoch)el("knowledgeSummary").textContent="View unavailable · "+e.message;}
+  finally{if(epoch===viewEpoch)viewRefreshing=false;}
 }
 function renderPeers(peers){
   const signature=JSON.stringify(peers);
@@ -120,16 +397,6 @@ async function refresh(){
       : "Mesh unavailable"+(latest.meshError?": "+latest.meshError:"");
     renderPeers(mesh?.peers||[]);
     await renderInvites(mesh);
-    const branches=await command("branches");
-    const signature=JSON.stringify(branches.items||[]);
-    if(signature!==branchSignature){
-      branchSignature=signature;el("branches").replaceChildren();
-      for(const branch of branches.items||[]){
-        const row=node("div",undefined,"row");row.append(node("span",branch.name+" · "+branch.term),action("Remove",async()=>{
-          await command("removeBranch",{id:branch.id});await refresh();
-        }));el("branches").append(row);
-      }
-    }
   }catch(e){
     el("summary").textContent="Desktop Tree unavailable. Check that the updated Roots host is running and the extension key is saved.";
     el("capture").disabled=true;el("listen").disabled=true;el("receive").disabled=true;status(e.message);
@@ -142,12 +409,28 @@ function handle(id,event,fn){
   });
 }
 handle("capture","change",async()=>{const enabled=el("capture").checked;el("capture").disabled=true;try{await command("capture",{enabled});}finally{await refresh();}});
-handle("refresh","click",async()=>{await refresh();await load(true);});
+handle("refresh","click",async()=>{await refresh();viewRevision=null;await refreshSelected(true);await load(true);});
 handle("listen","click",async()=>{await command("listen",{enabled:!latest?.mesh?.enabled});await refresh();});
 handle("receive","click",async()=>{await command("receive");status("Receive started in the desktop host.");await refresh();});
 handle("bind","submit",async()=>{await command("bind",{invitation:el("invitation").value.trim()});el("invitation").value="";status("Axon bound.");await refresh();});
-handle("branch","submit",async()=>{await command("addBranch",{name:el("branchName").value,term:el("branchTerm").value});el("branchName").value="";el("branchTerm").value="";await refresh();});
-handle("compile","click",async()=>{el("compile").disabled=true;try{const r=await command("compile",{language:el("language").value});status(r.available?"Localized Tree snapshot compiled.":"No localized knowledge yet.");}finally{el("compile").disabled=false;}});
+handle("branch","submit",async()=>{await command("viewAddBranch",{source:selectedSource,name:el("branchName").value,term:el("branchTerm").value});el("branchName").value="";el("branchTerm").value="";await refreshSelected(true);});
+handle("compile","click",async()=>{el("compile").disabled=true;const source=selectedSource;try{
+  const r=await command("viewCompile",{source,language:el("language").value});
+  status(source==="experience"?(r.available?"Private Experience GGUF compiled · revision "+r.revision+" · "+(r.path||"experience.weights.gguf")+(r.contentPath?" · Content only: "+r.contentPath:""):"No Experience knowledge yet."):(r.available?"Localized Tree snapshot compiled.":"No localized knowledge yet."));
+}finally{el("compile").disabled=false;}});
+handle("knowledgeSource","change",async()=>{
+  selectedSource=el("knowledgeSource").value;viewRevision=null;branchSignature="";selectedAgent=0;
+  el("compile").textContent=selectedSource==="experience"?"Compile private Experience GGUF":"Compile localized GGUF";
+  const screenOption=el("view").querySelector('option[value="screens"]');
+  screenOption.hidden=screenOption.disabled=selectedSource!=="experience";
+  el("view").value=selectedSource==="experience"?"screens":"records";
+  el("browserExperienceControls").hidden=selectedSource!=="experience";
+  if(selectedSource==="experience")await refreshBrowserExperience();
+  el("branchFilter").replaceChildren(new Option("All branches","0"));
+  el("items").replaceChildren();generation++;loading=false;
+  await refreshSelected(true);await load(true);
+});
+handle("branchFilter","change",()=>load(true));
 handle("search","submit",()=>load(true));handle("view","change",()=>load(true));handle("language","change",()=>load(true));handle("more","click",()=>load());
-chrome.storage.local.get(["targetLang"]).then(s=>{if([...el("language").options].some(o=>o.value===s.targetLang))el("language").value=s.targetLang;}).catch(()=>{}).finally(async()=>{await refresh();await load(true);});
-setInterval(()=>{if(document.visibilityState==="visible")refresh();},3000);
+chrome.storage.local.get(["targetLang"]).then(s=>{if([...el("language").options].some(o=>o.value===s.targetLang))el("language").value=s.targetLang;}).catch(()=>{}).finally(async()=>{await Promise.all([refresh(),refreshSelected(true)]);await load(true);});
+setInterval(()=>{if(document.visibilityState==="visible"){refresh();refreshSelected();}},3000);
