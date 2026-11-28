@@ -761,7 +761,7 @@ public final class XVisibleTextReader {
             for(android.text.style.LocaleSpan span:text.getSpans(0,text.length(),android.text.style.LocaleSpan.class)){
                 if(text.getSpanEnd(span)-text.getSpanStart(span)<text.length()*.8)continue;
                 java.util.Locale locale=span.getLocale();
-                if(locale!=null)return PostLanguage.code(locale.getLanguage());
+                if(locale!=null)return PostLanguage.code(locale.toLanguageTag());
             }
         }
         return "";

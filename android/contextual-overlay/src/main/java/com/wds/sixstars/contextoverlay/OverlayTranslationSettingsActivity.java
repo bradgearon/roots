@@ -190,10 +190,10 @@ public final class OverlayTranslationSettingsActivity extends Activity {
 
         LinearLayout translation=RootsUi.section(this,sections,"Translation","Language, mode and scheduling",true);
         content=translation;
-        content.addView(text("Translate into", 13, 0xFFAAC8D4));
+        content.addView(text("Translate into (43 languages)", 13, 0xFFAAC8D4));
         targetLanguage = new Spinner(this);
-        String[] languages = { "English", "Japanese", "Spanish", "French", "German" };
-        String[] codes = { "en", "ja", "es", "fr", "de" };
+        String[] languages = TranslationLanguages.targetLabels();
+        String[] codes = TranslationLanguages.targetCodes();
         RootsUi.styleSpinner(this, targetLanguage, languages);
         String configured = prefs.targetLanguage();
         for (int i = 0; i < codes.length; i++) {
@@ -591,8 +591,9 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 translationKey.setText("");
                 translationKey.setHint("Key saved securely — leave blank to keep");
             }
-            String[] codes = { "en", "ja", "es", "fr", "de" };
-            prefs.setTargetLanguage(codes[targetLanguage.getSelectedItemPosition()]);
+            int selected = targetLanguage.getSelectedItemPosition();
+            String[] codes = TranslationLanguages.targetCodes();
+            if (selected >= 0 && selected < codes.length) prefs.setTargetLanguage(codes[selected]);
             TranslationRuntime.disconnect(); // key, URL or language may have changed
             TranslationRuntime.startCompute(this);
             boolean remembered=FastestComputeRouter.rememberCurrent(this);
