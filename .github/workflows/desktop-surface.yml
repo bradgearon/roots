@@ -5,6 +5,7 @@ on:
       - 'native/desktop-surface/**'
       - 'src/Wds.Roots.Experience/**'
       - 'src/Wds.Roots.Host/Tree/**'
+      - 'tests/Roots.HostChecks/**'
       - 'src/Wds.Roots.Tree/**'
       - 'native/tree-core/**'
       - 'chrome-extension/roots-translate/**'
@@ -41,6 +42,8 @@ jobs:
         run: dotnet build src/Wds.Roots.Experience -c Release
       - name: Build host with local Experience view
         run: dotnet build src/Wds.Roots.Host -c Release
+      - name: Run host and archive regression checks
+        run: dotnet run --project tests/Roots.HostChecks -c Release
       - name: Validate extension JavaScript
         run: |
           node --check chrome-extension/roots-translate/tree.js
