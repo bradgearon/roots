@@ -240,6 +240,7 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
         string peer=channel.PeerId;Require(peer,ct);
         bool firstBinding=!Contains(peer);
         var bind=Message("bind");bind["root_graph"]=true;bind["bulk_receive_v1"]=true;bind["knowledge_archives_v1"]=true;bind["archive_channel_v2"]=true;bind["lan_tls_v1"]=false;
+        try{bind["footprints_v1"]=FootprintOffer(key,peer);}catch(Exception){Console.WriteLine("ROOTS PUBLIC AXON: footprint offer unavailable");}
         await channel.SendAsync(bind,ct);var response=await channel.ReadAsync(ct);Expect(response,"bound");
         if(!B(response,"root_graph")||!B(response,"bulk_receive_v1"))throw new IOException("Phone needs current public Axon protocol.");
         lock(_gate)
@@ -248,6 +249,7 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
             if(existing.Blocked)throw new IOException("Public Axon blocked.");
             Save(existing with{Host=route.Address.ToString(),Via=route.Via,Status="Receiving",LastSeen=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()});
         }
+        try{Require(peer,ct);ReceiveFootprints(response,peer);}catch(Exception) when(!ct.IsCancellationRequested){Console.WriteLine("ROOTS PUBLIC AXON: footprint retention unavailable");}
         if(firstBinding)Console.WriteLine("ROOTS PUBLIC AXON: bound "+peer[..12]+" via "+route.Via+" · "+route.Address);
         if(B(response,"knowledge_archives_v1")&&B(response,"archive_channel_v2"))
             return await ExchangeArchivesAsync(channel,peer,ct);
