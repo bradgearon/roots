@@ -164,12 +164,15 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
         });
         group.MapGet("/view/{source}/weights/{sequence:long}",(string source,long sequence)=>{
             if(sequence<=0||source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_request"});
-            var weights=source=="experience"?DesktopExperienceTree.Weights(sequence):host!._tree.FragmentWeights(sequence);
-            return Results.Json(new {ok=true,profile="roots.lexical.byte-trigram.fnv1a.l2.v1",weights});
+            if(source=="experience"){
+                var detail=DesktopExperienceTree.Weights(sequence);
+                return Results.Json(new {ok=true,profile="roots.lexical.utf8-trigram.f32.v1",weights=detail.Weights,occurrences=detail.Occurrences});
+            }
+            return Results.Json(new {ok=true,profile="roots.lexical.utf8-trigram.f32.v1",weights=host!._tree.FragmentWeights(sequence)});
         });
         group.MapPost("/view/{source}/compile",(string source,CompileRequest request)=>{
             if(source=="experience"){
-                var result=DesktopExperienceTree.Compile();return Results.Json(new {ok=true,available=result.Available,revision=result.Revision});
+                var result=DesktopExperienceTree.Compile();return Results.Json(new {ok=true,available=result.Available,revision=result.Revision,path=result.Path,contentPath=result.ContentPath});
             }
             if(source=="knowledge")return Results.Json(host!._tree.CompileLocalized(request.Language));
             return Results.BadRequest(new {ok=false,error="invalid_source"});
