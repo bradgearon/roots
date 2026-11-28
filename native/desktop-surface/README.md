@@ -13,7 +13,7 @@ launch-surface.cmd --status
 launch-surface.cmd --search "gate"
 ```
 
-Start the watcher once and confirm the visible consent prompt. It automatically
+Start the watcher once; explicitly launching it enables capture immediately. It automatically
 follows the currently focused eligible application; it never launches, injects
 into, or controls that application. No executable name is required. Switch
 between already-running programs normally. The foreground window is the initial
