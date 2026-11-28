@@ -31,6 +31,7 @@ public final class EncounterActivity extends Activity {
         last=RootsUi.text(this,"",13,RootsUi.MUTED,false);controls.addView(last);
         permission=RootsUi.action(this,"Allow nearby exchange",()->EncounterSettings.authorize(this));controls.addView(permission);
         controls.addView(RootsUi.text(this,"When enabled, Roots discovers and publishes automatically, even while you use other apps. All published topics are included; raw captures and private prompts are excluded.",13,RootsUi.MUTED,false));
+        controls.addView(RootsUi.action(this,"External knowledge · bring items into my Tree",()->startActivity(new android.content.Intent(this,ExternalKnowledgeActivity.class))));
         LinearLayout peers=RootsUi.card(this,content);peers.addView(RootsUi.text(this,"Bound Axons",18,RootsUi.TEXT,true));
         peers.addView(RootsUi.text(this,"Bindings persist offline. Block a peer to stop future exchange; previously transferred knowledge remains.",13,RootsUi.MUTED,false));
         peerList=RootsUi.column(this);peers.addView(peerList);

@@ -16,6 +16,7 @@ final class EncounterSync {
     private final EncounterChannel channel;
     private final EncounterBindings bindings;
     private final TreeRuntime tree;
+    private final ExternalKnowledgeStore external;
     private final BooleanSupplier active;
     private final long epoch;
     private final NavigableMap<String,MeshItem> catalog;
@@ -29,7 +30,9 @@ final class EncounterSync {
     EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active)throws Exception{
         this.channel=channel;this.active=active;bindings=EncounterBindings.get(context);
         tree=TreeRuntime.get(context);epoch=tree.captureEpoch();check();
-        catalog=new TreeMap<>(MeshPeer.get(context).encounterCatalog());
+        external=ExternalKnowledgeStore.get(context);
+        catalog=new TreeMap<>(external.catalog());
+        catalog.putAll(MeshPeer.get(context).encounterCatalog());
         root=inventoryRoot(catalog.navigableKeySet());check();
         binding=bindings.bind(channel.peerId);
     }
@@ -93,9 +96,8 @@ final class EncounterSync {
                     JSONObject data=read();expect(data,"data");
                     MeshItem item=MeshItem.parse(data.getJSONObject("item"));
                     if(item.graph()!=null||!item.id().equals(id))throw new IOException("Unexpected publication");
-                    check();item.store(tree,epoch);received++;
-                    // Do not advertise arbitrary graph records from a stranger.
-                    // Verified explicit publications enter the same public Tree catalog.
+                    check();if(external.receive(item,channel.peerId))received++;
+                    // Public items stay outside the private Tree; forward only verified publications.
                     checkpoint(remoteRoot,id);send(message("ack").put("id",id));transferred++;
                 }else checkpoint(remoteRoot,id);
                 after=id;processed++;inspected++;
