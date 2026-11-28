@@ -37,6 +37,7 @@ import java.util.concurrent.Executors;
 @TargetApi(34)
 final class AutoWindowAttachedSurface {
     private static final int BUFFER_COUNT = 2;
+    private static final long FRAME_STALL_MS=300L;
     private static final long USAGE = HardwareBuffer.USAGE_GPU_COLOR_OUTPUT
             | HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE
             | HardwareBuffer.USAGE_COMPOSER_OVERLAY;
@@ -62,6 +63,18 @@ final class AutoWindowAttachedSurface {
     private boolean closed;
     private boolean failed;
     private final Runnable onFailure;
+    private boolean watchdogArmed;
+    // A dirty frame may wait for a GPU render or a release fence. Do not
+    // leave its predecessor frozen onscreen if neither callback arrives.
+    private final Runnable frameWatchdog=()->{
+        watchdogArmed=false;
+        if(!closed&&!failed&&!latest.isEmpty()&&(dirty||drawing))fail();
+    };
+    private void watchFrame(){
+        if(!watchdogArmed&&!closed&&!failed&&!latest.isEmpty()&&(dirty||drawing))
+            watchdogArmed=main.postDelayed(frameWatchdog,FRAME_STALL_MS);
+    }
+    private void cancelWatchdog(){main.removeCallbacks(frameWatchdog);watchdogArmed=false;}
 
     AutoWindowAttachedSurface(AccessibilityService service,
             AutoWindowTarget target, AutoScenePresentation presentation,
@@ -109,18 +122,19 @@ final class AutoWindowAttachedSurface {
         latest = Collections.unmodifiableList(new ArrayList<>(source));
         if(latest.isEmpty()){
             // Hiding does not depend on acquiring a free hardware buffer.
-            ++visibilityEpoch;dirty=false;
+            ++visibilityEpoch;dirty=false;cancelWatchdog();
             try(SurfaceControl.Transaction transaction=new SurfaceControl.Transaction()){
                 transaction.setVisibility(surface,false).setBuffer(surface,null).apply();
             }catch(RuntimeException e){fail();}
             return;
         }
         dirty = true;
+        watchFrame();
         pump();
     }
 
     private void pump() {
-        if (closed || drawing || !dirty) return;
+        if (closed || failed || drawing || !dirty) return;
         Slot slot = null;
         for (Slot candidate : slots) {
             if (candidate != null && !candidate.busy && !candidate.disposed) {
@@ -223,6 +237,10 @@ final class AutoWindowAttachedSurface {
             ready.close();
         }
 
+        // Successful progress resets the timeout; repeated scene updates
+        // alone never extend the deadline of a blocked GPU pipeline.
+        cancelWatchdog();
+        watchFrame();
         // Submit the newest replacement while the previous buffer is
         // displayed; the old slot is only reused once its release fence fires.
         pump();
@@ -232,7 +250,9 @@ final class AutoWindowAttachedSurface {
         if (closed) return;
         closed = true;
         dirty = false;
+        cancelWatchdog();
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            transaction.setVisibility(surface,false);
             transaction.setBuffer(surface, null);
             transaction.reparent(surface, null);
             transaction.apply();
