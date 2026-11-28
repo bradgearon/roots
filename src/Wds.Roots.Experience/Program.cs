@@ -46,8 +46,6 @@ try
     Console.WriteLine("Roots will follow eligible foreground windows automatically and retain text and activity locally.");
     Console.WriteLine("No applications are excluded by name unless you explicitly specify an exclusion. Protected surfaces and sensitive controls remain excluded.");
     Console.WriteLine("Screen text can contain confidential information. Stop capture before opening private content.");
-    Console.Write("Start desktop watching? [y/N] ");
-    if (!string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase)) return 0;
     var executable = Environment.GetEnvironmentVariable("ROOTS_SURFACE_AGENT");
     if (string.IsNullOrWhiteSpace(executable) || !Path.IsPathFullyQualified(executable) || !File.Exists(executable))
         throw new InvalidOperationException("Surface agent missing; use launch-surface.cmd.");
