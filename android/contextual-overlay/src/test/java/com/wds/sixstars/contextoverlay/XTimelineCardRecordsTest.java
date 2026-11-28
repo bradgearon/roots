@@ -45,6 +45,33 @@ public class XTimelineCardRecordsTest {
         assertTrue(result.posts().isEmpty());
         assertTrue(result.cardByOrder().containsValue("0/1"));
     }
+    @Test public void japanesePollQuestionWinsEvenWithClippedHandle(){
+        String question="ふと気になったのでアンケート。ハンドルネームの部分に「@〇〇」みたいに「主に何をしてる人なのか」というのを書いてあったほうがいいですか？";
+        List<XTimelineCardRecords.Node> nodes=new ArrayList<>();
+        nodes.add(node(1,"0/1","","",true,false,false,List.of()));
+        nodes.add(node(2,"0/1/1","","",false,true,false,List.of()));
+        nodes.add(node(3,"0/1/1/0","メイド","",false,false,false,List.of()));
+        nodes.add(node(4,"0/1/1/1","@rebe…","",false,false,false,List.of()));
+        nodes.add(node(5,"0/1/4",question,"",false,false,true,List.of()));
+        nodes.add(new XTimelineCardRecords.Node(6,"0/1/5","poll","android.view.View","","",false,false,false,false,true,List.of(),""));
+        nodes.add(node(7,"0/1/5/0","できればあったほうがいい","",false,false,true,List.of()));
+        nodes.add(node(8,"0/1/5/1","あったほうがいい","",false,false,true,List.of()));
+        nodes.add(node(9,"0/1/5/2","特に気にしてないのでどちらでも","",false,false,true,List.of()));
+        var result=XTimelineCardRecords.assemble(nodes);
+        assertTrue(result.posts().isEmpty()); // no fabricated identity
+        assertEquals(question,result.primaryBodies().get("0/1").text());
+        assertEquals("ja",PostLanguage.hint(question,"en"));
+    }
+
+    @Test public void genericComposeQuestionSpanWorksWithoutVisibleHeader(){
+        var card=node(1,"0/1","","",true,false,false,List.of());
+        var body=new XTimelineCardRecords.Node(2,"0/1/4","","android.view.View",
+            "こんにちは。今日はどうですか？","",false,false,false,true,true,List.of(),"");
+        var result=XTimelineCardRecords.assemble(List.of(card,body));
+        assertEquals(2,result.primaryBodies().get("0/1").order());
+        assertTrue(result.posts().isEmpty());
+    }
+
     @Test public void quotedPostDoesNotSupplyParentPermalink(){
         List<XTimelineCardRecords.Node> nodes=new ArrayList<>();
         addCard(nodes,"0/1","Alice","@alice","24");
