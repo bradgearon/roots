@@ -73,6 +73,14 @@ ROOTS_TREE_API roots_tree_result roots_tree_query_time(roots_tree *tree,const ch
 ROOTS_TREE_API roots_tree_result roots_tree_records_time(roots_tree *tree,const char *term,
     int64_t agent_id,int64_t before_ms,int64_t before_seq,uint32_t limit,
     roots_record_member_callback callback,void *user);
+/* Private Experience screen timeline. Returns every observation member of a
+ * matching screen, grouped by its screen sequence, newest capture time first.
+ * Legacy observations without an explicit screen key group by session/time.
+ * A screen cursor is the exclusive (capture timestamp, group sequence) pair.
+ * Activity intervals remain available through the ordinary record query. */
+ROOTS_TREE_API roots_tree_result roots_tree_screens_time(roots_tree *tree,const char *term,
+    int64_t agent_id,int64_t before_ms,int64_t before_seq,uint32_t limit,
+    roots_record_member_callback callback,void *user);
 /* The same normalized 128 byte-trigram lexical features used by GGUF compile.
  * These are not learned semantic relation weights. Caller owns 128 floats. */
 ROOTS_TREE_API roots_tree_result roots_tree_fragment_weights(roots_tree *tree,
