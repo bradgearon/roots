@@ -54,7 +54,7 @@ final class AutoWindowAttachedSurface {
     private final Slot[] slots = new Slot[BUFFER_COUNT];
     private final int width;
     private final int height;
-    private Rect windowBounds;
+    private XOverlayOrigin.Offset paintOrigin;
 
     private List<AutoOverlaySceneView.TextItem> latest = Collections.emptyList();
     private long sceneEpoch;
@@ -81,12 +81,12 @@ final class AutoWindowAttachedSurface {
     AutoWindowAttachedSurface(AccessibilityService service,
             AutoWindowTarget target, AutoScenePresentation presentation,
             Runnable onFailure) {
-        if (!target.isValid()) throw new IllegalArgumentException("Missing X window");
+        if (!target.hasVerifiedOrigin()) throw new IllegalArgumentException("Missing verified X window origin");
         this.presentation = presentation;
         this.onFailure = onFailure;
-        this.windowBounds = new Rect(target.screenBounds);
-        width = windowBounds.width();
-        height = windowBounds.height();
+        this.paintOrigin=target.origin;
+        width=target.bufferWidth();
+        height=target.bufferHeight();
 
         if (!HardwareBuffer.isSupported(width, height,
                 HardwareBuffer.RGBA_8888, 1, USAGE))
@@ -115,7 +115,8 @@ final class AutoWindowAttachedSurface {
 
     void present(List<AutoOverlaySceneView.TextItem> source, AutoWindowTarget target) {
         if (closed || failed) return;
-        windowBounds = new Rect(target.screenBounds);
+        if(!target.hasVerifiedOrigin()||target.bufferWidth()!=width||target.bufferHeight()!=height){fail();return;}
+        paintOrigin=target.origin;
         present(source);
     }
 
@@ -159,7 +160,7 @@ final class AutoWindowAttachedSurface {
             // RenderThread, and return to main without blocking accessibility.
             RecordingCanvas canvas = slot.node.beginRecording(width, height);
             canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR);
-            presentation.draw(canvas, latest, windowBounds.left, windowBounds.top);
+            presentation.draw(canvas, latest,paintOrigin.x(),paintOrigin.y());
             slot.node.endRecording();
 
             slot.renderer.setContentRoot(slot.node);
