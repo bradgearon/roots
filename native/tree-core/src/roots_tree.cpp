@@ -190,6 +190,7 @@ roots_tree_result roots_tree_open(const char *path,roots_tree **out){
                    "CREATE INDEX IF NOT EXISTS fragment_observed ON fragments(observed_ms DESC,seq DESC);"
                    "CREATE INDEX IF NOT EXISTS fragment_master ON fragments(external_id,seq) WHERE source GLOB 'record.*';"
                    "CREATE INDEX IF NOT EXISTS fragment_master_language ON fragments(external_id,language,seq) WHERE source GLOB 'record.*';"
+                   "CREATE INDEX IF NOT EXISTS fragment_experience_member ON fragments(external_id,source,seq) WHERE source GLOB 'record.experience.*';"
                    "CREATE TABLE IF NOT EXISTS work_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,fragment INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,operation TEXT NOT NULL,profile TEXT NOT NULL,priority INTEGER NOT NULL,deadline INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,state INTEGER NOT NULL DEFAULT 0,worker TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,token INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,output TEXT NOT NULL DEFAULT '',UNIQUE(fragment,operation,profile));"
                    "CREATE INDEX IF NOT EXISTS work_dispatch ON work_jobs(operation,state,priority DESC,deadline,id);"
                    "PRAGMA user_version=1;");
@@ -311,25 +312,31 @@ roots_tree_result roots_tree_screens_time(roots_tree *t,const char *term,int64_t
         std::vector<std::pair<int64_t,row>> rows;
         {
             std::lock_guard<std::mutex> lock(t->mutex);
+            // Aggregate each observation once instead of correlated scans of
+            // the entire Experience namespace for every body. The dedicated
+            // partial index matches the exact GLOB predicate used here.
+            // A filter selects the complete screen, not just matching lines.
             statement s(t->db,
-                "WITH events AS (SELECT b.seq AS event_seq,b.external_id,b.observed_ms,"
-                "COALESCE((SELECT e.body FROM fragments e WHERE e.external_id=b.external_id AND e.source='record.experience.screen' ORDER BY e.seq LIMIT 1),"
-                "(SELECT p.body||':legacy-screen:'||b.observed_ms FROM fragments p WHERE p.external_id=b.external_id AND p.source='record.experience.parent' ORDER BY p.seq LIMIT 1),"
-                "b.external_id) AS screen_key,"
-                "CASE WHEN EXISTS(SELECT 1 FROM fragments f WHERE f.external_id=b.external_id AND f.source GLOB 'record.experience.*' "
-                "AND instr(lower(f.body),lower(?))>0 AND (?=0 OR EXISTS(SELECT 1 FROM branch_members m WHERE m.fragment_seq=f.seq AND m.agent_id=?))) "
-                "THEN 1 ELSE 0 END AS matched "
-                "FROM fragments b WHERE b.source='record.experience.body' AND b.external_id GLOB 'local:experience:*' "
-                "AND EXISTS(SELECT 1 FROM fragments k WHERE k.external_id=b.external_id AND k.source='record.experience.kind' AND k.body='observation')), "
+                "WITH observations AS (SELECT external_id,"
+                "min(CASE WHEN source='record.experience.body' THEN seq END) AS event_seq,"
+                "max(CASE WHEN source='record.experience.body' THEN observed_ms END) AS observed_ms,"
+                "min(CASE WHEN source='record.experience.screen' THEN body END) AS screen,"
+                "min(CASE WHEN source='record.experience.parent' THEN body END) AS parent,"
+                "max(CASE WHEN (?1='' OR instr(lower(body),lower(?1))>0) AND "
+                "(?2=0 OR EXISTS(SELECT 1 FROM branch_members m WHERE m.fragment_seq=f.seq AND m.agent_id=?2)) THEN 1 ELSE 0 END) AS matched "
+                "FROM fragments f WHERE source GLOB 'record.experience.*' AND external_id GLOB 'local:experience:*' "
+                "GROUP BY external_id HAVING event_seq IS NOT NULL AND "
+                "max(CASE WHEN source='record.experience.kind' AND body='observation' THEN 1 ELSE 0 END)=1),"
+                "events AS (SELECT external_id,event_seq,observed_ms,"
+                "COALESCE(screen,parent||':legacy-screen:'||observed_ms,external_id) AS screen_key,matched FROM observations),"
                 "screens AS (SELECT screen_key,min(event_seq) AS screen_seq,max(observed_ms) AS observed FROM events GROUP BY screen_key "
-                "HAVING max(matched)=1 AND (?=0 OR max(observed_ms)<? OR (max(observed_ms)=? AND min(event_seq)<?)) "
-                "ORDER BY observed DESC,screen_seq DESC LIMIT ?) "
+                "HAVING max(matched)=1 AND (?3=0 OR max(observed_ms)<?4 OR (max(observed_ms)=?4 AND min(event_seq)<?3)) "
+                "ORDER BY observed DESC,screen_seq DESC LIMIT ?5) "
                 "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms,g.screen_seq "
-                "FROM screens g JOIN events e ON e.screen_key=g.screen_key JOIN fragments f ON f.external_id=e.external_id "
-                "WHERE f.source GLOB 'record.experience.*' "
+                "FROM screens g JOIN events e ON e.screen_key=g.screen_key "
+                "JOIN fragments f ON f.external_id=e.external_id AND f.source GLOB 'record.experience.*' "
                 "ORDER BY g.observed DESC,g.screen_seq DESC,e.event_seq,f.seq");
-            s.text(1,term);s.number(2,agent_id);s.number(3,agent_id);
-            s.number(4,before_seq);s.number(5,before_ms);s.number(6,before_ms);s.number(7,before_seq);s.number(8,limit);
+            s.text(1,term);s.number(2,agent_id);s.number(3,before_seq);s.number(4,before_ms);s.number(5,limit);
             while(s.next())rows.emplace_back(s.integer(6),read_row(s));
         }
         for(const auto &entry:rows){const auto &r=entry.second;
