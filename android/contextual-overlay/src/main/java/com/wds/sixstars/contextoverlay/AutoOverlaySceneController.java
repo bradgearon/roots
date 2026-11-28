@@ -129,7 +129,7 @@ final class AutoOverlaySceneController {
             if(nameCount>=MAX_VISIBLE)break;
             if(!candidate.authorName || candidate.author==null || !seen.add(candidate.fingerprint))continue;
             boolean foreign=AutoTranslationEligibilityService.accepts(candidate,preferences.targetLanguage());
-            if(!foreign || !candidate.author.inlineSafe)continue;
+            if(!foreign&&!candidate.author.truncated)continue;
             Rect n=candidate.bounds, avatar=candidate.avatarBounds;
             AutoDetailsPlacementService.Placement badge=AutoDetailsPlacementService.locateName(
                     n.left,n.top,n.right,n.bottom,n.left,n.top,n.right,n.bottom,false,
@@ -137,9 +137,9 @@ final class AutoOverlaySceneController {
                     screen.widthPixels,screen.heightPixels,screen.density);
             AutoInlinePlacementService.Placement nameRect=AutoInlinePlacementService.locate(
                     n.left,n.top,n.right,n.bottom,screen.widthPixels,screen.heightPixels,screen.density);
-            if(nameRect!=null){
+            if(nameRect!=null&&(candidate.author.inlineSafe||badge!=null)){
                 observations.add(new AutoOverlayPositionStore.Observation(candidate.fingerprint,
-                        nameRect,null,badge,candidate.text));
+                        nameRect,null,badge,candidate.text,candidate.author.inlineSafe,candidate.author.truncated));
                 nameCount++;
             }
         }
@@ -252,7 +252,12 @@ final class AutoOverlaySceneController {
             boolean streaming=state==null&&partials.containsKey(item.id);
             if(streaming)state=partials.get(item.id);
             if(state==null || state.translation==null){
-                removeNameAction(item.id);
+                // A clipped original is still useful while its translation
+                // is pending, already localized, or uncertain.
+                if(name&&item.nameClipped&&item.nameDetails!=null&&item.authorName!=null){
+                    present.add(item.id);
+                    ensureNameAction(item.id,item.authorName,item.nameDetails,palette);
+                }else removeNameAction(item.id);
                 removeTweetAction(item.id);
                 if(preferences.showTranslationActivity() && activeTranslations.contains(item.id)){
                     // A tiny touch-through dot inside the current source rectangle.
@@ -265,10 +270,13 @@ final class AutoOverlaySceneController {
             }
             state.prepareLayout(item.rectangle,palette);
             present.add(item.id);
-            painted.add(new AutoOverlaySceneView.TextItem(
-                    item.rectangle.x,item.rectangle.y,item.rectangle.width,item.rectangle.height,
-                    palette.background,state.inlineLayout));
-            translatedCount++;
+            // A merged author+handle node is not a safe replacement rectangle.
+            if(!name||item.nameInlineSafe){
+                painted.add(new AutoOverlaySceneView.TextItem(
+                        item.rectangle.x,item.rectangle.y,item.rectangle.width,item.rectangle.height,
+                        palette.background,state.inlineLayout));
+                translatedCount++;
+            }
             if(streaming){
                 removeNameAction(item.id);removeTweetAction(item.id);
                 int size=Math.min(dp(4),Math.min(item.rectangle.width,item.rectangle.height));
@@ -277,7 +285,7 @@ final class AutoOverlaySceneController {
             }
             if(name){
                 removeTweetAction(item.id);
-                if(state.needsMore && item.nameDetails!=null)
+                if((state.needsMore||item.nameClipped||!item.nameInlineSafe) && item.nameDetails!=null)
                     ensureNameAction(item.id,state.translation,item.nameDetails,palette);
                 else removeNameAction(item.id);
             }else{
