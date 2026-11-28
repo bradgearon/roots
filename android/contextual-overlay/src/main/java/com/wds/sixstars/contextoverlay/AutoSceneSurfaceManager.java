@@ -36,6 +36,8 @@ final class AutoSceneSurfaceManager {
     private long attachmentGeneration;
     private String lastError = "";
     private List<AutoOverlaySceneView.TextItem> lastPaint = Collections.emptyList();
+    private AutoWindowTarget lastPaintTarget;
+    private boolean hasPaint;
 
     AutoSceneSurfaceManager(AccessibilityService service, AutoScenePresentation presentation) {
         this.service = service;
@@ -73,6 +75,7 @@ final class AutoSceneSurfaceManager {
      * snapshot, even while the replacement frame is being rendered. */
     void invalidateGeometry() {
         lastPaint=Collections.emptyList();
+        hasPaint=false;
         if(attached!=null)attached.present(lastPaint);
         if(fallback!=null){
             fallback.setVisibility(android.view.View.INVISIBLE);
@@ -80,9 +83,16 @@ final class AutoSceneSurfaceManager {
         }
     }
 
+    private boolean samePaint(List<AutoOverlaySceneView.TextItem> items){
+        if(!hasPaint||lastPaintTarget==null||!lastPaintTarget.samePosition(target)||lastPaint.size()!=items.size())return false;
+        for(int i=0;i<items.size();i++)if(!lastPaint.get(i).samePaint(items.get(i)))return false;
+        return true;
+    }
     void present(List<AutoOverlaySceneView.TextItem> items) {
-        if(target==null){releaseAttached();removeFallback();lastPaint=Collections.emptyList();return;}
+        if(target==null){releaseAttached();removeFallback();lastPaint=Collections.emptyList();hasPaint=false;return;}
+        if(samePaint(items)&&(items.isEmpty()||attached!=null||fallback!=null))return;
         lastPaint = Collections.unmodifiableList(new ArrayList<>(items));
+        lastPaintTarget=target;hasPaint=true;
         if (attached != null) {
             try {
                 if (items.isEmpty()) attached.present(items);
@@ -157,6 +167,7 @@ final class AutoSceneSurfaceManager {
         attachFailed = true;
         lastError = "GPU window surface failed; restored touch-through fallback";
         releaseAttached();
+        hasPaint=false;
         present(lastPaint);
     }
 
@@ -170,6 +181,7 @@ final class AutoSceneSurfaceManager {
     }
 
     private void releaseAttached() {
+        hasPaint=false;
         ++attachmentGeneration;
         if (attached != null) {
             attached.close();
