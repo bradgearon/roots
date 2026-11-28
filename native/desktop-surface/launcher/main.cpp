@@ -12,6 +12,7 @@
 #include <cwchar>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <cstdint>
 #include <cstdlib>
 #ifdef ROOTS_SURFACE_OCR
@@ -208,66 +209,117 @@ static bool labelKind(CONTROLTYPEID kind) {
 }
 struct UiaScan {
     std::vector<SurfaceText> rows;
-    int visits=0;
-    bool complete=true,sensitive=false,ownView=false;
-    Clock::time_point deadline=Clock::now()+std::chrono::milliseconds(850);
-    bool within(int depth) const {
-        return depth<=28&&visits<1600&&Clock::now()<deadline;
-    }
+    std::vector<RECT> masks;
+    bool complete=false,maskReady=false,ownView=false;
 };
-static void walk(IUIAutomationTreeWalker* walker,IUIAutomationElement* parent,
-        const RECT& window,UiaScan& scan,int depth) {
-    if(!scan.within(depth)){scan.complete=false;return;}
-    ComPtr<IUIAutomationElement> node;
-    if(FAILED(walker->GetFirstChildElement(parent,&node))){scan.complete=false;return;}
-    while(node&&!scan.ownView){
-        if(!scan.within(depth)){scan.complete=false;return;}
-        ++scan.visits;
-        BOOL hidden=TRUE,password=TRUE;CONTROLTYPEID kind=0;
-        if(FAILED(node->get_CurrentIsOffscreen(&hidden))||FAILED(node->get_CurrentIsPassword(&password))||
-           FAILED(node->get_CurrentControlType(&kind)))scan.complete=false;
-        else if(!hidden){
-            if(password||kind==UIA_EditControlTypeId||
-               (kind==UIA_DocumentControlTypeId&&editableDocument(node.Get())))scan.sensitive=true;
-            else {
-                if(kind==UIA_DocumentControlTypeId&&ownViewName(nameOf(node.Get()))) {
-                    scan.ownView=true;scan.rows.clear();return;
-                }
-                if(labelKind(kind)&&scan.rows.size()<256){
-                    RECT bounds{},clipped{};
-                    if(SUCCEEDED(node->get_CurrentBoundingRectangle(&bounds))&&IntersectRect(&clipped,&bounds,&window))
-                        addText(scan.rows,nameOf(node.Get()),clipped);
-                }
-                const auto before=scan.rows.size();
-                walk(walker,node.Get(),window,scan,depth+1);
-                if(kind==UIA_DocumentControlTypeId&&scan.rows.size()==before&&scan.complete&&!scan.sensitive&&!scan.ownView)
-                    readVisibleRanges(node.Get(),window,scan.rows,scan.deadline);
-            }
-        }
-        if(scan.ownView)return;
-        ComPtr<IUIAutomationElement> next;
-        if(FAILED(walker->GetNextSiblingElement(node.Get(),&next))){scan.complete=false;return;}
-        node=std::move(next);
-    }
+// Build small cached queries rather than walking Chrome's entire tree with
+// several cross-process COM calls per element. Never ask for edit values.
+static ComPtr<IUIAutomationCondition> property(IUIAutomation* u,PROPERTYID id,long number,bool boolean=false) {
+    VARIANT v{};v.vt=boolean?VT_BOOL:VT_I4;
+    if(boolean)v.boolVal=number?VARIANT_TRUE:VARIANT_FALSE;else v.lVal=number;
+    ComPtr<IUIAutomationCondition> c;
+    if(FAILED(u->CreatePropertyCondition(id,v,&c)))c.Reset();
+    return c;
+}
+static ComPtr<IUIAutomationCondition> combine(IUIAutomation* u,IUIAutomationCondition* a,IUIAutomationCondition* b,bool useAnd) {
+    ComPtr<IUIAutomationCondition> c;
+    if(!a||!b)return c;
+    HRESULT hr=useAnd?u->CreateAndCondition(a,b,&c):u->CreateOrCondition(a,b,&c);
+    if(FAILED(hr))c.Reset();return c;
+}
+static ComPtr<IUIAutomationElementArray> cached(IUIAutomation* u,IUIAutomationElement* root,
+        IUIAutomationCondition* condition,bool names,bool& ok) {
+    ok=false;ComPtr<IUIAutomationCacheRequest> cache;
+    if(!condition||FAILED(u->CreateCacheRequest(&cache))||!cache)return {};
+    ComPtr<IUIAutomationCondition> raw;
+    if(FAILED(u->get_RawViewCondition(&raw))||!raw||
+       FAILED(cache->put_TreeFilter(raw.Get()))||FAILED(cache->put_TreeScope(TreeScope_Element)))return {};
+    for(auto id:{UIA_BoundingRectanglePropertyId,UIA_IsOffscreenPropertyId,UIA_IsPasswordPropertyId,UIA_ControlTypePropertyId})
+        if(FAILED(cache->AddProperty(id)))return {};
+    if(names&&FAILED(cache->AddProperty(UIA_NamePropertyId)))return {};
+    ComPtr<IUIAutomationElementArray> result;
+    if(FAILED(root->FindAllBuildCache(TreeScope_Subtree,condition,cache.Get(),&result)))return {};
+    ok=true;return result;
+}
+static bool masked(const RECT& r,const std::vector<RECT>& masks) {
+    return std::any_of(masks.begin(),masks.end(),[&](const RECT& m){RECT overlap{};return IntersectRect(&overlap,&r,&m)!=FALSE;});
 }
 static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
     UiaScan scan;
     RECT rect{};
-    ComPtr<IUIAutomationElement> root;ComPtr<IUIAutomationTreeWalker> walker;
+    ComPtr<IUIAutomationElement> root;
     if(!automation||!GetWindowRect(hwnd,&rect)||
-       FAILED(automation->ElementFromHandle(hwnd,&root))||!root||
-       FAILED(automation->get_ControlViewWalker(&walker))||!walker){
-        scan.complete=false;return scan;
-    }
-    BOOL pw=TRUE;CONTROLTYPEID kind=0;
-    if(FAILED(root->get_CurrentIsPassword(&pw))||FAILED(root->get_CurrentControlType(&kind))||
-       pw||kind==UIA_EditControlTypeId||(kind==UIA_DocumentControlTypeId&&editableDocument(root.Get()))){
-        scan.sensitive=true;scan.complete=false;return scan;
-    }
+       FAILED(automation->ElementFromHandle(hwnd,&root))||!root)return scan;
     if(ownViewName(nameOf(root.Get()))){scan.ownView=true;return scan;}
-    walk(walker.Get(),root.Get(),rect,scan,0);
-    if(scan.rows.empty()&&scan.complete&&!scan.sensitive&&!scan.ownView)
-        readVisibleRanges(root.Get(),rect,scan.rows,scan.deadline);
+    BOOL pw=TRUE;CONTROLTYPEID kind=0;
+    if(FAILED(root->get_CurrentIsPassword(&pw))||FAILED(root->get_CurrentControlType(&kind)))return scan;
+    if(pw||kind==UIA_EditControlTypeId||(kind==UIA_DocumentControlTypeId&&editableDocument(root.Get())))return scan;
+
+    auto visible=property(automation,UIA_IsOffscreenPropertyId,0,true);
+    auto password=property(automation,UIA_IsPasswordPropertyId,1,true);
+    auto edit=property(automation,UIA_ControlTypePropertyId,UIA_EditControlTypeId);
+    auto textEdit=property(automation,UIA_IsTextEditPatternAvailablePropertyId,1,true);
+    auto value=property(automation,UIA_IsValuePatternAvailablePropertyId,1,true);
+    auto writable=property(automation,UIA_ValueIsReadOnlyPropertyId,0,true);
+    auto valueEdit=combine(automation,value.Get(),writable.Get(),true);
+    auto unsafe=combine(automation,password.Get(),edit.Get(),false);
+    unsafe=combine(automation,unsafe.Get(),textEdit.Get(),false);
+    unsafe=combine(automation,unsafe.Get(),valueEdit.Get(),false);
+    unsafe=combine(automation,visible.Get(),unsafe.Get(),true);
+    bool ok=false;
+    auto sensitive=cached(automation,root.Get(),unsafe.Get(),false,ok);
+    int count=0;
+    if(ok&&(!sensitive||SUCCEEDED(sensitive->get_Length(&count)))&&count>=0&&count<=256){
+        scan.maskReady=true;
+        for(int k=0;k<count;++k){
+            ComPtr<IUIAutomationElement> node;RECT bounds{},clip{};
+            if(FAILED(sensitive->GetElement(k,&node))||!node||
+               FAILED(node->get_CachedBoundingRectangle(&bounds))||IsRectEmpty(&bounds)){
+                scan.maskReady=false;break;
+            }
+            if(IntersectRect(&clip,&bounds,&rect))scan.masks.push_back(clip);
+        }
+    }
+    // Do not fall back to unredacted pixels when the safety query failed.
+    if(!scan.maskReady)return scan;
+
+    ComPtr<IUIAutomationCondition> labels;
+    for(auto type:{UIA_TextControlTypeId,UIA_HyperlinkControlTypeId,UIA_ButtonControlTypeId,
+                   UIA_MenuItemControlTypeId,UIA_TabItemControlTypeId,UIA_CheckBoxControlTypeId,
+                   UIA_RadioButtonControlTypeId,UIA_HeaderItemControlTypeId,UIA_DocumentControlTypeId,
+                   UIA_ListItemControlTypeId,UIA_DataItemControlTypeId}) {
+        auto one=property(automation,UIA_ControlTypePropertyId,type);
+        if(!one)return scan;
+        labels=labels?combine(automation,labels.Get(),one.Get(),false):one;
+        if(!labels)return scan;
+    }
+    auto noPassword=property(automation,UIA_IsPasswordPropertyId,0,true);
+    labels=combine(automation,labels.Get(),visible.Get(),true);
+    labels=combine(automation,labels.Get(),noPassword.Get(),true);
+    auto nodes=cached(automation,root.Get(),labels.Get(),true,ok);
+    count=0;
+    if(!ok||(nodes&&FAILED(nodes->get_Length(&count)))||count<0)return scan;
+    scan.complete=count<=8192;
+    for(int k=0;k<std::min(count,8192);++k){
+        ComPtr<IUIAutomationElement> node;RECT bounds{},clip{};CONTROLTYPEID type=0;
+        if(FAILED(nodes->GetElement(k,&node))||!node||
+           FAILED(node->get_CachedControlType(&type))||
+           FAILED(node->get_CachedBoundingRectangle(&bounds))){
+            scan.complete=false;continue;
+        }
+        if(!IntersectRect(&clip,&bounds,&rect))continue;
+        BSTR raw=nullptr;
+        if(FAILED(node->get_CachedName(&raw))||!raw){if(raw)SysFreeString(raw);continue;}
+        std::wstring name(raw,SysStringLen(raw));SysFreeString(raw);
+        if(type==UIA_DocumentControlTypeId){
+            if(ownViewName(name)){scan.ownView=true;scan.rows.clear();return scan;}
+            continue;
+        }
+        if(!masked(clip,scan.masks))addText(scan.rows,std::move(name),clip);
+    }
+    // Visible read-only ranges are a secondary semantic path (e.g. terminals).
+    if(scan.rows.empty()&&scan.complete&&scan.masks.empty())
+        readVisibleRanges(root.Get(),rect,scan.rows,Clock::now()+std::chrono::milliseconds(500));
     return scan;
 }
 static void CALLBACK foreground(HWINEVENTHOOK,DWORD,HWND,LONG,LONG,DWORD,DWORD) {
@@ -320,9 +372,9 @@ int wmain(int argc,wchar_t** argv) {
 #endif
     ComPtr<IUIAutomation> automation;
     CoCreateInstance(CLSID_CUIAutomation,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&automation));
-    if(!automation){CoUninitialize();return 3;}
+    if(!automation){std::cerr<<"Surface: UI Automation unavailable. No unsafe unredacted capture will be attempted.\\n";CoUninitialize();return 3;}
     ComPtr<IUIAutomation2> automation2;
-    if(SUCCEEDED(automation.As(&automation2))){automation2->put_ConnectionTimeout(500);automation2->put_TransactionTimeout(500);}
+    if(SUCCEEDED(automation.As(&automation2))){automation2->put_ConnectionTimeout(1500);automation2->put_TransactionTimeout(1500);}
 #ifdef ROOTS_SURFACE_OCR
     std::unique_ptr<OcrLane> ocr;
     if(useOcr){try{ocr=std::make_unique<OcrLane>();}catch(...){return 4;}}
@@ -343,6 +395,8 @@ int wmain(int argc,wchar_t** argv) {
     Target current;unsigned long long session=0;
     auto previous=Clock::now(), spanStart=previous;long long startUtc=utc(),lastUtc=startUtc;
     bool wasIdle=false;std::vector<SurfaceText> seenUia,seenOcr;
+    auto lastReport=Clock::time_point{};
+    unsigned long long textUia=0,textOcr=0;
     auto close=[&](Clock::time_point end,long long endUtc){
         if(current.hwnd&&end>spanStart&&endUtc>=startUtc)
             emit(wasIdle?"idle":"focused",session,current,startUtc,endUtc,spanStart,end,{},L"Foreground activity");
@@ -358,7 +412,7 @@ int wmain(int argc,wchar_t** argv) {
         const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(now-previous).count();
         const bool gap=elapsed>3000||wall<lastUtc||std::llabs((wall-lastUtc)-elapsed)>3000;
         if(gap||!(next==current)||isIdle!=wasIdle) {
-            close(previous,lastUtc);current=next;++session;spanStart=now;startUtc=wall;seenUia.clear();seenOcr.clear();wasIdle=isIdle;
+            close(previous,lastUtc);current=next;++session;spanStart=now;startUtc=wall;seenUia.clear();seenOcr.clear();wasIdle=isIdle;lastReport={};
 #ifdef ROOTS_SURFACE_OCR
             if(ocr)ocr->reset();
 #endif
@@ -369,13 +423,15 @@ int wmain(int argc,wchar_t** argv) {
         if(!current.hwnd)continue;
         auto scan=uia(automation.Get(),current.hwnd);
         std::vector<SurfaceText> optical;RECT captureDesktop{};bool opticalReady=false;
-        // Structured text and OCR are complementary, not mutually exclusive.
-        // Do not OCR windows containing visible sensitive controls or where
-        // inspection could not determine whether such controls are present.
+        // A complete *safety* query is enough for OCR. The structured text
+        // query may be partial, and ordinary editable controls only mask their
+        // own screen rectangles. Pixels are redacted before recognition.
+        const char* opticalState=useOcr?"safety-query-unavailable":"disabled";
 #ifdef ROOTS_SURFACE_OCR
-        if(ocr&&scan.complete&&!scan.sensitive&&!scan.ownView)
-            opticalReady=ocr->read(current.hwnd,optical,captureDesktop);
-        else if(ocr){ocr->reset();seenOcr.clear();}
+        if(ocr&&scan.maskReady&&!scan.ownView){
+            opticalReady=ocr->read(current.hwnd,optical,captureDesktop,scan.masks);
+            opticalState=ocr->status();
+        } else if(ocr){ocr->reset();seenOcr.clear();}
 #endif
         if(scan.ownView||!(target(excluded)==current)){
             seenUia.clear();seenOcr.clear();
@@ -386,7 +442,7 @@ int wmain(int argc,wchar_t** argv) {
         }
         for(const auto& row:scan.rows){
             if(std::none_of(seenUia.begin(),seenUia.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
-                emit("uia",session,current,wall,wall,now,now,row.bounds,row.text);
+                {emit("uia",session,current,wall,wall,now,now,row.bounds,row.text);++textUia;}
         }
         if(opticalReady){
             std::vector<SurfaceText> unique;
@@ -396,10 +452,17 @@ int wmain(int argc,wchar_t** argv) {
                 if(known)OffsetRect(&mapped.bounds,captureDesktop.left,captureDesktop.top);
                 if(known&&std::any_of(scan.rows.begin(),scan.rows.end(),[&](const auto& semantic){return sameTextAt(semantic,mapped);}))continue;
                 if(std::none_of(seenOcr.begin(),seenOcr.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
-                    emit("ocr",session,current,wall,wall,now,now,row.bounds,row.text);
+                    {emit("ocr",session,current,wall,wall,now,now,row.bounds,row.text);++textOcr;}
                 unique.push_back(row);
             }
             seenOcr=std::move(unique);
+        }
+        if(lastReport==Clock::time_point{}||now-lastReport>=std::chrono::seconds(5)){
+            lastReport=now;
+            // Counts and state only, never captured text.
+            std::cerr<<"Surface: UIA "<<scan.rows.size()<<" visible, "<<(scan.complete?"complete":"partial")
+                <<"; masks "<<scan.masks.size()<<"; OCR "<<opticalState
+                <<" ("<<optical.size()<<" lines); totals UIA "<<textUia<<", OCR "<<textOcr<<"\n";
         }
         if(scan.complete)seenUia=std::move(scan.rows);
         else {
