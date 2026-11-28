@@ -122,8 +122,8 @@ static bool sameTextAt(const SurfaceText& a,const SurfaceText& b) {
     RECT overlap{};
     if(!IntersectRect(&overlap,&a.bounds,&b.bounds))return false;
     auto area=[](const RECT& r){return static_cast<double>(r.right-r.left)*(r.bottom-r.top);};
-    const auto small=std::min(area(a.bounds),area(b.bounds));
-    return small>0&&area(overlap)>=small*0.6;
+    const auto smallerArea=std::min(area(a.bounds),area(b.bounds));
+    return smallerArea>0&&area(overlap)>=smallerArea*0.6;
 }
 static void addText(std::vector<SurfaceText>& rows,std::wstring value,const RECT& bounds) {
     if(rows.size()>=256||!usableText(value))return;
