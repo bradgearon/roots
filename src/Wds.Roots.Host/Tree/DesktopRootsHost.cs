@@ -121,6 +121,15 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
             var last=records.LastOrDefault();
             return Results.Json(new {ok=true,items=records,nextBeforeMs=last?.observedMs??0,nextBeforeSequence=last?.sequence??0});
         });
+        group.MapGet("/view/{source}/feed",(string source,string? term,long? beforeMs,long? beforeSequence,int? limit,long? agent)=>{
+            if(source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_source"});
+            long ms=Math.Max(0,beforeMs??0),seq=Math.Max(0,beforeSequence??0),branch=Math.Max(0,agent??0);
+            uint count=(uint)Math.Clamp(limit??30,1,100);
+            var items=source=="experience"?DesktopExperienceTree.Feed(term??"",ms,seq,count,branch)
+                :host!._tree.FeedByTime(term??"",ms,seq,count,branch);
+            var last=items.LastOrDefault();
+            return Results.Json(new {ok=true,items,nextBeforeMs=last?.ObservedMs??0,nextBeforeSequence=last?.Sequence??0});
+        });
         group.MapGet("/view/{source}/weights/{sequence:long}",(string source,long sequence)=>{
             if(sequence<=0||source!="experience"&&source!="knowledge")return Results.BadRequest(new {ok=false,error="invalid_request"});
             var weights=source=="experience"?DesktopExperienceTree.Weights(sequence):host!._tree.FragmentWeights(sequence);
