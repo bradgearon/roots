@@ -89,7 +89,8 @@ try
     using var cancellation = new CancellationTokenSource();
     using var shutdown = new ConsoleShutdown(cancellation, "Roots Surface", TimeSpan.FromSeconds(5));
     var initial=control.Read();
-    control.PublishWorker(new(Guid.NewGuid().ToString("N"),excluded.ToArray(),initial.Epoch,false));
+    string watcherRun=Guid.NewGuid().ToString("N");
+    control.PublishWorker(new(watcherRun,excluded.ToArray(),initial.Epoch==""?Guid.Empty.ToString("N"):initial.Epoch,false));
     Console.WriteLine("Roots Surface — ready. Ctrl+C stops the watcher.");
     Console.WriteLine("Pause or resume Experience capture from the Roots extension or launch-surface.cmd --pause / --resume.");
     Console.WriteLine(noOcr ? "UI Automation static text only." : "UI Automation and window OCR where available.");
@@ -109,7 +110,7 @@ try
             // Each active epoch has a new run identity, so restarting the
             // native child cannot reuse its previous session/sequence keys.
             var run=Guid.NewGuid();
-            var descriptor=new ExperienceCaptureControl.Worker(run.ToString("N"),excluded.ToArray(),policy.Epoch,true);
+            var descriptor=new ExperienceCaptureControl.Worker(watcherRun,excluded.ToArray(),policy.Epoch,true);
             using var childJob=ChildProcessJob.Create();
             using var pass=CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
             var start=new ProcessStartInfo(executable){
