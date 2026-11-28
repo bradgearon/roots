@@ -8,6 +8,7 @@ namespace Wds.Roots.Tree;
 public sealed record Observation(string Source, string ExternalId, string Body, string Language, long ObservedMs);
 public sealed record Fragment(long Sequence, string Source, string ExternalId, string Body, string Language, long ObservedMs);
 public sealed record BranchAgent(long Id, string Name, string Term);
+public sealed record RecordMember(long MasterSequence, Fragment Fragment);
 
 /// <summary>Desktop binding for the shared C++ ABI. No managed knowledge database.</summary>
 public sealed class NativeTree : IDisposable
@@ -93,6 +94,17 @@ public sealed class NativeTree : IDisposable
         if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         return result;
     }
+    public IReadOnlyList<RecordMember> Records(string term="",long agent=0,long before=0,uint limit=30)
+    {
+        Validate(term); var result=new List<RecordMember>();Exception? failure=null;
+        RecordCallback cb=(_,master,p)=>{
+            try{var f=Marshal.PtrToStructure<NativeFragment>(p);
+                result.Add(new(master,new Fragment(f.Sequence,Decode(f.Source),Decode(f.ExternalId),Decode(f.Body),Decode(f.Language),f.ObservedMs)));return 0;}
+            catch(Exception e){failure=e;return 1;}
+        };
+        Check(N.Records(_handle,term,agent,before,limit,cb,IntPtr.Zero));GC.KeepAlive(cb);
+        if(failure!=null)ExceptionDispatchInfo.Capture(failure).Throw();return result;
+    }
     public IReadOnlyList<BranchAgent> Agents()
     {
         var result = new List<BranchAgent>();
@@ -112,6 +124,7 @@ public sealed class NativeTree : IDisposable
     public long Count() { Check(N.Count(_handle, out var n)); return n; }
     public long Revision() { Check(N.Revision(_handle, out var n)); return n; }
     public long Compile(string newPath) { Validate(newPath); Check(N.Compile(_handle, Path.GetFullPath(newPath), out var n)); return n; }
+    public long CompileLocalized(string newPath,string language) { Validate(newPath);Validate(language);Check(N.CompileLocalized(_handle,Path.GetFullPath(newPath),language,out var n));return n; }
     public void Clear() => Check(N.Clear(_handle));
 
     public enum WorkState { Pending, Running, Completed, Failed, Cancelled }
@@ -153,6 +166,8 @@ public sealed class NativeTree : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int FragmentCallback(IntPtr user, IntPtr fragment);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int RecordCallback(IntPtr user,long master,IntPtr fragment);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int AgentCallback(IntPtr user, long id, IntPtr name, IntPtr term);
     private sealed class TreeHandle : SafeHandleZeroOrMinusOneIsInvalid
     {
@@ -172,6 +187,8 @@ public sealed class NativeTree : IDisposable
         [DllImport(Lib, EntryPoint="roots_tree_close", CallingConvention=CallingConvention.Cdecl)] internal static extern void Close(IntPtr h);
         [DllImport(Lib, EntryPoint="roots_tree_observe", CallingConvention=CallingConvention.Cdecl)] internal static extern int Observe(TreeHandle h, [In] NativeObservation[] rows, nuint n, out nuint inserted);
         [DllImport(Lib, EntryPoint="roots_tree_query", CallingConvention=CallingConvention.Cdecl)] internal static extern int Query(TreeHandle h, [MarshalAs(UnmanagedType.LPUTF8Str)] string term, long agent, long before, uint limit, FragmentCallback cb, IntPtr user);
+        [DllImport(Lib, EntryPoint="roots_tree_records", CallingConvention=CallingConvention.Cdecl)] internal static extern int Records(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string term,long agent,long before,uint limit,RecordCallback cb,IntPtr user);
+        [DllImport(Lib, EntryPoint="roots_tree_compile_localized", CallingConvention=CallingConvention.Cdecl)] internal static extern int CompileLocalized(TreeHandle h,[MarshalAs(UnmanagedType.LPUTF8Str)] string path,[MarshalAs(UnmanagedType.LPUTF8Str)] string language,out long revision);
         [DllImport(Lib, EntryPoint="roots_tree_count", CallingConvention=CallingConvention.Cdecl)] internal static extern int Count(TreeHandle h, out long count);
         [DllImport(Lib, EntryPoint="roots_tree_revision", CallingConvention=CallingConvention.Cdecl)] internal static extern int Revision(TreeHandle h, out long revision);
         [DllImport(Lib, EntryPoint="roots_tree_agent_create", CallingConvention=CallingConvention.Cdecl)] internal static extern int AgentCreate(TreeHandle h, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string term, out long id);
