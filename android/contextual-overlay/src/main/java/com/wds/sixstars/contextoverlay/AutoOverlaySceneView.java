@@ -57,6 +57,12 @@ final class AutoOverlaySceneView extends View {
 
     private final AutoScenePresentation presentation = new AutoScenePresentation.Selective();
     private List<TextItem> texts = Collections.emptyList();
+    private final int[] screenLocation=new int[2];
+    private int lastX=Integer.MIN_VALUE,lastY=Integer.MIN_VALUE;
+    private final android.view.ViewTreeObserver.OnGlobalLayoutListener trackOrigin=()->{
+        getLocationOnScreen(screenLocation);
+        if(lastX!=screenLocation[0]||lastY!=screenLocation[1])postInvalidateOnAnimation();
+    };
 
     AutoOverlaySceneView(Context context) {
         super(context);
@@ -75,9 +81,19 @@ final class AutoOverlaySceneView extends View {
         invalidate();
     }
 
+    @Override protected void onAttachedToWindow(){
+        super.onAttachedToWindow();getViewTreeObserver().addOnGlobalLayoutListener(trackOrigin);
+    }
+    @Override protected void onDetachedFromWindow(){
+        if(getViewTreeObserver().isAlive())getViewTreeObserver().removeOnGlobalLayoutListener(trackOrigin);
+        super.onDetachedFromWindow();
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        presentation.draw(canvas, texts, 0, 0);
+        getLocationOnScreen(screenLocation);
+        lastX=screenLocation[0];lastY=screenLocation[1];
+        presentation.draw(canvas,texts,lastX,lastY);
     }
 }
