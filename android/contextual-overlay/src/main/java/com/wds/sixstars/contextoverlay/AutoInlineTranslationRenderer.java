@@ -30,7 +30,10 @@ public final class AutoInlineTranslationRenderer {
 
     /** Independently verified topmost X window for API 34+ surface attachment. */
     public void setTargetWindow(int id, Rect bounds) {
-        scene.setTargetWindow(id, bounds);
+        scene.setTargetWindow(id, bounds,null);
+    }
+    void setTargetWindow(int id,Rect bounds,XOverlayOrigin.Offset origin){
+        scene.setTargetWindow(id,bounds,origin);
     }
 
     /** Accessibility snapshot: positions only, no drawing or model requests. */
