@@ -116,7 +116,7 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
         group.MapPost("/mesh/unbind",(UnbindRequest request)=>{
             host!.Mesh().Unbind(request.Pin);return Results.Json(new {ok=true,mesh=host.Mesh().Status()});
         });
-        group.MapPost("/mesh/receive",async (HttpContext ctx)=>Results.Json(await host!.Mesh().ReceiveAsync(ctx.RequestAborted)));
+        group.MapPost("/mesh/receive",()=>Results.Json(host!.Mesh().StartReceive()));
     }
     public async ValueTask DisposeAsync()
     {
