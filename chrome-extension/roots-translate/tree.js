@@ -2,6 +2,7 @@
 const el=id=>document.getElementById(id);
 const status=value=>{el("message").textContent=value;};
 let latest=null,beforeMs=0,beforeSequence=0,loading=false,refreshing=false,generation=0,query="",mode="records";
+let timelineDay="",screenPageSize=12;
 let selectedSource="knowledge",selectedAgent=0,pages=0,viewRevision=null,viewRefreshing=false,viewEpoch=0;
 let invitations=[],inviteSignature="",peerSignature="",branchSignature="";
 // This code runs only in the trusted extension Tree page. A previously
@@ -16,11 +17,12 @@ async function localViewCommand(operation,args){
   const positive=v=>Number.isSafeInteger(v)&&v>0?v:0;
   switch(operation){
     case "viewStatus":path+="/status";break;
-    case "viewRecords":case "viewFeed":{
+    case "viewRecords":case "viewFeed":case "viewScreens":{
+      if(operation==="viewScreens"&&source!=="experience")return {ok:false,error:"invalid_source"};
       const params=new URLSearchParams({term:String(args.term||"").slice(0,512),
         beforeMs:String(positive(args.beforeMs)),beforeSequence:String(positive(args.beforeSequence)),
-        agent:String(positive(args.agent)),limit:"30"});
-      path+=(operation==="viewRecords"?"/records":"/feed")+"?"+params;break;
+        agent:String(positive(args.agent)),limit:operation==="viewScreens"?"12":"30"});
+      path+=(operation==="viewScreens"?"/screens":operation==="viewRecords"?"/records":"/feed")+"?"+params;break;
     }
     case "viewWeights":
       if(!positive(args.sequence))return {ok:false,error:"invalid_sequence"};
@@ -129,6 +131,50 @@ function renderRecord(item,source){
   }
   a.append(details);if(body)a.append(weightDetails(body.sequence,source));return a;
 }
+function renderScreen(item){
+  const a=node("article",undefined,"screen-card");
+  const observations=[...(item.observations||[])].sort((a,b)=>a.sequence-b.sequence);
+  const rows=observations.map(observation=>{
+    const members=observation.members||[];
+    const body=members.find(f=>f.source==="record.experience.body");
+    return {observation,members,body,origin:field(members,"origin").replace("windows.","")||"text"};
+  }).filter(row=>row.body);
+  const header=node("div",undefined,"row");
+  header.append(node("strong",item.process||"Desktop"),node("span","Screen observations","source-badge"));
+  a.append(header);
+  const counts=new Map();
+  for(const row of rows)counts.set(row.origin,(counts.get(row.origin)||0)+1);
+  const methods=[...counts].map(([method,count])=>count+" "+method).join(" · ");
+  a.append(node("div",new Date(item.observedMs).toLocaleTimeString()+" · "+rows.length+" observations"+(methods?" · "+methods:""),"muted"));
+  const preview=node("div",undefined,"screen-preview");
+  for(const row of rows.slice(0,5))preview.append(node("p",row.body.body));
+  if(rows.length>5)preview.append(node("small","+"+(rows.length-5)+" more"));
+  a.append(preview);
+  const details=node("details");details.append(node("summary","Open screen · "+rows.length+" observations"));
+  const contents=node("div");details.append(contents);
+  let populated=false;
+  details.addEventListener("toggle",()=>{
+    if(!details.open||populated)return;populated=true;
+    for(const row of rows){
+      const observation=node("div",undefined,"screen-observation");
+      observation.append(node("small",row.origin),node("p",row.body.body),weightDetails(row.body.sequence,"experience"));
+      const metadata=node("details");metadata.append(node("summary","Source and coordinates"));
+      for(const f of row.members)if(f!==row.body)metadata.append(node("small",f.source),node("p",f.body));
+      observation.append(metadata);contents.append(observation);
+    }
+  });
+  a.append(details);
+  return a;
+}
+function appendTimelineItem(item,source,view){
+  const observed=Number(item.observedMs);
+  if(Number.isFinite(observed)){
+    const date=new Date(observed);
+    const day=date.toLocaleDateString(undefined,{weekday:"long",year:"numeric",month:"long",day:"numeric"});
+    if(day!==timelineDay){timelineDay=day;el("items").append(node("h3",day,"timeline-day"));}
+  }
+  el("items").append(view==="screens"?renderScreen(item):view==="records"?renderRecord(item,source):renderFragment(item,source));
+}
 function renderFragment(f,source){
   const a=node("article");a.append(node("small",f.source+(f.language?" · "+f.language:"")),
     node("div",new Date(f.observedMs).toLocaleString(),"muted"),node("p",f.body),weightDetails(f.sequence,source));return a;
@@ -137,20 +183,20 @@ async function load(reset=false,live=false){
   if(reset){
     generation++;
     if(!live){query=el("term").value;mode=el("view").value;selectedAgent=Number(el("branchFilter").value)||0;}
-    beforeMs=0;beforeSequence=0;pages=0;loading=false;
+    beforeMs=0;beforeSequence=0;pages=0;timelineDay="";loading=false;
   }
   if(loading)return;
-  const gen=generation,previous=beforeSequence,source=selectedSource;
+  const gen=generation,previous=beforeSequence,source=selectedSource,view=mode;
   loading=true;el("more").disabled=true;
   try{
-    const data=await command(mode==="records"?"viewRecords":"viewFeed",{source,term:query,beforeMs,beforeSequence,agent:selectedAgent});
+    const data=await command(view==="screens"?"viewScreens":view==="records"?"viewRecords":"viewFeed",{source,term:query,beforeMs,beforeSequence,agent:selectedAgent});
     if(gen!==generation)return;
-    const rows=data.items||[];
-    if(reset)el("items").replaceChildren();
-    for(const item of rows)el("items").append(mode==="records"?renderRecord(item,source):renderFragment(item,source));
-    if(reset&&!rows.length)el("items").append(node("p","No matching knowledge yet.","muted"));
+    const rows=[...(data.items||[])].sort((a,b)=>Number(b.observedMs)-Number(a.observedMs)||Number(b.sequence)-Number(a.sequence));
+    if(reset){el("items").replaceChildren();timelineDay="";}
+    for(const item of rows)appendTimelineItem(item,source,view);
+    if(reset&&!rows.length)el("items").append(node("p",view==="screens"?"No screen text observations yet. Grouped records also shows activity intervals.":"No matching knowledge yet.","muted"));
     beforeMs=data.nextBeforeMs||0;beforeSequence=data.nextBeforeSequence||0;pages++;
-    el("more").hidden=rows.length<30||!beforeSequence||beforeSequence===previous;
+    el("more").hidden=!(data.hasMore??(rows.length===(view==="screens"?screenPageSize:30)))||!beforeSequence||beforeSequence===previous;
   }catch(e){if(gen===generation){if(reset)el("items").replaceChildren(node("p",e.message,"muted"));status(e.message);}}
   finally{if(gen===generation){loading=false;el("more").disabled=false;}}
 }
@@ -162,7 +208,7 @@ async function refreshSelected(force=false){
     if(epoch!==viewEpoch||source!==selectedSource)return;
     const changed=viewRevision!==null&&viewRevision!==state.revision;
     el("knowledgeSummary").textContent=state.count+" fragments · revision "+state.revision;
-    el("sourceDescription").textContent=source==="experience"?"Private desktop observations. Never included in Axon or Mesh exchange.":"Social and received knowledge. Newest observation time first.";
+    el("sourceDescription").textContent=source==="experience"?"Private desktop observations · screen groups collect text from one reading pass. Never included in Axon or Mesh exchange.":"Social and received knowledge. Newest observation time first.";
     const branches=await command("viewBranches",{source});
     if(epoch!==viewEpoch||source!==selectedSource)return;
     const signature=source+JSON.stringify(branches.items||[]);
@@ -255,11 +301,14 @@ handle("compile","click",async()=>{el("compile").disabled=true;const source=sele
 handle("knowledgeSource","change",async()=>{
   selectedSource=el("knowledgeSource").value;viewRevision=null;branchSignature="";selectedAgent=0;
   el("compile").textContent=selectedSource==="experience"?"Compile private Experience GGUF":"Compile localized GGUF";
+  const screenOption=el("view").querySelector('option[value="screens"]');
+  screenOption.hidden=screenOption.disabled=selectedSource!=="experience";
+  el("view").value=selectedSource==="experience"?"screens":"records";
   el("branchFilter").replaceChildren(new Option("All branches","0"));
   el("items").replaceChildren();generation++;loading=false;
-  await Promise.all([refreshSelected(true),load(true)]);
+  await refreshSelected(true);await load(true);
 });
 handle("branchFilter","change",()=>load(true));
 handle("search","submit",()=>load(true));handle("view","change",()=>load(true));handle("language","change",()=>load(true));handle("more","click",()=>load());
-chrome.storage.local.get(["targetLang"]).then(s=>{if([...el("language").options].some(o=>o.value===s.targetLang))el("language").value=s.targetLang;}).catch(()=>{}).finally(async()=>{await Promise.all([refresh(),refreshSelected(true),load(true)]);});
+chrome.storage.local.get(["targetLang"]).then(s=>{if([...el("language").options].some(o=>o.value===s.targetLang))el("language").value=s.targetLang;}).catch(()=>{}).finally(async()=>{await Promise.all([refresh(),refreshSelected(true)]);await load(true);});
 setInterval(()=>{if(document.visibilityState==="visible"){refresh();refreshSelected();}},3000);
