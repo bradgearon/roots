@@ -53,6 +53,15 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
         values.put("remote",remote.root());values.put("local_hash",local.root());values.put("cursor",after);values.put("complete",complete?1:0);
         if(getWritableDatabase().insertWithOnConflict("inventory_progress",null,values,SQLiteDatabase.CONFLICT_REPLACE)<0)throw new IOException("Could not checkpoint inventory");
     }
+    record InventoryUpdate(int bucket,KnowledgeManifest.Part remote,KnowledgeManifest.Part local,String after,boolean complete){}
+    void saveInventoryProgressBatch(String peer,List<InventoryUpdate> updates)throws Exception{
+        if(updates.isEmpty())return;
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try{
+            for(InventoryUpdate update:updates)saveInventoryProgress(peer,update.bucket(),update.remote(),update.local(),update.after(),update.complete());
+            db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
     record Publication(MeshItem item,String peer,long receivedAt,boolean promoted){}
     boolean receive(MeshItem item,String peer)throws Exception{
         if(!EncounterBindings.digest(peer)||!RootGraphExchange.fitsFrame(item))throw new IOException("Invalid or oversized external publication");

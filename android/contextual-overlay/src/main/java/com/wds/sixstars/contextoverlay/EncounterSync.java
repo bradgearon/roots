@@ -257,10 +257,12 @@ final class EncounterSync {
             if(n>0||done)progress.put(scan.bucket(),new CursorProgress(scan.remote(),done?"":after,done));
             if(n!=scan.ids().size())break;
         }
-        for(var entry:progress.entrySet()){
-            check();var value=entry.getValue();
-            external.saveInventoryProgress(channel.peerId,entry.getKey(),value.remote(),heldManifest.part(entry.getKey()),value.after(),value.done());
-        }
+        check();
+        external.saveInventoryProgressBatch(channel.peerId,progress.entrySet().stream().map(entry->{
+            var value=entry.getValue();
+            try{return new ExternalKnowledgeStore.InventoryUpdate(entry.getKey(),value.remote(),heldManifest.part(entry.getKey()),value.after(),value.done());}
+            catch(Exception failure){throw new IllegalStateException("Cannot checkpoint manifest",failure);}
+        }).collect(java.util.stream.Collectors.toList()));
     }
     private int flushArchives(List<Scan> scans,List<String> wanted)throws Exception{
         int offset=0;

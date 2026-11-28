@@ -4,5 +4,6 @@
     <ProjectReference Include="../../src/Wds.Roots.Tree/Wds.Roots.Tree.csproj" />
     <Compile Include="../../src/Wds.Roots.Host/Tree/DesktopRepChannel.cs" Link="DesktopRepChannel.cs" />
     <Compile Include="../../src/Wds.Roots.Host/Tree/DesktopPublicItem.cs" Link="DesktopPublicItem.cs" />
+    <Compile Include="../../src/Wds.Roots.Host/Tree/DesktopKnowledgeArchive.cs" Link="DesktopKnowledgeArchive.cs" />
   </ItemGroup>
 </Project>

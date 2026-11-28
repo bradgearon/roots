@@ -29,6 +29,43 @@ public class EncounterChannelTest {
             }
         }finally{workers.shutdownNow();}
     }
+    @Test public void publicArchiveHasNo64KiBFrameLimit()throws Exception{
+        KeyPair client=EncounterChannel.newEcKey(),server=EncounterChannel.newEcKey();
+        byte[] archive=new byte[2*1024*1024];new java.util.Random(42).nextBytes(archive);
+        ExecutorService workers=Executors.newSingleThreadExecutor();
+        try(ServerSocket listener=new ServerSocket(0,1,InetAddress.getLoopbackAddress())){
+            Future<Boolean> answer=workers.submit(()->{
+                try(Socket socket=listener.accept()){
+                    socket.setSoTimeout(10000);
+                    EncounterChannel channel=EncounterChannel.open(socket.getInputStream(),socket.getOutputStream(),server,false);
+                    channel.enablePublicPlaintext();
+                    byte[] actual=channel.receivePublicBytes(archive.length,8*1024*1024);
+                    channel.send(new byte[]{42});return java.util.Arrays.equals(archive,actual);
+                }
+            });
+            try(Socket socket=new Socket(InetAddress.getLoopbackAddress(),listener.getLocalPort())){
+                socket.setSoTimeout(10000);
+                // Observe actual bytes on the wire after public negotiation.
+                class Inspect extends FilterOutputStream {
+                    boolean active,seenWholeArchive;
+                    Inspect(OutputStream out){super(out);}
+                    @Override public void write(byte[] data,int offset,int length)throws IOException{
+                        if(active&&length==archive.length){
+                            seenWholeArchive=java.util.Arrays.equals(archive,java.util.Arrays.copyOfRange(data,offset,offset+length));
+                        }
+                        out.write(data,offset,length);
+                    }
+                    @Override public void write(int value)throws IOException{out.write(value);}
+                }
+                Inspect output=new Inspect(socket.getOutputStream());
+                EncounterChannel channel=EncounterChannel.open(socket.getInputStream(),output,client,true);
+                channel.enablePublicPlaintext();output.active=true;
+                channel.sendPublicBytes(archive,8*1024*1024);
+                assertArrayEquals(new byte[]{42},channel.receive());assertTrue(output.seenWholeArchive);
+                assertTrue(answer.get(10,TimeUnit.SECONDS));
+            }
+        }finally{workers.shutdownNow();}
+    }
     @Test public void rejectsSelfBinding()throws Exception{
         KeyPair key=EncounterChannel.newEcKey();
         ExecutorService workers=Executors.newSingleThreadExecutor();

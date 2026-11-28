@@ -13,6 +13,7 @@ using var a=ECDsa.Create(ECCurve.NamedCurves.nistP256);
 using var b=ECDsa.Create(ECCurve.NamedCurves.nistP256);
 string aid=DesktopRepChannel.Fingerprint(a),bid=DesktopRepChannel.Fingerprint(b);
 Check(aid!=bid,"Separate identities");
+byte[] publicArchive=new byte[2*1024*1024];new Random(42).NextBytes(publicArchive);
 var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();
 try
 {
@@ -24,12 +25,18 @@ try
         var request=await channel.ReadAsync(ct);
         Check(request["op"]?.GetValue<string>()=="bind","Encrypted request");
         await channel.SendAsync(new JsonObject{["op"]="bound",["root_graph"]=true},ct);
+        channel.EnablePublicPlaintext();
+        Check((await channel.ReadPublicBytesAsync(publicArchive.Length,DesktopKnowledgeArchive.MaxWire,ct)).SequenceEqual(publicArchive),"Large plaintext archive");
+        await channel.SendAsync(new JsonObject{["op"]="archive_ack"},ct);
     },ct);
     using var client=new TcpClient();await client.ConnectAsync(IPAddress.Loopback,port,ct);
     using var channel=await DesktopRepChannel.OpenAsync(client.GetStream(),a,true,bid,ct);
     Check(channel.PeerId==bid,"Authenticated server");
     await channel.SendAsync(new JsonObject{["op"]="bind"},ct);
     Check((await channel.ReadAsync(ct))["op"]?.GetValue<string>()=="bound","Encrypted reply");
+    channel.EnablePublicPlaintext();
+    await channel.SendPublicBytesAsync(publicArchive,DesktopKnowledgeArchive.MaxWire,ct);
+    Check((await channel.ReadAsync(ct))["op"]?.GetValue<string>()=="archive_ack","Plaintext archive receipt");
     await server;
 }
 finally{listener.Stop();}
@@ -44,3 +51,6 @@ var source=MeshGraphItem.Create("fragment","record.x.link","local:x:abc","",1000
 using var linkDoc=JsonDocument.Parse(JsonSerializer.Serialize(source.Wire()));
 Check(DesktopPublicItem.Parse(linkDoc.RootElement).Rows(aid,1001)[0].ExternalId==rows[0].ExternalId,"Original grouping");
 Console.WriteLine("Public Axon protocol and Tree projection checks passed.");
+
+Check(new DesktopArchiveProfile().Budget().Records==4096,"Initial 4096 record target");
+Check(new DesktopArchiveProfile(InFlight:4096).Recover().Budget().Records==2048,"Interrupted archive reduces target");
