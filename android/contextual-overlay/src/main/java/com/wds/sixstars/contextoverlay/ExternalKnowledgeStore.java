@@ -40,6 +40,7 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
             db.insertOrThrow("publications",null,values);db.setTransactionSuccessful();return true;
         }finally{db.endTransaction();}
     }
+    long count(){return android.database.DatabaseUtils.longForQuery(getReadableDatabase(),"SELECT COUNT(*) FROM publications",null);}
     NavigableMap<String,MeshItem> catalog()throws Exception{
         NavigableMap<String,MeshItem> result=new TreeMap<>();
         try(Cursor cur=getReadableDatabase().rawQuery("SELECT id,body FROM publications ORDER BY id",null)){

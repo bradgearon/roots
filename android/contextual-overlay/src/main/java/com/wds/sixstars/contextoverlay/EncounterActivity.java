@@ -31,6 +31,10 @@ public final class EncounterActivity extends Activity {
         last=RootsUi.text(this,"",13,RootsUi.MUTED,false);controls.addView(last);
         permission=RootsUi.action(this,"Allow nearby exchange",()->EncounterSettings.authorize(this));controls.addView(permission);
         controls.addView(RootsUi.text(this,"When enabled, Roots discovers and publishes automatically, even while you use other apps. All published topics are included; raw captures and private prompts are excluded.",13,RootsUi.MUTED,false));
+        controls.addView(RootsUi.action(this,"Receive nearby Axons now",()->{
+            Toast.makeText(this,EncounterService.requestReceive(this),Toast.LENGTH_LONG).show();update();
+        }));
+        controls.addView(RootsUi.action(this,"Publish existing public Tree items",()->PublicTreePublishing.choose(this,this::update)));
         controls.addView(RootsUi.action(this,"External knowledge · bring items into my Tree",()->startActivity(new android.content.Intent(this,ExternalKnowledgeActivity.class))));
         controls.addView(RootsUi.action(this,"Network Explorer · browse public nodes",()->startActivity(new android.content.Intent(this,NetworkExplorerActivity.class))));
         LinearLayout peers=RootsUi.card(this,content);peers.addView(RootsUi.text(this,"Bound Axons",18,RootsUi.TEXT,true));
@@ -62,10 +66,15 @@ public final class EncounterActivity extends Activity {
         if(loading||work.isShutdown())return;loading=true;
         work.execute(()->{
             EncounterBindings.Snapshot next=EncounterBindings.get(this).snapshot();
+            String counts;
+            try{counts=MeshPeer.get(this).encounterPublicationCount()+" local publications · "+ExternalKnowledgeStore.get(this).count()+" external records";}
+            catch(Exception|LinkageError failure){counts="Public catalog unavailable";}
+            final String publicationCounts=counts;
             runOnUiThread(()->{
                 loading=false;if(!visible||isDestroyed())return;
                 String now=EncounterService.activePeer();
                 if(!next.equals(snapshot)||!active.equals(now)){snapshot=next;active=now;render();}
+                summary.setText(summary.getText().toString().split("\\n",2)[0]+"\n"+publicationCounts);
             });
         });
     }

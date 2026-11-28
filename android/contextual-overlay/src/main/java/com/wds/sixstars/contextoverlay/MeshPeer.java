@@ -440,6 +440,17 @@ final class MeshPeer {
     }
     /** Public encounters never use graphCatalog(), which contains raw captures. */
     Map<String,MeshItem> encounterCatalog(){return legacyCatalog();}
+    private long encounterCountAt=-1;
+    private int encounterCount;
+    // UI-only cache: actual session inventory always reads a fresh catalog.
+    synchronized int encounterPublicationCount(){
+        long now=android.os.SystemClock.elapsedRealtime();
+        if(encounterCountAt<0||now-encounterCountAt>=30000){
+            encounterCount=encounterCatalog().size();encounterCountAt=now;
+        }
+        return encounterCount;
+    }
+    synchronized void invalidateEncounterPublicationCount(){encounterCountAt=-1;}
     int offeredCount()throws Exception{return graphCatalog().size();}
     // Keep batches within the existing framed TLS transport, including JSON
     // escaping for large raw fragments.

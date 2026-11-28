@@ -22,7 +22,17 @@ final class EncounterSync {
     private final NavigableMap<String,MeshItem> catalog;
     private final String root;
     private EncounterBindings.Binding binding;
-    private int received,sent;
+    private int received,sent,remoteTotal=-1,examined,known;
+    private boolean complete,remotePageSeen,peerMore;
+    private String stage="Preparing public catalog";
+    String stage(){return stage;}
+    boolean pending(){return !complete||peerMore;}
+    String summary(){
+        String remote=remoteTotal<0?(remotePageSeen?"peer inventory total unknown":"no peer inventory"):"peer offers "+remoteTotal;
+        if(complete&&received==0&&remoteTotal==0)return "Peer offers 0 published items · local offers "+catalog.size();
+        if(complete&&received==0&&remoteTotal!=0)return "No new items in completed scan · "+remote+" · "+known+" already known · local offers "+catalog.size();
+        return (complete?"Inventory checked":"More inventory pending")+" · "+remote+" · "+examined+" examined · local offers "+catalog.size();
+    }
     int received(){return received;}
     int sent(){return sent;}
     boolean firstEncounter(){return binding.encounters()==1;}
@@ -34,7 +44,7 @@ final class EncounterSync {
         catalog=new TreeMap<>(external.catalog());
         catalog.putAll(MeshPeer.get(context).encounterCatalog());
         root=inventoryRoot(catalog.navigableKeySet());check();
-        binding=bindings.bind(channel.peerId);
+        // Persist after the authenticated application bind is accepted, not merely after opening the radio.
     }
     static String inventoryRoot(Collection<String> sortedIds)throws Exception{
         MessageDigest hash=MessageDigest.getInstance("SHA-256");
@@ -59,8 +69,9 @@ final class EncounterSync {
     }
     int exchange(boolean client)throws Exception{
         // Both peers have proved their key and persisted a binding before exchange.
-        if(client){send(message("bind"));expect(read(),"bound");pull();serve();}
-        else{expect(read(),"bind");send(message("bound"));serve();pull();}
+        stage="Binding handshake";
+        if(client){send(message("bind"));expect(read(),"bound");binding=bindings.bind(channel.peerId);pull();serve();}
+        else{expect(read(),"bind");binding=bindings.bind(channel.peerId);send(message("bound"));serve();pull();}
         return received;
     }
     private void checkpoint(String remoteRoot,String after)throws Exception{
@@ -68,16 +79,20 @@ final class EncounterSync {
         binding=new EncounterBindings.Binding(binding.peer(),remoteRoot,after,binding.encounters());bindings.save(binding);
     }
     private void pull()throws Exception{
+        stage="Receiving inventory";
         int inspected=0,transferred=0;
         String after=binding.after(),remoteRoot=binding.root();
         while(inspected<MAX_IDS&&transferred<MAX_ITEMS){
             send(message("inventory").put("root",remoteRoot).put("after",after));
-            JSONObject answer=read();expect(answer,"inventory");
+            JSONObject answer=read();expect(answer,"inventory");remotePageSeen=true;
             String actualRoot=answer.getString("root");
             if(!EncounterBindings.digest(actualRoot))throw new IOException("Invalid inventory root");
             String start=actualRoot.equals(remoteRoot)?after:"";
             JSONArray ids=answer.getJSONArray("ids");
             if(ids.length()>PAGE)throw new IOException("Invalid inventory size");
+            int total=answer.optInt("total",-1);
+            if(total!=-1&&total<ids.length())throw new IOException("Invalid inventory total");
+            remoteTotal=total;
             // Validate the entire page before committing any cursor.
             List<String> page=new ArrayList<>();String previous=start;
             for(int i=0;i<ids.length();i++){
@@ -87,31 +102,36 @@ final class EncounterSync {
             }
             boolean more=answer.getBoolean("more");
             if(more&&page.isEmpty())throw new IOException("Invalid inventory continuation");
-            remoteRoot=actualRoot;after=start;checkpoint(remoteRoot,after);
+            remoteRoot=actualRoot;after=start;
+            if(!remoteRoot.equals(binding.root())||!after.equals(binding.after()))checkpoint(remoteRoot,after);
             int processed=0;
             for(String id:page){
                 if(inspected>=MAX_IDS||transferred>=MAX_ITEMS)break;
                 if(!catalog.containsKey(id)){
-                    send(message("want").put("id",id));
+                    stage="Receiving publication";send(message("want").put("id",id));
                     JSONObject data=read();expect(data,"data");
                     MeshItem item=MeshItem.parse(data.getJSONObject("item"));
                     if(item.graph()!=null||!item.id().equals(id))throw new IOException("Unexpected publication");
                     check();if(external.receive(item,channel.peerId))received++;
                     // Public items stay outside the private Tree; forward only verified publications.
                     checkpoint(remoteRoot,id);send(message("ack").put("id",id));transferred++;
-                }else checkpoint(remoteRoot,id);
-                after=id;processed++;inspected++;
+                }else known++;
+                after=id;processed++;inspected++;examined++;stage="Receiving inventory";
             }
-            if(processed==page.size()&&!more){checkpoint(remoteRoot,"");break;}
+            if(processed==page.size()&&!more){checkpoint(remoteRoot,"");complete=true;break;}
+            // Skip already-held IDs in memory and save only once per page,
+            // not a synchronous disk write for each duplicate over Bluetooth.
+            if(!after.equals(binding.after()))checkpoint(remoteRoot,after);
             if(processed<page.size())break;
         }
-        send(message("release"));
+        send(message("release").put("more_pending",!complete));
     }
     private void serve()throws Exception{
+        stage="Serving public inventory";
         int pages=0,items=0;Set<String> offered=new HashSet<>();
         while(true){
             JSONObject request=read();String op=request.getString("op");
-            if("release".equals(op))return;
+            if("release".equals(op)){peerMore=request.optBoolean("more_pending",false);return;}
             if("inventory".equals(op)){
                 if(++pages>3)throw new IOException("Inventory budget exceeded");
                 String after=request.getString("after"),knownRoot=request.getString("root");
@@ -123,7 +143,7 @@ final class EncounterSync {
                     if(ids.length()==PAGE){more=true;break;}
                     ids.put(id);offered.add(id);
                 }
-                send(message("inventory").put("root",root).put("ids",ids).put("more",more));
+                send(message("inventory").put("root",root).put("ids",ids).put("more",more).put("total",catalog.size()));
             }else if("want".equals(op)){
                 String id=request.getString("id");
                 if(++items>MAX_ITEMS||!offered.remove(id)||!catalog.containsKey(id))throw new IOException("Invalid or excessive want");

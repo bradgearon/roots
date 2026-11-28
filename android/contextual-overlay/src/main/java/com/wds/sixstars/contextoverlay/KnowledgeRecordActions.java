@@ -42,7 +42,7 @@ public final class KnowledgeRecordActions {
         }
         String language=new OverlayPreferences(activity).targetLanguage();
         String title=record.latest("topic");if(title.isEmpty())title=record.first("author");if(title.isEmpty())title="Knowledge record";
-        final String[] labels={"View original and localized text","Attach exact X post link","Translate into "+language,"Confirm original is already "+language,"Add private understanding","Mark wanted","Publish a shareable remembrance"};
+        final String[] labels={"View original and localized text","Attach exact X post link","Translate into "+language,"Confirm original is already "+language,"Add private understanding","Mark wanted","Publish a shareable remembrance","Publish original public post"};
         new AlertDialog.Builder(activity).setTitle(title).setItems(labels,(dialog,index)->{
             switch(index){
                 case 0 -> {
@@ -60,6 +60,7 @@ public final class KnowledgeRecordActions {
                 case 4 -> understand(activity,record,language,changed);
                 case 5 -> store(activity,record,"want","wanted","",TreeRuntime.get(activity).captureEpoch(),changed);
                 case 6 -> MeshActivity.publish(activity,record,changed);
+                case 7 -> PublicTreePublishing.confirmOne(activity,record,changed);
             }
         }).setNegativeButton("Close",null).show();
     }

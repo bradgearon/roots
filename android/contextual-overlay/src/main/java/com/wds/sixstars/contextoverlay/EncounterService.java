@@ -47,6 +47,17 @@ public final class EncounterService extends Service {
     static String activePeer(){return activePeer;}
     static void noteStartDeferred(){if(!started)status="Start deferred by Android · resumes when Roots opens";}
     static boolean available(Context c){return Build.VERSION.SDK_INT>=31&&c.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE);}
+    static String requestReceive(Context context){
+        if(!available(context))return "Nearby exchange requires Android 12+ and BLE.";
+        if(!EncounterSettings.enabled(context))return "Nearby exchange is off. Enable it in Manage nearby exchange.";
+        if(!EncounterSettings.eligible(context))return "Nearby exchange needs its one-time permission. Open Manage nearby exchange.";
+        EncounterService service=instance;
+        if(service==null||!started){EncounterSettings.startIfAllowed(context);return "Starting nearby exchange · saved Axons will reconnect when in range.";}
+        Radio current=service.radio;
+        if(current==null){service.main.post(service::ensureRadio);return "Nearby refresh requested · "+status;}
+        current.clearCooldown();
+        return "Nearby receive requested · reconnecting to available Axons. Check nearby status for the result.";
+    }
     static void refreshDiscovery(){
         EncounterService service=instance;Radio r=service==null?null:service.radio;
         if(r!=null)r.clearCooldown();
@@ -320,8 +331,8 @@ public final class EncounterService extends Service {
                 activePeer=peer;
                 status="Exchanging published Axons";
                 sync=new EncounterSync(EncounterService.this,channel,this::active);
-                sync.exchange(client);result=sync.firstEncounter()?"New binding · completed":"Binding refreshed · completed";return sync.sent()+sync.received();
-            }catch(Exception|LinkageError failure){return -1;}
+                sync.exchange(client);result=(sync.firstEncounter()?"New binding":"Binding refreshed")+" · "+sync.summary();return Math.max(sync.sent()+sync.received(),sync.pending()?1:0);
+            }catch(Exception|LinkageError failure){result="Interrupted · "+(sync==null?"authentication or catalog setup":sync.stage())+" ("+failure.getClass().getSimpleName()+")";return -1;}
             finally{
                 if(deadline!=null)deadline.cancel(false);
                 int sent=sync==null?0:sync.sent(),received=sync==null?0:sync.received();

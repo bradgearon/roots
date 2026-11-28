@@ -95,6 +95,7 @@ final class EncounterBindings {
         List<Event> history=new ArrayList<>(events);Collections.reverse(history);
         return new Snapshot(list,history);
     }
+    synchronized int availableCount(){load();int count=0;for(Peer p:peers.values())if(!p.blocked())count++;return count;}
     synchronized boolean blocked(String peer){load();Peer p=peers.get(peer);return p!=null&&p.blocked();}
     synchronized Binding bind(String peer)throws Exception{
         load();if(!digest(peer))throw new IOException("Invalid peer");
