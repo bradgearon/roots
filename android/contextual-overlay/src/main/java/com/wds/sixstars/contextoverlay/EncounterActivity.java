@@ -41,8 +41,8 @@ public final class EncounterActivity extends Activity {
         controls.addView(RootsUi.action(this,"Publish existing public Tree items",()->PublicTreePublishing.choose(this,this::update)));
         controls.addView(RootsUi.action(this,"External knowledge · source and receipt history",()->startActivity(new android.content.Intent(this,ExternalKnowledgeActivity.class))));
         controls.addView(RootsUi.action(this,"Network Explorer · browse public nodes",()->startActivity(new android.content.Intent(this,NetworkExplorerActivity.class))));
-        LinearLayout peers=RootsUi.card(this,content);peers.addView(RootsUi.text(this,"Bound Axons",18,RootsUi.TEXT,true));
-        peers.addView(RootsUi.text(this,"Bindings persist offline. Block a peer to stop future exchange; previously transferred knowledge remains.",13,RootsUi.MUTED,false));
+        LinearLayout peers=RootsUi.card(this,content);peers.addView(RootsUi.text(this,"Axon subscriptions",18,RootsUi.TEXT,true));
+        peers.addView(RootsUi.text(this,"Nearby subscriptions persist offline and appear on the Roots home screen. Block a peer to stop future exchange; previously transferred knowledge remains.",13,RootsUi.MUTED,false));
         peerList=RootsUi.column(this);peers.addView(peerList);
         LinearLayout history=RootsUi.card(this,content);history.addView(RootsUi.text(this,"Recent interactions",18,RootsUi.TEXT,true));
         history.addView(RootsUi.action(this,"Clear interaction history",()->new AlertDialog.Builder(this).setTitle("Clear interaction history?")
@@ -81,7 +81,8 @@ public final class EncounterActivity extends Activity {
             String counts;
             try{
                 MeshPeer.EncounterCatalogStats stats=MeshPeer.get(this).encounterPublicationStats();
-                counts=stats.total()+" local offers · "+stats.automatic()+" automatic · "+stats.unlinked()+" originals without exact links · "+ExternalKnowledgeStore.get(this).count()+" external receipts";
+                counts=stats.total()+" local offers · "+stats.automatic()+" automatic · "+ExternalKnowledgeStore.get(this).count()+" external receipts";
+                if(!EncounterSettings.fullRootGraph(this))counts+=" · "+stats.unlinked()+" originals without exact links";
                 if(EncounterSettings.fullRootGraph(this))counts+=" · full Root graph";else if(!EncounterSettings.automaticPublication(this))counts+=" · restricted publication";
             }
             catch(Exception|LinkageError failure){counts="Public catalog unavailable";}

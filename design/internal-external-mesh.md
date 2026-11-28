@@ -19,3 +19,5 @@ Same libraries, separate endpoints, protocol identifiers, discovery and credenti
 Acceptance: external stranger cannot connect to internal inference, even if an item is promoted; blocked or revoked member denied; separate keys and route stores; private captures cannot be retrieved through External Mesh; friends' opt-in compute capabilities can be individually authorized; remote phone reaches desktop without inbound IPv6 or IPv4 firewall changes where relays are reachable; relay failure falls back only before a request is submitted, avoiding duplicate GPU execution.
 
 See [Network Explorer](network-explorer.md) for public node discovery and automatic public binding; Internal Mesh browsing is limited to authorized members.
+
+Update: incoming verified External Mesh data is automatically retained in the main Tree as untrusted external references, not automatically accepted as private authority or membership. Full Root graph publication requires explicit device-level scope approval; it does not authorize compute or internal membership. A user can leave restricted publication enabled for confidential Trees.

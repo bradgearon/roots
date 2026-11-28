@@ -10,7 +10,7 @@ import java.util.*;
 import java.util.function.BooleanSupplier;
 
 /** Symmetric, content-addressed public publication exchange over REP/1.
- * One client pull, then one publisher pull; never sends runtime prompts or raw captures. */
+ * One client pull, then one publisher pull; full Root graph requires explicit publication scope. */
 final class EncounterSync {
     static final int PAGE=32,MAX_ITEMS=8,MAX_IDS=64;
     private final EncounterChannel channel;
@@ -33,7 +33,7 @@ final class EncounterSync {
     boolean pending(){return !complete||peerMore;}
     String summary(){
         String remote=remoteTotal<0?(remotePageSeen?"peer inventory total unknown":"no peer inventory"):"peer offers "+remoteTotal;
-        if(complete&&received==0&&remoteTotal==0)return "Peer offers 0 published items · local offers "+catalog.size();
+        if(complete&&received==0&&remoteTotal==0)return "Peer offers 0 Root items · local offers "+catalog.size()+(peerGraph?" · check peer Root sharing scope":" · peer needs update for graph exchange");
         if(complete&&received==0&&remoteTotal!=0)return "No new items in completed scan · "+remote+" · "+known+" already known · local offers "+catalog.size();
         return (complete?"Inventory checked":"More inventory pending")+" · "+remote+" · "+examined+" examined · local offers "+catalog.size();
     }
@@ -93,6 +93,13 @@ final class EncounterSync {
         root=inventoryRoot(catalog.navigableKeySet());
         check();
     }
+    /** Full-graph peers retain a sorted scan cursor when inventory changes.
+     * New items before the cursor are visited on the next sweep. Otherwise
+     * reciprocal ingestion changes the root on every encounter and starves
+     * large graphs. Older peers retain the original reset behavior. */
+    static String inventoryCursor(boolean graph,String knownRoot,String actualRoot,String after){
+        return graph||knownRoot.equals(actualRoot)?after:"";
+    }
     private void checkpoint(String remoteRoot,String after)throws Exception{
         check();
         binding=new EncounterBindings.Binding(binding.peer(),remoteRoot,after,binding.encounters());bindings.save(binding);
@@ -106,7 +113,7 @@ final class EncounterSync {
             JSONObject answer=read();expect(answer,"inventory");remotePageSeen=true;
             String actualRoot=answer.getString("root");
             if(!EncounterBindings.digest(actualRoot))throw new IOException("Invalid inventory root");
-            String start=actualRoot.equals(remoteRoot)?after:"";
+            String start=inventoryCursor(peerGraph,remoteRoot,actualRoot,after);
             JSONArray ids=answer.getJSONArray("ids");
             if(ids.length()>PAGE)throw new IOException("Invalid inventory size");
             int total=answer.optInt("total",-1);
@@ -161,7 +168,7 @@ final class EncounterSync {
                 String after=request.getString("after"),knownRoot=request.getString("root");
                 if((!after.isEmpty()&&!EncounterBindings.digest(after))||(!knownRoot.isEmpty()&&!EncounterBindings.digest(knownRoot)))
                     throw new IOException("Invalid inventory cursor");
-                if(!root.equals(knownRoot))after="";
+                after=inventoryCursor(peerGraph,knownRoot,root,after);
                 JSONArray ids=new JSONArray();boolean more=false;offered.clear();
                 for(String id:catalog.tailMap(after,false).keySet()){
                     if(ids.length()==PAGE){more=true;break;}
