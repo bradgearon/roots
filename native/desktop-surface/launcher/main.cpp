@@ -1,5 +1,8 @@
 // Copyright (c) 2026 We Develop Software LLC. All rights reserved.
 #include <windows.h>
+#include <objbase.h>
+#include <ole2.h>
+#include <oleauto.h>
 #include <wtsapi32.h>
 #include <UIAutomation.h>
 #include <wrl/client.h>
@@ -18,9 +21,6 @@
 #include <thread>
 #include <vector>
 #include "../acquisition/ocr.h"
-#ifdef ROOTS_SURFACE_OCR
-#include <winrt/base.h>
-#endif
 
 using Microsoft::WRL::ComPtr;
 using Clock=std::chrono::steady_clock;
