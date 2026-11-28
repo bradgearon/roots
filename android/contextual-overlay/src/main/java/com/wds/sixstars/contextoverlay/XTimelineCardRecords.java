@@ -28,7 +28,7 @@ final class XTimelineCardRecords {
     }
     record Field(String role,String value){}
     record Post(String cardPath,int bodyOrder,String key,String body,List<Field> fields,String language){}
-    record Result(List<Post> posts,Map<Integer,String> cardByOrder,Map<String,Node> primaryBodies){}
+    record Result(List<Post> posts,Map<Integer,String> cardByOrder,Map<String,Node> primaryBodies,Map<String,Node> quotedBodies){}
 
     static boolean under(String path,String parent){
         return path.equals(parent)||path.startsWith(parent+"/");
@@ -60,19 +60,21 @@ final class XTimelineCardRecords {
         }
         List<Post> posts=new ArrayList<>();
         Map<String,Node> primaryBodies=new LinkedHashMap<>();
+        Map<String,Node> quotedBodies=new LinkedHashMap<>();
         for(Map.Entry<String,List<Node>> group:groups.entrySet()){
             List<Node> nodes=group.getValue();
             nodes.sort(Comparator.comparing(Node::path,XTimelineCardRecords::pathCompare));
             Node header=header(group.getKey(),nodes);
             java.util.Set<String> context=contextBranches(group.getKey(),nodes,header);
             Node body=selectBody(group.getKey(),nodes,header,context);
+            collectQuotedBodies(group.getKey(),nodes,header,context,body,quotedBodies);
             if(body!=null){
                 primaryBodies.put(group.getKey(),body);
                 Post post=post(group.getKey(),nodes,header,body,context);
                 if(post!=null)posts.add(post);
             }
         }
-        return new Result(List.copyOf(posts),Map.copyOf(owners),Map.copyOf(primaryBodies));
+        return new Result(List.copyOf(posts),Map.copyOf(owners),Map.copyOf(primaryBodies),Map.copyOf(quotedBodies));
     }
     private static Node header(String card,List<Node> nodes){
         Node header=null;
@@ -86,7 +88,7 @@ final class XTimelineCardRecords {
     private static java.util.Set<String> contextBranches(String card,List<Node> nodes,Node header){
         java.util.Set<String> context=new java.util.HashSet<>();
         for(Node n:nodes)if((n.header()&&(header==null||!under(n.path(),header.path())))||
-                "Quote".equalsIgnoreCase(n.description().trim())){
+                (!n.primary()&&!controlNode(n))||"Quote".equalsIgnoreCase(n.description().trim())){
             String sub=branch(n.path(),card);
             if(!sub.isEmpty()&&(header==null||!sub.equals(header.path())))context.add(sub);
         }
@@ -129,6 +131,67 @@ final class XTimelineCardRecords {
             else if(strength==best&&!TextFingerprint.normalized(body.text()).equals(TextFingerprint.normalized(n.text())))ambiguous=true;
         }
         return ambiguous?null:body;
+    }
+
+    /** Nested quotes share their parent's conversation card on some X builds.
+     * Treat their bodies as separate display surfaces, without inventing a
+     * second remote identity or attaching their translations to the outer body. */
+    private static void collectQuotedBodies(String card,List<Node> nodes,Node header,
+            java.util.Set<String> context,Node primary,Map<String,Node> result){
+        java.util.Set<String> headers=new java.util.HashSet<>();
+        java.util.Set<String> blocked=new java.util.HashSet<>();
+        java.util.Set<String> scopes=new java.util.LinkedHashSet<>();
+        for(Node n:nodes){
+            if(n.header()){headers.add(n.path());if(header==null||!n.path().equals(header.path()))scopes.add(parent(n.path()));}
+            if(controlNode(n))blocked.add(n.path());
+        }
+        // First resolve each actual embedded header's sibling body. An
+        // ancestor scope must not select a descendant quote's body.
+        for(String scope:scopes){
+            if(scope.isEmpty()||scope.equals(card))continue;
+            Node nested=null;
+            for(Node n:nodes)if(n.header()&&parent(n.path()).equals(scope)){
+                if(nested!=null){nested=null;break;}nested=n;
+            }
+            if(nested==null)continue;
+            Node best=null;int score=0;boolean ambiguous=false;
+            for(Node n:nodes){
+                if(!under(n.path(),scope)||under(n.path(),nested.path())||n.path().equals(scope))continue;
+                boolean otherScope=false;
+                for(String other:scopes)if(!other.equals(scope)&&under(other,scope)&&under(n.path(),other)){otherScope=true;break;}
+                if(otherScope||blocked(n.path(),headers,blocked))continue;
+                String sub=branch(n.path(),scope);
+                if(sub.isEmpty()||pathCompare(sub,nested.path())<=0||!bodyContent(n))continue;
+                int strength=n.bodyRole()?4:n.bodySpan()?3:parent(n.path()).equals(scope)&&n.className().endsWith("TextView")?1:0;
+                if(strength==0)continue;
+                if(strength>score){best=n;score=strength;ambiguous=false;}
+                else if(strength==score&&!TextFingerprint.normalized(best.text()).equals(TextFingerprint.normalized(n.text())))ambiguous=true;
+            }
+            if(best!=null&&!ambiguous&&(primary==null||best.order()!=primary.order()))result.put(best.path(),best);
+        }
+        // Some quoted previews have no exposed header resource. Full-body
+        // clickable spans remain positive evidence for a text surface.
+        // Never admit arbitrary controls or their descendants.
+        for(Node n:nodes){
+            if(primary!=null&&primary.order()==n.order()||!bodyContent(n)||blocked(n.path(),headers,blocked))continue;
+            String sub=branch(n.path(),card);
+            boolean nested=context.contains(sub)||!n.primary()||
+                (!sub.isEmpty()&&!sub.equals(n.path())&&(n.bodyRole()||n.bodySpan()));
+            if(!nested||!(n.bodyRole()||n.bodySpan()))continue;
+            boolean inResolvedScope=false;
+            for(String scope:scopes)if(!scope.equals(card)&&under(n.path(),scope)){inResolvedScope=true;break;}
+            if(!inResolvedScope)result.putIfAbsent(n.path(),n);
+        }
+    }
+    private static boolean blocked(String path,java.util.Set<String> headers,java.util.Set<String> controls){
+        for(String h:headers)if(under(path,h))return true;
+        for(String c:controls)if(under(path,c))return true;
+        return false;
+    }
+    private static boolean bodyContent(Node n){
+        String text=n.text().trim();
+        return !text.isEmpty()&&text.length()<=4000&&!isControl(text)&&
+            !HANDLE.matcher(text).matches()&&!TIME.matcher(text).matches()&&!COUNT.matcher(text).matches();
     }
 
     private static Post post(String card,List<Node> nodes,Node header,Node body,java.util.Set<String> contextBranches){
