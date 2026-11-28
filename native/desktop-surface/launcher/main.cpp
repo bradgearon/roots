@@ -10,6 +10,8 @@
 #include <chrono>
 #include <cwctype>
 #include <cwchar>
+#include <cmath>
+#include <limits>
 #include <cstdint>
 #include <cstdlib>
 #ifdef ROOTS_SURFACE_OCR
@@ -141,6 +143,63 @@ static bool editableDocument(IUIAutomationElement* element) {
     raw.Reset();
     return SUCCEEDED(element->GetCurrentPattern(UIA_TextEditPatternId,&raw))&&raw;
 }
+// Some read-only consoles and documents expose their text as a TextPattern
+// rather than child labels. Read only the provider's visible, read-only
+// ranges; never DocumentRange, selections, or editable values.
+static bool visibleRangeBounds(IUIAutomationTextRange* range,const RECT& window,RECT& result) {
+    SAFEARRAY* rectangles=nullptr;
+    if(FAILED(range->GetBoundingRectangles(&rectangles))||!rectangles)return false;
+    LONG low=0,high=-1;bool ok=false;
+    if(SafeArrayGetDim(rectangles)==1&&SafeArrayGetElemsize(rectangles)==sizeof(double)&&
+       SUCCEEDED(SafeArrayGetLBound(rectangles,1,&low))&&SUCCEEDED(SafeArrayGetUBound(rectangles,1,&high))){
+        const auto count=static_cast<long long>(high)-low+1;
+        double* values=nullptr;
+        if(count>0&&count<=512&&count%4==0&&SUCCEEDED(SafeArrayAccessData(rectangles,reinterpret_cast<void**>(&values)))){
+            ok=true;RECT combined{};bool first=true;
+            for(long long i=0;i<count;i+=4){
+                const double x=values[i],y=values[i+1],w=values[i+2],h=values[i+3];
+                if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(w)||!std::isfinite(h)||
+                   w<=0||h<=0||x<window.left-1.0||y<window.top-1.0||
+                   x+w>window.right+1.0||y+h>window.bottom+1.0){ok=false;break;}
+                RECT bounds{static_cast<LONG>(std::max<double>(window.left,std::floor(x))),
+                    static_cast<LONG>(std::max<double>(window.top,std::floor(y))),
+                    static_cast<LONG>(std::min<double>(window.right,std::ceil(x+w))),
+                    static_cast<LONG>(std::min<double>(window.bottom,std::ceil(y+h)))};
+                if(IsRectEmpty(&bounds)){ok=false;break;}
+                if(first){combined=bounds;first=false;}else UnionRect(&combined,&combined,&bounds);
+            }
+            SafeArrayUnaccessData(rectangles);
+            if(ok&&!first)result=combined;else ok=false;
+        }
+    }
+    SafeArrayDestroy(rectangles);
+    return ok;
+}
+static void readVisibleRanges(IUIAutomationElement* element,const RECT& window,
+        std::vector<SurfaceText>& rows,Clock::time_point deadline) {
+    if(Clock::now()>=deadline)return;
+    ComPtr<IUnknown> raw;
+    if(FAILED(element->GetCurrentPattern(UIA_TextPatternId,&raw))||!raw)return;
+    ComPtr<IUIAutomationTextPattern> pattern;
+    if(FAILED(raw.As(&pattern)))return;
+    ComPtr<IUIAutomationTextRangeArray> ranges;
+    int length=0;
+    if(FAILED(pattern->GetVisibleRanges(&ranges))||!ranges||FAILED(ranges->get_Length(&length)))return;
+    for(int i=0;i<std::min(length,32)&&Clock::now()<deadline&&rows.size()<256;++i){
+        ComPtr<IUIAutomationTextRange> range;
+        if(FAILED(ranges->GetElement(i,&range))||!range)continue;
+        VARIANT attr;VariantInit(&attr);
+        const bool readOnly=SUCCEEDED(range->GetAttributeValue(UIA_IsReadOnlyAttributeId,&attr))&&
+            attr.vt==VT_BOOL&&attr.boolVal==VARIANT_TRUE;
+        VariantClear(&attr);
+        if(!readOnly)continue;
+        RECT bounds{};
+        if(!visibleRangeBounds(range.Get(),window,bounds))continue;
+        BSTR value=nullptr;
+        if(SUCCEEDED(range->GetText(2000,&value))&&value)addText(rows,std::wstring(value,SysStringLen(value)),bounds);
+        if(value)SysFreeString(value);
+    }
+}
 static bool labelKind(CONTROLTYPEID kind) {
     return kind==UIA_TextControlTypeId||kind==UIA_HyperlinkControlTypeId||
         kind==UIA_ButtonControlTypeId||kind==UIA_MenuItemControlTypeId||
@@ -179,7 +238,10 @@ static void walk(IUIAutomationTreeWalker* walker,IUIAutomationElement* parent,
                     if(SUCCEEDED(node->get_CurrentBoundingRectangle(&bounds))&&IntersectRect(&clipped,&bounds,&window))
                         addText(scan.rows,nameOf(node.Get()),clipped);
                 }
+                const auto before=scan.rows.size();
                 walk(walker,node.Get(),window,scan,depth+1);
+                if(kind==UIA_DocumentControlTypeId&&scan.rows.size()==before&&scan.complete&&!scan.sensitive&&!scan.ownView)
+                    readVisibleRanges(node.Get(),window,scan.rows,scan.deadline);
             }
         }
         if(scan.ownView)return;
@@ -204,6 +266,8 @@ static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
     }
     if(ownViewName(nameOf(root.Get()))){scan.ownView=true;return scan;}
     walk(walker.Get(),root.Get(),rect,scan,0);
+    if(scan.rows.empty()&&scan.complete&&!scan.sensitive&&!scan.ownView)
+        readVisibleRanges(root.Get(),rect,scan.rows,scan.deadline);
     return scan;
 }
 static void CALLBACK foreground(HWINEVENTHOOK,DWORD,HWND,LONG,LONG,DWORD,DWORD) {
