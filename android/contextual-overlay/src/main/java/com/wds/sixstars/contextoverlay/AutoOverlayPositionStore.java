@@ -28,6 +28,7 @@ final class AutoOverlayPositionStore {
         final AutoDetailsPlacementService.Placement details;
         final AutoDetailsPlacementService.Placement nameDetails;
         final String authorName;
+        final boolean nameInlineSafe,nameClipped;
 
         Observation(String id, AutoInlinePlacementService.Placement rectangle) {
             this(id, rectangle, null);
@@ -41,6 +42,15 @@ final class AutoOverlayPositionStore {
         Observation(String id, AutoInlinePlacementService.Placement rectangle,
                 AutoDetailsPlacementService.Placement tweetDetails,
                 AutoDetailsPlacementService.Placement nameDetails, String authorName) {
+            this(id,rectangle,tweetDetails,nameDetails,authorName,true,false);
+        }
+
+        Observation(String id, AutoInlinePlacementService.Placement rectangle,
+                AutoDetailsPlacementService.Placement tweetDetails,
+                AutoDetailsPlacementService.Placement nameDetails, String authorName,
+                boolean nameInlineSafe,boolean nameClipped) {
+            this.nameInlineSafe=nameInlineSafe;
+            this.nameClipped=nameClipped;
             this.id = id;
             this.rectangle = rectangle;
             this.details = tweetDetails;
@@ -55,10 +65,14 @@ final class AutoOverlayPositionStore {
         final AutoDetailsPlacementService.Placement details;
         final AutoDetailsPlacementService.Placement nameDetails;
         final String authorName;
+        final boolean nameInlineSafe,nameClipped;
 
         Located(String id, AutoInlinePlacementService.Placement rectangle,
                 AutoDetailsPlacementService.Placement details,
-                AutoDetailsPlacementService.Placement nameDetails, String authorName) {
+                AutoDetailsPlacementService.Placement nameDetails, String authorName,
+                boolean nameInlineSafe,boolean nameClipped) {
+            this.nameInlineSafe=nameInlineSafe;
+            this.nameClipped=nameClipped;
             this.id = id;
             this.rectangle = rectangle;
             this.details = details;
@@ -73,6 +87,7 @@ final class AutoOverlayPositionStore {
         AutoDetailsPlacementService.Placement details;
         AutoDetailsPlacementService.Placement nameDetails;
         String authorName;
+        boolean nameInlineSafe,nameClipped;
         long missingSince;
         long authorMissingSince;
 
@@ -119,6 +134,8 @@ final class AutoOverlayPositionStore {
                 existing = new Entry(observation.id, observation.rectangle,
                         observation.details, observation.nameDetails,
                         observation.authorName);
+                existing.nameInlineSafe=observation.nameInlineSafe;
+                existing.nameClipped=observation.nameClipped;
                 entries.put(observation.id, existing);
                 changed = true;
             } else {
@@ -160,12 +177,16 @@ final class AutoOverlayPositionStore {
                 if (!same(existing.rectangle, observation.rectangle)
                         || !sameDetails(existing.details, observation.details)
                         || !sameDetails(existing.nameDetails, nextName)
-                        || !java.util.Objects.equals(existing.authorName, nextAuthor))
+                        || !java.util.Objects.equals(existing.authorName, nextAuthor)
+                        || existing.nameInlineSafe!=observation.nameInlineSafe
+                        || existing.nameClipped!=observation.nameClipped)
                     changed = true;
                 existing.rectangle = observation.rectangle;
                 existing.details = observation.details;
                 existing.nameDetails = nextName;
                 existing.authorName = nextAuthor;
+                existing.nameInlineSafe=observation.nameInlineSafe;
+                existing.nameClipped=observation.nameClipped;
                 existing.missingSince = 0;
             }
         }
@@ -282,7 +303,7 @@ final class AutoOverlayPositionStore {
                     p.x + p.width <= 0 || p.x >= screenWidth ||
                     p.y + p.height <= 0) continue;
             current.add(new Located(entry.id, p, entry.details,
-                    entry.nameDetails, entry.authorName));
+                    entry.nameDetails, entry.authorName,entry.nameInlineSafe,entry.nameClipped));
         }
         return Collections.unmodifiableList(current);
     }
