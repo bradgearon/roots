@@ -193,6 +193,8 @@ roots_tree_result roots_tree_open(const char *path,roots_tree **out){
                    "CREATE INDEX IF NOT EXISTS fragment_master_language ON fragments(external_id,language,seq) WHERE source GLOB 'record.*';"
                    "CREATE INDEX IF NOT EXISTS fragment_experience_member ON fragments(external_id,source,seq) WHERE source GLOB 'record.experience.*';"
                    "CREATE INDEX IF NOT EXISTS fragment_experience_text ON fragments(body) WHERE source='record.experience.body';"
+                   "CREATE INDEX IF NOT EXISTS fragment_experience_parent ON fragments(body,external_id) WHERE source='record.experience.parent';"
+                   "CREATE INDEX IF NOT EXISTS fragment_experience_position ON fragments(body) WHERE source='record.experience.page-key';"
                    "CREATE TABLE IF NOT EXISTS work_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,fragment INTEGER NOT NULL REFERENCES fragments(seq) ON DELETE CASCADE,operation TEXT NOT NULL,profile TEXT NOT NULL,priority INTEGER NOT NULL,deadline INTEGER NOT NULL,ready INTEGER NOT NULL DEFAULT 0,state INTEGER NOT NULL DEFAULT 0,worker TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,token INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,output TEXT NOT NULL DEFAULT '',UNIQUE(fragment,operation,profile));"
                    "CREATE INDEX IF NOT EXISTS work_dispatch ON work_jobs(operation,state,priority DESC,deadline,id);"
                    "PRAGMA user_version=1;");
@@ -339,6 +341,47 @@ roots_tree_result roots_tree_screens_time(roots_tree *t,const char *term,int64_t
                 "JOIN fragments f ON f.external_id=e.external_id AND f.source GLOB 'record.experience.*' "
                 "ORDER BY g.observed DESC,g.screen_seq DESC,e.event_seq,f.seq");
             s.text(1,term);s.number(2,agent_id);s.number(3,before_seq);s.number(4,before_ms);s.number(5,limit);
+            while(s.next())rows.emplace_back(s.integer(6),read_row(s));
+        }
+        for(const auto &entry:rows){const auto &r=entry.second;
+            roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};
+            if(cb(user,entry.first,&f))break;
+        }
+    });
+}
+roots_tree_result roots_tree_experience_seen(roots_tree *t,const char *event_id,const char *position_key,int64_t *out){
+    if(out)*out=0;
+    return guard([&]{
+        require(t&&out);bounded(event_id,512,true);bounded(position_key,128);
+        require(std::string(event_id).rfind("local:experience:browser:",0)==0);
+        std::lock_guard<std::mutex> lock(t->mutex);
+        statement s(t->db,"SELECT EXISTS(SELECT 1 FROM fragments WHERE source='record.experience.body' AND external_id=?1) "
+            "OR (?2<>'' AND EXISTS(SELECT 1 FROM fragments WHERE source='record.experience.page-key' AND body=?2))");
+        s.text(1,event_id);s.text(2,position_key);require(s.next());*out=s.integer(0);
+    });
+}
+roots_tree_result roots_tree_experience_page(roots_tree *t,const char *parent,const char *after_order,
+        int64_t after_seq,uint32_t limit,roots_record_member_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&after_seq>=0&&limit>0&&limit<=100);
+        bounded(parent,512,true);bounded(after_order,128);
+        require(std::string(parent).rfind("local:experience:browser:",0)==0);
+        require((after_seq==0)==(*after_order=='\0'));
+        std::vector<std::pair<int64_t,row>> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,
+                "WITH page AS (SELECT p.external_id,b.seq AS event_seq,o.body AS page_order "
+                "FROM fragments p JOIN fragments b ON b.external_id=p.external_id AND b.source='record.experience.body' "
+                "JOIN fragments o ON o.external_id=p.external_id AND o.source='record.experience.page-order' "
+                "WHERE p.source='record.experience.parent' AND p.body=?1 "
+                "AND EXISTS(SELECT 1 FROM fragments k WHERE k.external_id=p.external_id AND k.source='record.experience.kind' AND k.body='observation') "
+                "AND (?3=0 OR o.body>?2 OR (o.body=?2 AND b.seq>?3)) "
+                "ORDER BY o.body,b.seq LIMIT ?4) "
+                "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms,page.event_seq "
+                "FROM page JOIN fragments f ON f.external_id=page.external_id AND f.source GLOB 'record.experience.*' "
+                "ORDER BY page.page_order,page.event_seq,f.seq");
+            s.text(1,parent);s.text(2,after_order);s.number(3,after_seq);s.number(4,limit);
             while(s.next())rows.emplace_back(s.integer(6),read_row(s));
         }
         for(const auto &entry:rows){const auto &r=entry.second;
