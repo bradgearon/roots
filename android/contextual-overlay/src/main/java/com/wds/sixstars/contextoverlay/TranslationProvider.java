@@ -16,6 +16,8 @@ public interface TranslationProvider {
         default void started() {}
         /** Cumulative provisional text; never cache as final. */
         default void partial(String prefix) {}
+        /** The original is already in the requested language; no generation occurred. */
+        default void alreadyLocalized(String original,String language){completed(original,null);}
         void completed(String translation, String error);
     }
 
