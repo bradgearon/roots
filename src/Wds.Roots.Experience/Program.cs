@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Wds.Roots.Tree;
+using Wds.Roots.Host.Runtime;
 
 if (!OperatingSystem.IsWindows()) { Console.Error.WriteLine("Surface requires Windows."); return 2; }
 var home = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -63,8 +64,8 @@ try
     Console.WriteLine(noOcr ? "UI Automation static text only." : "UI Automation and window OCR where available.");
     Console.WriteLine("Only semantic text and activity enter the private Tree. No media file or network upload.");
     using var cancellation = new CancellationTokenSource();
-    ConsoleCancelEventHandler stop = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
-    Console.CancelKeyPress += stop;
+    using var shutdown = new ConsoleShutdown(cancellation, "Roots Surface", TimeSpan.FromSeconds(5));
+    using var childJob = ChildProcessJob.Create();
     var start = new ProcessStartInfo(executable)
     {
         UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
@@ -76,9 +77,13 @@ try
     long sequence = 0;
     try
     {
+        childJob.Attach(child);
+        Console.WriteLine($"Surface receiver PID {Environment.ProcessId}; native agent PID {child.Id}.");
         while (!cancellation.IsCancellationRequested)
         {
-            var line = await child.StandardOutput.ReadLineAsync(cancellation.Token);
+            // WaitAsync cancels our wait even if Windows' anonymous pipe read
+            // itself cannot be interrupted. Closing the child ends that read.
+            var line = await child.StandardOutput.ReadLineAsync().WaitAsync(cancellation.Token);
             if (line == null) break;
             var observation = SurfaceObservation.Parse(line, excluded);
             if (cancellation.IsCancellationRequested) break;
@@ -87,7 +92,7 @@ try
         }
         if (!cancellation.IsCancellationRequested)
         {
-            await child.WaitForExitAsync();
+            await child.WaitForExitAsync(cancellation.Token);
             if (child.ExitCode != 0) throw new InvalidOperationException("Surface agent exited: " + child.ExitCode);
             Console.WriteLine("Surface agent ended.");
         }
@@ -95,13 +100,24 @@ try
     catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
     finally
     {
-        Console.CancelKeyPress -= stop;
-        try { child.StandardInput.Close(); } catch { }
-        if (!child.HasExited && !child.WaitForExit(1500))
+        try
         {
-            child.Kill(entireProcessTree: true);
-            child.WaitForExit(1500);
+            // Signal the native agent via EOF. Do not wait for a blocked
+            // UIA/OCR provider indefinitely and do not accept further records.
+            try { child.StandardInput.Close(); } catch (IOException) { }
+            if (!child.HasExited && !child.WaitForExit(1000))
+            {
+                try { child.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) when (child.HasExited) { }
+            }
         }
+        finally
+        {
+            // Also covers a crashed receiver or partially stopped descendant.
+            childJob.Dispose();
+        }
+        if (!child.WaitForExit(1000))
+            Console.Error.WriteLine($"Surface agent PID {child.Id} did not confirm exit.");
         Console.WriteLine($"Capture stopped. {sequence} semantic events accepted.");
     }
     return 0;
