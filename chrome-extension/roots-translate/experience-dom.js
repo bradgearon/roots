@@ -92,14 +92,14 @@
       }
       // Always use rendered lines for multiline nodes, rather than switching
       // between a paragraph and its clipped words as the user scrolls.
-      let lineStart=-1,lineEnd=0,lineRect=null,lineBottom=null,lineVisible=true;
+      let lineStart=-1,lineEnd=0,lineRect=null,lineBottom=null,lineVisible=true,interrupted=false;
       function flush(){
         if(lineRect&&lineVisible&&lineStart>=0)
           add(text.slice(lineStart,lineEnd),lineRect,n,lineStart,lineEnd);
         lineStart=-1;lineEnd=0;lineRect=null;lineBottom=null;lineVisible=true;
       }
       for(const part of segmenter.segment(text.slice(0,16000))){
-        if(performance.now()>=deadline||rows.length>=MAX_LINES)break;
+        if(performance.now()>=deadline||rows.length>=MAX_LINES){interrupted=true;break;}
         range.setStart(n,part.index);range.setEnd(n,part.index+part.segment.length);
         const rects=[...range.getClientRects()].filter(r=>r.width>0&&r.height>0);
         if(!rects.length)continue;
@@ -114,7 +114,7 @@
         if(!bounds){lineVisible=false;continue;}
         lineRect=lineRect?[Math.min(lineRect[0],bounds[0]),Math.min(lineRect[1],bounds[1]),Math.max(lineRect[2],bounds[2]),Math.max(lineRect[3],bounds[3])]:bounds;
       }
-      flush();
+      if(!interrupted)flush();
     }
     return rows.sort((a,b)=>a.pageY-b.pageY||a.pageX-b.pageX||a.order-b.order||a.start-b.start);
   }
