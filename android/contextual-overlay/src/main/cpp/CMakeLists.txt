@@ -120,3 +120,10 @@ add_library(roots_plamo SHARED roots_plamo.cpp)
 target_link_libraries(roots_plamo PRIVATE llama android log)
 target_compile_definitions(roots_plamo PRIVATE ROOTS_PLAMO_LLAMA_REVISION="${ROOTS_PLAMO_LLAMA_REVISION}"
     ROOTS_KLEIDIAI=$<BOOL:${GGML_CPU_KLEIDIAI}> ROOTS_VULKAN=$<BOOL:${GGML_VULKAN}>)
+
+# Optional until the native Tree and its approved SQLite dependency are enabled.
+option(ROOTS_ENABLE_TREE "Build the shared native Tree Core" OFF)
+if(ROOTS_ENABLE_TREE)
+    set(ROOTS_TREE_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../../native/tree-core" "${CMAKE_CURRENT_BINARY_DIR}/roots-tree-core")
+endif()

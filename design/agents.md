@@ -57,3 +57,7 @@ Workers may import a Branch, operate offline and propose independently developed
 ## Bounty and Whirlwind workers
 
 Tendrils may find matching bounties, suggest useful deliverables or perform explicitly approved bounded work, train a candidate student or prepare a Branch proposal while the user is away. Whirlwind is the peer exchange capability. A worker cannot claim a paid obligation, incur costs, accept terms, disclose data, pay or settle without independent applicable authorization. Bounty evaluation and payment use explicit terms and evidence, not AI-inferred worth. See [economy](economy-bounties.md) and [neural development](developing-neural-intelligence.md).
+
+## Lily Tendrils
+
+Higher-level agents coordinate [Lily Tendrils](tendrils.md): bounded persistent semantic sensors querying composed predicates and proposing evidence-linked growth. The neuronal knowledge layer provides context, but does not own Lily's sensor weights. Literal branch matching in native v1 is only an initial baseline.

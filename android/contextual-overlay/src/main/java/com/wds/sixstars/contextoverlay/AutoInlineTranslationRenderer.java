@@ -24,11 +24,16 @@ public final class AutoInlineTranslationRenderer {
 
     public int visibleCount() { return scene.visibleCount(); }
 
+    public void resetWindowAttachment() { scene.resetWindowAttachment(); }
+
     public String lastWindowError() { return scene.lastError(); }
 
     /** Independently verified topmost X window for API 34+ surface attachment. */
     public void setTargetWindow(int id, Rect bounds) {
-        scene.setTargetWindow(id, bounds);
+        scene.setTargetWindow(id, bounds,null);
+    }
+    void setTargetWindow(int id,Rect bounds,XOverlayOrigin.Offset origin){
+        scene.setTargetWindow(id,bounds,origin);
     }
 
     /** Accessibility snapshot: positions only, no drawing or model requests. */
@@ -37,6 +42,8 @@ public final class AutoInlineTranslationRenderer {
     }
 
     /** Model callback: text only, no accessibility-tree traversal. */
+    public void partial(TextCandidate candidate,String prefix){scene.publishPartial(candidate.fingerprint,prefix);}
+    public void clearPartial(String id){scene.clearPartial(id);}
     public void show(TextCandidate candidate, String translation) {
         if (candidate != null) scene.publishTranslation(candidate.fingerprint, translation);
     }
@@ -50,6 +57,8 @@ public final class AutoInlineTranslationRenderer {
     public void uncertainScroll() {
         scene.uncertainScroll();
     }
+
+    public void setActiveTranslations(java.util.Set<String> ids) { scene.setActiveTranslations(ids); }
 
     public void clear() { scene.clear(); }
 

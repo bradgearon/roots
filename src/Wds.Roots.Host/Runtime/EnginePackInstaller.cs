@@ -355,6 +355,10 @@ public static class EnginePackInstaller
         {
             string candidateFullPath = Path.GetFullPath(candidate).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             if (candidateFullPath.Equals(canonicalFullPath, StringComparison.OrdinalIgnoreCase)) continue;
+            // The existing Six Stars dynamic build is an explicitly selected
+            // local runtime, not a disposable duplicate of a provisioned pack.
+            if (component == "llm" && Path.GetFileName(candidateFullPath)
+                    .Equals("llama-cpp-dynamic-win-x64", StringComparison.OrdinalIgnoreCase)) continue;
 
             string candidateReceiptPath = Path.Combine(candidate, ReceiptName);
             if (!File.Exists(candidateReceiptPath)) continue;

@@ -2,7 +2,43 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <application>
+        <activity android:name="com.wds.sixstars.contextoverlay.NetworkExplorerActivity" android:exported="false" android:label="Network Explorer" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.ExternalKnowledgeActivity" android:exported="false" android:label="External knowledge" android:theme="@style/RootsTheme" />
+        <receiver android:name="com.wds.sixstars.contextoverlay.EncounterBootReceiver" android:exported="false">
+            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
+        </receiver>
+        <activity android:name="com.wds.sixstars.contextoverlay.EncounterActivity" android:exported="false" android:label="Roots Encounters" android:theme="@style/RootsTheme" />
+        <service android:name="com.wds.sixstars.contextoverlay.EncounterService" android:exported="false" android:foregroundServiceType="connectedDevice" />
+        <service android:name="com.wds.sixstars.contextoverlay.MeshServingService"
+            android:exported="false" android:stopWithTask="false" android:foregroundServiceType="connectedDevice" />
+        <receiver android:name="com.wds.sixstars.contextoverlay.MeshServingRestoreReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <activity android:name="com.wds.sixstars.contextoverlay.MeshActivity" android:exported="true" android:label="Roots Mesh" android:theme="@style/RootsTheme" android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="roots" android:host="mesh" android:path="/v1"/>
+            </intent-filter>
+        </activity>
+        <activity android:name="com.wds.sixstars.contextoverlay.InferenceHistoryActivity" android:exported="false" android:label="Inference history" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.PoeticMovementActivity" android:exported="false" android:label="Poetic Movement" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.RootsStreamActivity" android:exported="false" android:label="Roots" android:theme="@style/RootsTheme" />
+        <activity android:name="com.wds.sixstars.contextoverlay.tree.TreeActivity" android:exported="false" android:label="Tree of Life" android:theme="@style/RootsTheme" />
         <activity
             android:name="com.wds.sixstars.contextoverlay.OverlayTranslationSettingsActivity"
             android:exported="false"

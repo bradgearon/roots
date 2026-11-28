@@ -33,6 +33,16 @@ public final class XMeasuredScrollTrackerTest {
         assertEquals(15, tracker.observe("x:carousel", 0, 225).deltaY);
     }
 
+    @Test public void undefinedDeltaIsNotASinglePixelScroll() {
+        XMeasuredScrollTracker tracker=new XMeasuredScrollTracker();
+        assertFalse(tracker.observe("x:feed",-1,-1).measured);
+        assertFalse(tracker.observe("x:feed",-1,200).measured);
+        XMeasuredScrollTracker.Result actual=tracker.observe("x:feed",-1,260);
+        assertTrue(actual.measured);
+        assertEquals(60,actual.deltaY);
+        assertEquals(-1,tracker.observe("x:feed",-1,259).deltaY);
+    }
+
     @Test public void missingMeasurementRequiresAnAuthoritativeSnapshot() {
         XMeasuredScrollTracker tracker = new XMeasuredScrollTracker();
         assertFalse(tracker.observe("x:feed", 0, -1).measured);

@@ -1,0 +1,7 @@
+# Capability-based compute routing (v1)
+
+The phone does not determine physical location, SSID or BSSID. It uses the configured bridge address as a locator and the already paired 256-bit key as the device identity. Android network-change callbacks select a remembered network profile without contacting the host. Actual requested inference authenticates the paired host through an Standard TLS protects ordinary JSON requests; no background probes.
+
+The routing policy learns end-to-end completion latency in four input-size buckets, samples unmeasured/stale alternatives on authorized work, and uses a 10% threshold for desktop preference. No duplicate speculative requests. On-device PLaMo remains the default, and is the fallback if the paired host is unreachable, outdated, unauthorized or fails. If local inference fails and an authenticated desktop is available, it can fall back there. The desktop checkbox is permission for automatic routing, not a force-desktop switch. Existing FunctionGemma/poetic calls remain local: the desktop currently advertises only translation. No discovery across arbitrary IPs or multi-host load balancing; configure the bridge URL (a stable DNS hostname or DHCP reservation is useful). No captured text is transmitted for network detection. No location permission.
+
+Transport update: the desktop mobile route now uses the existing JSON translation WebSocket over standard TLS on 8223. The old custom encrypted compute endpoints are removed. See compute-socket.md for current configuration.

@@ -2,8 +2,8 @@
 // service worker talks to the desktop translation gateway.
 chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }).catch(console.warn);
 
-const HTTP_BASE = "http://127.0.0.1:8123/api/translation/v1";
-const SOCKET_URL = "ws://127.0.0.1:8123/api/translation/v1/socket";
+const HTTP_BASE = "http://127.0.0.1:8224/api/translation/v1";
+const SOCKET_URL = "ws://127.0.0.1:8224/api/translation/v1/socket";
 const ALLOWED_HOSTS = new Set(["x.com", "twitter.com"]);
 const REQUEST_TIMEOUT_MS = 95000;
 const HANDSHAKE_TIMEOUT_MS = 2500;
@@ -210,7 +210,93 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.token) closeSocket("translation_token_changed");
 });
 
+// The browser worker owns the existing local token. Capturing DOM data
+// must never grant a page access to Tree queries, peer credentials or controls.
+const TREE_BASE = "http://127.0.0.1:8224/api/tree/v1";
+async function treeCall(path, method="GET", body, timeout=10000) {
+  const settings=await chrome.storage.local.get(["token"]);
+  if(!validToken(settings.token))return {ok:false,error:"configure_token"};
+  try{
+    const response=await fetch(TREE_BASE+path,{
+      method,headers:{"Content-Type":"application/json","X-SixStars-Token":settings.token},
+      body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)
+    });
+    const result=await response.json().catch(()=>({}));
+    return {...result,ok:response.ok&&result.ok!==false,error:response.ok?result.error:(result.error||"HTTP "+response.status)};
+  }catch{return {ok:false,error:"tree_service_unavailable"};}
+}
+function allowedTreePage(sender) {
+  return sender.id===chrome.runtime.id&&
+    [chrome.runtime.getURL("popup.html"),chrome.runtime.getURL("tree.html")].includes(sender.url);
+}
+async function foregroundTreeSender(sender) {
+  if(sender.id!==chrome.runtime.id||!isAllowedXSender(sender)||sender.frameId!==0||
+    sender.documentLifecycle&&sender.documentLifecycle!=="active"||!Number.isInteger(sender.tab?.id))return false;
+  try {
+    const url=new URL(sender.url);
+    if(url.protocol!=="https:"||/^\/(?:messages|compose|settings|i\/flow|i\/chat)(?:\/|$)/i.test(url.pathname))return false;
+    const tab=await chrome.tabs.get(sender.tab.id);
+    const win=await chrome.windows.get(tab.windowId);
+    return tab.active&&win.focused;
+  }catch{return false;}
+}
+function cleanTreePost(raw) {
+  if(!raw||typeof raw.text!=="string"||!raw.text.trim()||raw.text.length>12000)return null;
+  const out={text:raw.text};
+  for(const [key,max] of Object.entries({author:240,handle:16,url:512,language:3,time:80,
+    replyCount:48,repostCount:48,likeCount:48,viewCount:48,translation:12000,target:3})){
+    if(typeof raw[key]==="string")out[key]=raw[key].slice(0,max);
+  }
+  for(const [key,max,count] of [["media",1000,8],["context",2000,8],["poll",300,8]])
+    if(Array.isArray(raw[key]))out[key]=raw[key].filter(v=>typeof v==="string").slice(0,count).map(v=>v.slice(0,max));
+  out.localized=raw.localized===true;
+  // Bound the full UTF-8 envelope, not just JavaScript string lengths.
+  return new TextEncoder().encode(JSON.stringify(out)).length<=90*1024?out:null;
+}
+async function treeCommand(request){
+  switch(request.operation){
+    case "status":return treeCall("/status");
+    case "capture":return treeCall("/capture","POST",{enabled:request.enabled===true});
+    case "listen":return treeCall("/mesh/listen","POST",{enabled:request.enabled===true});
+    case "invitations":return treeCall("/mesh/invitations");
+    case "bind":return treeCall("/mesh/bind","POST",{invitation:String(request.invitation||"").slice(0,1024)});
+    case "unbind":return treeCall("/mesh/unbind","POST",{pin:String(request.pin||"")});
+    case "receive":return treeCall("/mesh/receive","POST",{},1800000);
+    case "records":case "feed":{
+      const params=new URLSearchParams({term:String(request.term||"").slice(0,512),
+        before:String(Math.max(0,Number.isSafeInteger(request.before)?request.before:0)),limit:"30"});
+      return treeCall("/"+request.operation+"?"+params);
+    }
+    case "branches":return treeCall("/branches");
+    case "addBranch":return treeCall("/branches","POST",{name:String(request.name||"").slice(0,160),term:String(request.term||"").slice(0,512)});
+    case "removeBranch":{
+      if(!Number.isSafeInteger(request.id)||request.id<1)return {ok:false,error:"invalid_branch"};
+      return treeCall("/branches/"+request.id,"DELETE");
+    }
+    case "compile":return treeCall("/compile","POST",{language:String(request.language||"en").slice(0,3)},60000);
+    default:return {ok:false,error:"invalid_operation"};
+  }
+}
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if(request?.type==="rootsTreeSettings"||request?.type==="rootsTreeObserve"){
+    (async()=>{
+      if(!await foregroundTreeSender(sender)){sendResponse({ok:false,error:"not_foreground"});return;}
+      if(request.type==="rootsTreeSettings"){
+        const status=await treeCall("/status");
+        sendResponse({ok:status.ok,capture:status.ok&&status.capture===true,error:status.error});
+      }else{
+        const post=cleanTreePost(request.post);
+        sendResponse(post?await treeCall("/observe","POST",post):{ok:false,error:"invalid_post"});
+      }
+    })().catch(()=>sendResponse({ok:false,error:"tree_service_unavailable"}));
+    return true;
+  }
+  if(request?.type==="rootsTreeCommand"){
+    if(!allowedTreePage(sender)){sendResponse({ok:false,error:"untrusted_sender"});return false;}
+    treeCommand(request).then(sendResponse,()=>sendResponse({ok:false,error:"tree_service_unavailable"}));
+    return true;
+  }
+
   if (request?.type === "sixStarsCancel") {
     if (!isAllowedXSender(sender) || typeof request.requestId !== "string") {
       sendResponse({ok:false,error:"untrusted_sender"}); return false;

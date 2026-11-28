@@ -82,3 +82,7 @@ Use Portable Tree 001: 10k synthetic/licensed records for correctness, then 100k
 ## Selective reuse and development through experience
 
 Engram AI supplies reference mechanisms rather than a wholesale runtime dependency. See [developing neural intelligence](developing-neural-intelligence.md) for distinct master GGUF, knowledge GGUF and developed student GGUF artifacts, bounded teacher representation capture, continual distillation, experimental structured weight-fragment extraction and independent evaluation. Tree knowledge acts as a persistent curriculum. Poetic cognition goes beyond similarity to opposition, complement, motifs, tension, continuity, transformation and possibility; styles affect exploration and expression, not truth. Personal micro-cognition remains distinct from collective management. Approved artifacts circulate via [Whirlwind](whirlwind-exchange.md); no automatic activation. Feed can also express eligible bounty and creator-support opportunities, but payment and social rating do not purchase organic relevance.
+
+## Lily and neuronal knowledge semantics
+
+The neuronal representation retains and activates knowledge semantics. [Lily Tendrils](tendrils.md) recognize and develop relationships between meanings through composed, weighted predicate sensors. Maintain separate profile identities and weight spaces, with scoped exchange of knowledge activation, historical relation references and evidence. Proposed growth requires independent judgment; do not merge predicate identity or treat shared components as truth.

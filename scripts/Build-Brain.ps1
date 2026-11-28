@@ -32,16 +32,30 @@ try {
     }
     if (-not $Sdk) { throw 'Android SDK not found. Pass -Sdk G:\sdk.' }
     $Sdk = (Resolve-Path -LiteralPath $Sdk).Path
-    if (-not $Ndk) { $Ndk=$env:ANDROID_NDK_HOME }
+    function NdkRevision([string]$path) {
+        $props=Join-Path $path 'source.properties'
+        if (-not (Test-Path -LiteralPath $props -PathType Leaf)) { return $null }
+        $line=Get-Content -LiteralPath $props | Where-Object { $_ -match '^\s*Pkg\.Revision\s*=' } | Select-Object -First 1
+        if ($line -match '^\s*Pkg\.Revision\s*=\s*(\d+\.\d+\.\d+)\s*$') { return $Matches[1] }
+        return $null
+    }
+    $pin=$env:ROOTS_NDK_VERSION
+    if ($pin) { $pin=$pin.Trim() }
+    if ($pin -and $pin -notmatch '^\d+\.\d+\.\d+$') { throw 'ROOTS_NDK_VERSION must be major.minor.build.' }
+    if (-not $Ndk -and $pin) { $Ndk=Join-Path (Join-Path $Sdk 'ndk') $pin }
     if (-not $Ndk) {
         $installed = @(Get-ChildItem -LiteralPath (Join-Path $Sdk 'ndk') -Directory | Where-Object {
             $_.Name -match '^\d+\.\d+\.\d+$' -and
-            (Test-Path -LiteralPath (Join-Path $_.FullName 'build\cmake\android.toolchain.cmake') -PathType Leaf)
+            (Test-Path -LiteralPath (Join-Path $_.FullName 'build\cmake\android.toolchain.cmake') -PathType Leaf) -and
+            (NdkRevision $_.FullName) -eq $_.Name
         } | Sort-Object -Property @{Expression={[version]$_.Name};Descending=$true})
-        if ($installed.Count -eq 0) { throw 'Install a stable side-by-side Android NDK or pass -Ndk.' }
+        if ($installed.Count -eq 0) { throw 'Install a complete stable side-by-side Android NDK or pass -Ndk.' }
         $Ndk=$installed[0].FullName
     }
     $Ndk=(Resolve-Path -LiteralPath $Ndk).Path
+    $ndkVersion=NdkRevision $Ndk
+    if (-not $ndkVersion) { throw "NDK has no stable Pkg.Revision: $Ndk" }
+    if ($pin -and $pin -ne $ndkVersion) { throw "NDK revision $ndkVersion differs from ROOTS_NDK_VERSION=$pin" }
     $toolchain=Join-Path $Ndk 'build\cmake\android.toolchain.cmake'
     $cmake=Join-Path $Sdk 'cmake\3.22.1\bin\cmake.exe'
     $ninja=Join-Path $Sdk 'cmake\3.22.1\bin\ninja.exe'
@@ -82,7 +96,7 @@ try {
     }
     Write-Host "Building $profile (native Release, independent of Gradle)"
     Write-Host "SDK: $Sdk"
-    Write-Host "NDK: $Ndk"
+    Write-Host "NDK: $ndkVersion ($Ndk)"
     Write-Host "Android native API: $api"
     & $cmake @configure
     if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
@@ -100,7 +114,7 @@ try {
     $dest=Join-Path $stage 'libroots_plamo.so'
     Copy-Item -LiteralPath $lib -Destination "$dest.tmp" -Force
     Move-Item -LiteralPath "$dest.tmp" -Destination $dest -Force
-    @("format=1","abi=arm64-v8a","android_api=$api","kleidiai=$kai","vulkan=$gpu","cmake_sha256=$cmakeHash","cpp_sha256=$cppHash","jni_sha256=$jniHash","library_sha256=$(Sha $dest)") | Set-Content -LiteralPath "$manifest.tmp" -Encoding ASCII
+    @("format=1","abi=arm64-v8a","android_api=$api","ndk_version=$ndkVersion","kleidiai=$kai","vulkan=$gpu","cmake_sha256=$cmakeHash","cpp_sha256=$cppHash","jni_sha256=$jniHash","library_sha256=$(Sha $dest)") | Set-Content -LiteralPath "$manifest.tmp" -Encoding ASCII
     Move-Item -LiteralPath "$manifest.tmp" -Destination $manifest -Force
     Write-Host "Native brain cached: $dest"
     Write-Host 'Run build-android.cmd :app:installDebug; Gradle will reuse this binary.'

@@ -45,6 +45,11 @@ public final class AccessibilityOverlayRenderer {
 
     public int visibleBadgeCount() { return markers.size(); }
     public int visibleTranslationCount() { return autoInline.visibleCount(); }
+
+    /** Reattach on a verified X app return or its window-state transition. */
+    public void resetAutoWindowAttachment() {
+        if (automaticMode) autoInline.resetWindowAttachment();
+    }
     public String lastWindowError() {
         String inlineError = autoInline.lastWindowError();
         return inlineError.isEmpty() ? lastWindowError : inlineError;
@@ -59,6 +64,9 @@ public final class AccessibilityOverlayRenderer {
     /** Auto text compositor follows only the verified X application window. */
     public void setAutoTargetWindow(int id, Rect windowScreenBounds) {
         autoInline.setTargetWindow(id, windowScreenBounds);
+    }
+    void setAutoTargetWindow(int id,Rect windowScreenBounds,XOverlayOrigin.Offset origin){
+        autoInline.setTargetWindow(id,windowScreenBounds,origin);
     }
 
     /** Backward-compatible manual call for old callers. */
@@ -96,7 +104,7 @@ public final class AccessibilityOverlayRenderer {
     private void reconcileMarkers(List<TextCandidate> candidates, ClickHandler clicks) {
         Set<String> present = new HashSet<>();
         for (TextCandidate c : candidates) {
-            if (!onScreen(c) || !present.add(c.fingerprint)) continue;
+            if (c.authorName || !onScreen(c) || !present.add(c.fingerprint)) continue;
             Marker marker = markers.get(c.fingerprint);
             if (marker == null) {
                 final Marker created = new Marker();
@@ -138,6 +146,17 @@ public final class AccessibilityOverlayRenderer {
         }
     }
 
+    public void setActiveTranslations(java.util.Set<String> ids) {
+        if (automaticMode) autoInline.setActiveTranslations(ids);
+    }
+
+    public void showAutoPartial(TextCandidate candidate,String prefix){if(automaticMode)autoInline.partial(candidate,prefix);}
+    public void clearAutoPartial(String fingerprint){autoInline.clearPartial(fingerprint);}
+    public void updateDetailPartial(TextCandidate candidate,String prefix){
+        if(detail instanceof TextView && candidate.fingerprint.equals(detailFingerprint)&&onScreen(candidate)){
+            detailText=prefix;StreamText.reveal((TextView)detail,prefix);positionDetail(candidate);
+        }
+    }
     public void showAutoTranslation(TextCandidate candidate, String translation) {
         if (automaticMode) autoInline.show(candidate, translation);
     }

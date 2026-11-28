@@ -35,10 +35,14 @@ public final class OverlayChangeReactor {
                         boolean scrolling) {
         Map<String, PostPosition> next = new HashMap<>();
         for (TextCandidate c : candidates) {
-            next.put(c.fingerprint, new PostPosition(c.bounds, c.postBounds));
+            next.put(c.fingerprint, new PostPosition(c.bounds, c.postBounds,
+                    c.avatarBounds, c.author));
         }
-        if (!hasSnapshot || previousAutoMode != automatic ||
-                !same(previous, next) || automatic && scrolling) {
+        // The compositor has independent measured-scroll state. A repeated
+        // accessibility snapshot must still rebase its positions; comparing
+        // only to the previous raw snapshot can leave shifted text stranded.
+        if (automatic || !hasSnapshot || previousAutoMode != automatic ||
+                !same(previous, next) || scrolling) {
             renderer.update(candidates, clickHandler, automatic, scrolling);
             previous.clear();
             previous.putAll(next);
@@ -77,14 +81,25 @@ public final class OverlayChangeReactor {
     private static final class PostPosition {
         final Rect text;
         final Rect post;
+        final Rect avatar;
+        final Rect name;
+        final String authorName;
+        final boolean authorClipped;
 
-        PostPosition(Rect text, Rect post) {
+        PostPosition(Rect text, Rect post, Rect avatar, XAuthorInfo author) {
             this.text = new Rect(text);
             this.post = new Rect(post);
+            this.avatar = new Rect(avatar);
+            this.name = author == null ? new Rect() : new Rect(author.nameBounds);
+            this.authorName = author == null ? "" : author.displayName;
+            this.authorClipped = author != null && author.truncated;
         }
 
         boolean sameAs(PostPosition other) {
-            return other != null && text.equals(other.text) && post.equals(other.post);
+            return other != null && text.equals(other.text)
+                    && post.equals(other.post) && avatar.equals(other.avatar)
+                    && name.equals(other.name) && authorClipped == other.authorClipped
+                    && authorName.equals(other.authorName);
         }
     }
 }

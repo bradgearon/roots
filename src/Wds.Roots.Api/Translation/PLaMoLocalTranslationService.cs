@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -83,6 +82,18 @@ namespace Wds.Roots.Api.Translation
             };
         }
 
+        // Both desktop and Android use the published PLaMo 3 language vocabulary.
+        // https://huggingface.co/pfnet/plamo-3-translate-2b#supported-languages
+        private static readonly HashSet<string> ModelLanguages = new(StringComparer.Ordinal)
+        {
+            "ja", "en", "zh-hans", "zh-hant", "ko", "ar", "az", "be", "bg",
+            "bn", "ca", "ceb", "de", "es", "et", "eu", "fa", "fr",
+            "gu", "he", "hi", "hr", "hu", "hy", "id", "it", "jv",
+            "ka", "kk", "km", "lt", "lv", "ml", "mr", "ms", "my",
+            "ne", "nl", "pa", "pl", "ru", "si", "sk", "sl", "sr",
+            "sw", "ta", "te", "th", "tl", "ur", "uz", "vi"
+        };
+
         private static string? NormalizeLanguage(string? language, bool required)
         {
             if (string.IsNullOrWhiteSpace(language))
@@ -96,9 +107,19 @@ namespace Wds.Roots.Api.Translation
                 if (required) throw new ArgumentException("A concrete target language is required.");
                 return null;
             }
-            if (!Regex.IsMatch(value, "^[a-z]{2,3}$"))
-                throw new ArgumentException("Languages must be two- or three-letter ISO codes.");
-            return value;
+            // Preserve script-specific Chinese codes and accept legacy detector aliases.
+            value = value.Replace('_', '-');
+            value = value switch
+            {
+                "iw" => "he", "in" => "id", "fil" => "tl",
+                "zh-cn" or "zh-sg" => "zh-hans",
+                "zh-tw" or "zh-hk" or "zh-mo" => "zh-hant",
+                "zh" when required => "zh-hans",
+                _ => value
+            };
+            if (ModelLanguages.Contains(value)) return value;
+            if (!required) return null; // Unknown source: let PLaMo infer it.
+            throw new ArgumentException("Unsupported PLaMo target language.");
         }
 
         public void Dispose()

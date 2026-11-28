@@ -26,7 +26,10 @@ final class XMeasuredScrollTracker {
     Result observe(String sourceKey, int directDeltaY, int absoluteScrollY) {
         boolean sameSource = sourceKey != null && sourceKey.equals(previousSource);
         boolean validAbsolute = absoluteScrollY >= 0;
-        int delta = directDeltaY;
+        // AccessibilityRecord initializes an absent scrollDeltaY to -1.
+        // A genuine -1 pixel movement is indistinguishable from that value
+        // unless a matching absolute offset confirms it.
+        int delta = directDeltaY==-1?0:directDeltaY;
 
         boolean absoluteMeasured = sameSource && validAbsolute &&
                 previousAbsoluteY >= 0;

@@ -12,6 +12,8 @@ public final class OverlayPreferences {
     private static final String INLINE_THEME = "auto_inline_theme";
     private static final String DESKTOP_TRANSLATION = "desktop_translation_consent";
     private static final String BRIDGE_URL = "translation_bridge_url";
+    private static final String DESKTOP_INTELLIGENCE = "desktop_intelligence_enabled";
+    private static final String INTELLIGENCE_URL = "desktop_intelligence_url";
     
     private final SharedPreferences prefs;
     private final Context prefsContext;
@@ -30,28 +32,44 @@ public final class OverlayPreferences {
     public void setDesktopTranslationEnabled(boolean value) {
         prefs.edit().putBoolean(DESKTOP_TRANSLATION, value).apply();
     }
+    public boolean desktopIntelligenceEnabled() { return prefs.getBoolean(DESKTOP_INTELLIGENCE,false); }
+    public void setDesktopIntelligenceEnabled(boolean enabled) {
+        DesktopIntelligenceProvider.disconnect();
+        prefs.edit().putBoolean(DESKTOP_INTELLIGENCE,enabled).apply();
+    }
+    public String desktopIntelligenceUrl() { return prefs.getString(INTELLIGENCE_URL,""); }
+    public void setDesktopIntelligenceUrl(String value) {
+        String normalized=DesktopIntelligenceProtocol.baseUrl(value);
+        DesktopIntelligenceProvider.disconnect();
+        prefs.edit().putString(INTELLIGENCE_URL,normalized).apply();
+    }
     public String bridgeUrl() {
         String saved = prefs.getString(BRIDGE_URL, "");
         if (saved == null || saved.trim().isEmpty()) {
             // Integration-only preference adapter; the module remains independent
             // of Roots Java classes and can migrate into a separate app.
-            saved = "http://127.0.0.1:8123";
+            saved = "https://127.0.0.1:8223";
+        } else if(!prefs.getBoolean("bridge_port_8223_migrated",false)){
+            // Migrate only the former standard Roots bridge port.
+            saved=saved.replaceFirst(":8123(?=/|$)",":8223");
+            prefs.edit().putString(BRIDGE_URL,saved).putBoolean("bridge_port_8223_migrated",true).apply();
         }
-        return saved == null ? "" : saved.trim().replaceAll("/+$", "");
+        return saved == null ? "" : saved.trim().replaceAll("/+$", "").replaceFirst("^http://","https://");
     }
     public void setBridgeUrl(String url) {
         String value = url == null ? "" : url.trim().replaceAll("/+$", "");
-        if (!value.startsWith("http://") && !value.startsWith("https://"))
-            throw new IllegalArgumentException("Bridge URL must begin with http:// or https://");
+        value=value.replaceFirst("^http://","https://");
+        if (!value.startsWith("https://"))
+            throw new IllegalArgumentException("Bridge URL must begin with https://");
         try {
             java.net.URL parsed = new java.net.URL(value);
             if (parsed.getHost().isEmpty() || !parsed.getPath().isEmpty() && !"/".equals(parsed.getPath())
                     || parsed.getUserInfo() != null || parsed.getQuery() != null || parsed.getRef() != null)
-                throw new IllegalArgumentException("Enter a bridge base URL, for example http://192.168.1.100:8123");
+                throw new IllegalArgumentException("Enter a bridge base URL, for example https://192.168.1.100:8223");
         } catch (java.net.MalformedURLException e) {
             throw new IllegalArgumentException("Invalid bridge URL");
         }
-        prefs.edit().putString(BRIDGE_URL, value).apply();
+        prefs.edit().putString(BRIDGE_URL, value).putBoolean("bridge_port_8223_migrated",true).apply();
     }
     public String inlineTheme() {
         String value = prefs.getString(INLINE_THEME, AutoInlineThemeService.SYSTEM);
@@ -83,12 +101,35 @@ public final class OverlayPreferences {
         // not an affinity promise or a universally optimal thread count.
         return Math.max(1,Math.min(Runtime.getRuntime().availableProcessors(),requested==0?6:requested));
     }
+    /** Outstanding overlay requests, not simultaneous native contexts. */
+    public int translationRequestLimit() {
+        int n=prefs.getInt("translation_request_limit",1);
+        return n>=1&&n<=4?n:1;
+    }
+    public void setTranslationRequestLimit(int n) {
+        if(n<1||n>4)throw new IllegalArgumentException("Unsupported request limit");
+        prefs.edit().putInt("translation_request_limit",n).apply();
+    }
+    public boolean showTranslationActivity() { return prefs.getBoolean("show_translation_activity", true); }
+    public void setShowTranslationActivity(boolean value) { prefs.edit().putBoolean("show_translation_activity",value).apply(); }
     public boolean autoPreview() { return prefs.getBoolean(AUTO_PREVIEW, false); }
     public void setAutoPreview(boolean value) { prefs.edit().putBoolean(AUTO_PREVIEW, value).apply(); }
-    public String targetLanguage() { return prefs.getString(TARGET, "en"); }
+    public String targetLanguageSetting() {
+        String saved = prefs.getString(TARGET, TranslationLanguages.FOLLOW_SYSTEM);
+        return TranslationLanguages.isTargetSetting(saved) ? saved : TranslationLanguages.FOLLOW_SYSTEM;
+    }
+    public String systemTargetLanguage() {
+        android.os.LocaleList locales = prefsContext.getResources().getConfiguration().getLocales();
+        String[] tags = new String[locales.size()];
+        for (int i = 0; i < tags.length; i++) tags[i] = locales.get(i).toLanguageTag();
+        return TranslationLanguages.systemTarget(tags);
+    }
+    public String targetLanguage() {
+        String setting = targetLanguageSetting();
+        return TranslationLanguages.FOLLOW_SYSTEM.equals(setting) ? systemTargetLanguage() : setting;
+    }
     public void setTargetLanguage(String language) {
-        if (!"en".equals(language) && !"es".equals(language) && !"fr".equals(language)
-                && !"de".equals(language) && !"ja".equals(language)) {
+        if (!TranslationLanguages.isTargetSetting(language)) {
             throw new IllegalArgumentException("Unsupported target language");
         }
         prefs.edit().putString(TARGET, language).apply();

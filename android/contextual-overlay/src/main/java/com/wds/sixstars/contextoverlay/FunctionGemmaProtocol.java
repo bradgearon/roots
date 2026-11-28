@@ -23,7 +23,7 @@ public final class FunctionGemmaProtocol {
         REQUIRED=Collections.unmodifiableMap(r);
     }
     private static String literal(String value){return ESC+value+ESC;}
-    private static String tool(String name,String description,String[] names,String[] descriptions){
+    static String tool(String name,String description,String[] names,String[] descriptions){
         StringBuilder b=new StringBuilder("<start_function_declaration>declaration:").append(name)
             .append("{description:").append(literal(description)).append(",parameters:{properties:{");
         for(int i=0;i<names.length;i++){
@@ -77,10 +77,10 @@ public final class FunctionGemmaProtocol {
             if(i==a||i-a>64)throw invalid();
             return s.substring(a,i);
         }
-        String value(){
+        String value(int max){
             expect(ESC);
             int end=s.indexOf(ESC,i);
-            if(end<0||end-i>400)throw invalid();
+            if(end<0||end-i>max)throw invalid();
             String v=s.substring(i,end).trim();i=end+ESC.length();
             if(v.isEmpty()||v.indexOf('<')>=0||v.indexOf('>')>=0)throw invalid();
             for(int j=0;j<v.length();j++)if(Character.isISOControl(v.charAt(j)))throw invalid();
@@ -88,17 +88,21 @@ public final class FunctionGemmaProtocol {
         }
     }
     /** Only the exact native function syntax, exact argument set, and a single call are accepted. */
-    public static Proposal parse(String raw){
+    public static Proposal parse(String raw){return parse(raw,REQUIRED);}
+    static Proposal parseOne(String raw,String operation,String... arguments){
+        return parse(raw,Collections.singletonMap(operation,set(arguments)));
+    }
+    private static Proposal parse(String raw,Map<String,Set<String>> allowed){
         if(raw==null||raw.length()>4096)throw invalid();
         Cursor c=new Cursor(raw);
         c.expect(START);c.expect("call:");String operation=c.name();
-        Set<String> required=REQUIRED.get(operation);if(required==null)throw invalid();
+        Set<String> required=allowed.get(operation);if(required==null)throw invalid();
         c.expect("{");
         Map<String,String> args=new LinkedHashMap<>();
         for(int n=0;n<required.size();n++){
             if(n!=0)c.expect(",");
             String k=c.name();if(!required.contains(k)||args.containsKey(k))throw invalid();
-            c.expect(":");args.put(k,c.value());
+            c.expect(":");args.put(k,c.value(operation.equals("resolve_movements")?1600:400));
         }
         c.expect("}");c.expect(END);c.ws();
         if(c.i!=raw.length()||!args.keySet().equals(required))throw invalid();

@@ -1,0 +1,297 @@
+package com.wds.sixstars.contextoverlay;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/** Pure snapshot assembler. Paths belong to ONE accessibility traversal;
+ * they are never persisted as remote identity. The timeline card and its
+ * timeline_post header, rather than screen proximity, own their descendants. */
+final class XTimelineCardRecords {
+    private static final Pattern HANDLE=Pattern.compile("@[A-Za-z0-9_]{1,15}");
+    private static final Pattern TIME=Pattern.compile("(?i)(?:[·•]\\s*)?(?:\\d+\\s*[smhdwy]|\\d{1,2}\\s+[\\p{L}]{3,12}(?:\\s+\\d{2,4})?|[\\p{L}]{3,12}\\s+\\d{1,2}(?:,?\\s+\\d{2,4})?)");
+    private static final Pattern COUNT=Pattern.compile("(?i)\\d[\\d,.\\s]*(?:[kmb万億])?");
+    record Node(int order,String path,String id,String className,String text,String description,
+                boolean card,boolean header,boolean bodyRole,boolean bodySpan,boolean primary,List<String> links,String language){
+        Node{
+            id=id==null?"":id;className=className==null?"":className;
+            text=text==null?"":text;description=description==null?"":description;
+            links=links==null?List.of():List.copyOf(links);
+            language=PostLanguage.code(language);
+        }
+    }
+    record Field(String role,String value){}
+    record Post(String cardPath,int bodyOrder,String key,String body,List<Field> fields,String language){}
+    record Result(List<Post> posts,Map<Integer,String> cardByOrder,Map<String,Node> primaryBodies,Map<String,Node> quotedBodies){}
+
+    static boolean under(String path,String parent){
+        return path.equals(parent)||path.startsWith(parent+"/");
+    }
+    private static String parent(String path){int cut=path.lastIndexOf('/');return cut<0?"":path.substring(0,cut);}
+    private static String branch(String path,String root){
+        if(!path.startsWith(root+"/"))return "";
+        int end=path.indexOf('/',root.length()+1);return end<0?path:path.substring(0,end);
+    }
+    private static int pathCompare(String a,String b){
+        String[] aa=a.split("/"),bb=b.split("/");
+        for(int i=0;i<Math.min(aa.length,bb.length);i++){
+            int cmp=Integer.compare(Integer.parseInt(aa[i]),Integer.parseInt(bb[i]));
+            if(cmp!=0)return cmp;
+        }
+        return Integer.compare(aa.length,bb.length);
+    }
+    static Result assemble(List<Node> snapshot){
+        List<String> cards=new ArrayList<>();
+        for(Node n:snapshot)if(n.card())cards.add(n.path());
+        Map<String,List<Node>> groups=new TreeMap<>(XTimelineCardRecords::pathCompare);
+        Map<Integer,String> owners=new HashMap<>();
+        for(Node n:snapshot){
+            String owner="";
+            for(String card:cards)if(under(n.path(),card)&&card.length()>owner.length())owner=card;
+            if(owner.isEmpty())continue;
+            owners.put(n.order(),owner);
+            groups.computeIfAbsent(owner,k->new ArrayList<>()).add(n);
+        }
+        List<Post> posts=new ArrayList<>();
+        Map<String,Node> primaryBodies=new LinkedHashMap<>();
+        Map<String,Node> quotedBodies=new LinkedHashMap<>();
+        for(Map.Entry<String,List<Node>> group:groups.entrySet()){
+            List<Node> nodes=group.getValue();
+            nodes.sort(Comparator.comparing(Node::path,XTimelineCardRecords::pathCompare));
+            Node header=header(group.getKey(),nodes);
+            java.util.Set<String> context=contextBranches(group.getKey(),nodes,header);
+            Node body=selectBody(group.getKey(),nodes,header,context);
+            collectQuotedBodies(group.getKey(),nodes,header,context,body,quotedBodies);
+            if(body!=null){
+                primaryBodies.put(group.getKey(),body);
+                Post post=post(group.getKey(),nodes,header,body,context);
+                if(post!=null)posts.add(post);
+            }
+        }
+        return new Result(List.copyOf(posts),Map.copyOf(owners),Map.copyOf(primaryBodies),Map.copyOf(quotedBodies));
+    }
+    private static Node header(String card,List<Node> nodes){
+        Node header=null;
+        for(Node n:nodes)if(n.header()&&n.primary()&&parent(n.path()).equals(card)){
+            if(header!=null)return null;
+            header=n;
+        }
+        return header;
+    }
+
+    private static java.util.Set<String> contextBranches(String card,List<Node> nodes,Node header){
+        java.util.Set<String> context=new java.util.HashSet<>();
+        for(Node n:nodes)if((n.header()&&(header==null||!under(n.path(),header.path())))||
+                (!n.primary()&&!controlNode(n))||"Quote".equalsIgnoreCase(n.description().trim())){
+            String sub=branch(n.path(),card);
+            if(!sub.isEmpty()&&(header==null||!sub.equals(header.path())))context.add(sub);
+        }
+        return context;
+    }
+
+    private static boolean controlNode(Node n){
+        String role=n.id().toLowerCase(java.util.Locale.ROOT);
+        String type=n.className().toLowerCase(java.util.Locale.ROOT);
+        return role.contains("poll")||role.contains("vote")||
+            type.endsWith(".button")||type.endsWith(".radiobutton")||
+            type.endsWith(".checkbox")||type.endsWith(".switch")||
+            metricRole(n.description()).length()>0;
+    }
+
+    /** Layout identity does not require a visible/untruncated author handle.
+     * Poll labels and other interactive children must not become the body.
+     * A direct full-body span can still identify a post whose header is clipped. */
+    private static Node selectBody(String card,List<Node> nodes,Node header,java.util.Set<String> context){
+        java.util.Set<String> controls=new java.util.HashSet<>();
+        for(Node n:nodes)if(controlNode(n)&&!n.path().equals(card)){
+            String sub=branch(n.path(),card);
+            if(!sub.isEmpty())controls.add(sub);
+        }
+        Node body=null;int best=0;boolean ambiguous=false;
+        for(Node n:nodes){
+            if(!n.primary()||n.text().isBlank()||n.text().length()>4000||
+                (header!=null&&under(n.path(),header.path())))continue;
+            String direct=branch(n.path(),card);
+            if(direct.isEmpty()||context.contains(direct)||controls.contains(direct)||
+                (header!=null&&pathCompare(direct,header.path())<=0))continue;
+            String value=n.text().trim();
+            boolean directContent=parent(n.path()).equals(card)&&
+                !isControl(value)&&!COUNT.matcher(value).matches()&&!HANDLE.matcher(value).matches()&&
+                !TIME.matcher(value).matches();
+            boolean directText=directContent&&n.className().endsWith("TextView");
+            int strength=n.bodyRole()?4:n.bodySpan()&&directContent?3:header!=null&&directText?1:0;
+            if(strength==0)continue;
+            if(strength>best){body=n;best=strength;ambiguous=false;}
+            else if(strength==best&&!TextFingerprint.normalized(body.text()).equals(TextFingerprint.normalized(n.text())))ambiguous=true;
+        }
+        return ambiguous?null:body;
+    }
+
+    /** Nested quotes share their parent's conversation card on some X builds.
+     * Treat their bodies as separate display surfaces, without inventing a
+     * second remote identity or attaching their translations to the outer body. */
+    private static void collectQuotedBodies(String card,List<Node> nodes,Node header,
+            java.util.Set<String> context,Node primary,Map<String,Node> result){
+        java.util.Set<String> headers=new java.util.HashSet<>();
+        java.util.Set<String> blocked=new java.util.HashSet<>();
+        java.util.Set<String> scopes=new java.util.LinkedHashSet<>();
+        for(Node n:nodes){
+            if(n.header()){headers.add(n.path());if(header==null||!n.path().equals(header.path()))scopes.add(parent(n.path()));}
+            if(controlNode(n))blocked.add(n.path());
+        }
+        // First resolve each actual embedded header's sibling body. An
+        // ancestor scope must not select a descendant quote's body.
+        for(String scope:scopes){
+            if(scope.isEmpty()||scope.equals(card))continue;
+            Node nested=null;
+            for(Node n:nodes)if(n.header()&&parent(n.path()).equals(scope)){
+                if(nested!=null){nested=null;break;}nested=n;
+            }
+            if(nested==null)continue;
+            Node best=null;int score=0;boolean ambiguous=false;
+            for(Node n:nodes){
+                if(!under(n.path(),scope)||under(n.path(),nested.path())||n.path().equals(scope))continue;
+                boolean otherScope=false;
+                for(String other:scopes)if(!other.equals(scope)&&under(other,scope)&&under(n.path(),other)){otherScope=true;break;}
+                if(otherScope||blocked(n.path(),headers,blocked))continue;
+                String sub=branch(n.path(),scope);
+                if(sub.isEmpty()||pathCompare(sub,nested.path())<=0||!bodyContent(n))continue;
+                int strength=n.bodyRole()?4:n.bodySpan()?3:parent(n.path()).equals(scope)&&n.className().endsWith("TextView")?1:0;
+                if(strength==0)continue;
+                if(strength>score){best=n;score=strength;ambiguous=false;}
+                else if(strength==score&&!TextFingerprint.normalized(best.text()).equals(TextFingerprint.normalized(n.text())))ambiguous=true;
+            }
+            if(best!=null&&!ambiguous&&(primary==null||best.order()!=primary.order()))result.put(best.path(),best);
+        }
+        // Some quoted previews have no exposed header resource. Full-body
+        // clickable spans remain positive evidence for a text surface.
+        // Never admit arbitrary controls or their descendants.
+        for(Node n:nodes){
+            if(primary!=null&&primary.order()==n.order()||!bodyContent(n)||blocked(n.path(),headers,blocked))continue;
+            String sub=branch(n.path(),card);
+            boolean nested=context.contains(sub)||!n.primary()||
+                (!sub.isEmpty()&&!sub.equals(n.path())&&(n.bodyRole()||n.bodySpan()));
+            if(!nested||!(n.bodyRole()||n.bodySpan()))continue;
+            boolean inResolvedScope=false;
+            for(String scope:scopes)if(!scope.equals(card)&&under(n.path(),scope)){inResolvedScope=true;break;}
+            if(!inResolvedScope)result.putIfAbsent(n.path(),n);
+        }
+    }
+    private static boolean blocked(String path,java.util.Set<String> headers,java.util.Set<String> controls){
+        for(String h:headers)if(under(path,h))return true;
+        for(String c:controls)if(under(path,c))return true;
+        return false;
+    }
+    private static boolean bodyContent(Node n){
+        String text=n.text().trim();
+        return !text.isEmpty()&&text.length()<=4000&&!isControl(text)&&
+            !HANDLE.matcher(text).matches()&&!TIME.matcher(text).matches()&&!COUNT.matcher(text).matches();
+    }
+
+    private static Post post(String card,List<Node> nodes,Node header,Node body,java.util.Set<String> contextBranches){
+        if(header==null)return null;
+        String author="",handle="",time="";
+        for(Node n:nodes)if(n.primary()&&under(n.path(),header.path())){
+            String value=n.text().trim();
+            if(HANDLE.matcher(value).matches()){
+                if(!handle.isEmpty()&&!handle.equalsIgnoreCase(value))return null;
+                handle=value;
+            }else if(TIME.matcher(value).matches()&&!value.isEmpty())time=value;
+            else if(!value.isEmpty()&&author.isEmpty()&&!value.startsWith("@")&&!value.equalsIgnoreCase("Ad"))
+                author=value;
+        }
+        // No provisional author-only key for a clipped header: otherwise the
+        // same post is duplicated when its @handle comes into view later.
+        if(handle.isEmpty())return null;
+        String original=TextFingerprint.normalized(body.text());
+        if(original.isEmpty())return null;
+        // Preserve the established handle/body key format, so revisiting a
+        // previously correctly grouped post enriches it instead of forking it.
+        String key="local:x:"+TextFingerprint.of(handle.length()+":"+handle+":"+original);
+        List<Field> fields=new ArrayList<>();
+        put(fields,"body",original);put(fields,"author",author);put(fields,"handle",handle);put(fields,"time",time);
+        String link="";boolean conflict=false;
+        for(Node n:nodes)if(n.primary()&&!contextBranches.contains(branch(n.path(),card))){
+            // Explicit links only. Never treat a URL appearing in post prose or
+            // a quoted card as the source of this conversation.
+            for(String url:n.links()){
+                String next=XPostLink.canonical(url);
+                if(next.isEmpty())continue;
+                if(!link.isEmpty()&&!XPostLink.postId(link).equals(XPostLink.postId(next)))conflict=true;
+                if(link.isEmpty()||link.contains("/i/web/status/"))link=next;
+            }
+        }
+        if(!conflict&&!link.isEmpty())put(fields,"link",link);
+        // An action icon and its adjacent counter share a direct action
+        // subtree. Do not infer engagement roles from row positions.
+        Map<String,List<Node>> branches=new LinkedHashMap<>();
+        for(Node n:nodes){
+            if(n.path().equals(card)||under(n.path(),header.path()))continue;
+            branches.computeIfAbsent(branch(n.path(),card),k->new ArrayList<>()).add(n);
+        }
+        for(Map.Entry<String,List<Node>> entry:branches.entrySet()){
+            String sub=entry.getKey();
+            if(under(body.path(),sub))continue;
+            List<Node> members=entry.getValue();
+            String metric="";boolean metricConflict=false;
+            for(Node n:members)if(n.primary()){
+                String role=metricRole(n.description());
+                if(!role.isEmpty()){
+                    if(!metric.isEmpty()&&!role.equals(metric))metricConflict=true;
+                    metric=role;
+                }
+            }
+            // Reply/Repost/Like/Impressions each live in their own sibling
+            // branch in the observed X Compose tree.
+            String count="";boolean countConflict=false;
+            if(!metric.isEmpty()&&!metricConflict&&!contextBranches.contains(sub)){
+                for(Node n:members)if(n.primary()&&COUNT.matcher(n.text().trim()).matches()){
+                    String value=n.text().trim();
+                    if(!count.isEmpty()&&!count.equals(value))countConflict=true;
+                    count=value;
+                }
+                if(!countConflict)put(fields,metric,count);
+                continue;
+            }
+            for(Node n:members){
+                String value=n.text().trim(),description=n.description().trim();
+                if(n.primary()&&!description.isEmpty()&&isMedia(description))put(fields,"media-description",description);
+                if(!value.isEmpty()&&!value.equals(author)&&!value.equals(handle)&&!value.equals(time)
+                    &&!value.equals(original)&&!isControl(value)&&!COUNT.matcher(value).matches()
+                    &&!HANDLE.matcher(value).matches()&&!TIME.matcher(value).matches())
+                    put(fields,n.primary()&&!contextBranches.contains(sub)?"text":"context",value);
+            }
+        }
+        return new Post(card,body.order(),key,original,List.copyOf(fields),PostLanguage.hint(original,body.language()));
+    }
+    private static boolean isMedia(String description){
+        String s=description.toLowerCase(java.util.Locale.ROOT);
+        return s.equals("image")||s.equals("video")||s.equals("gif")||s.startsWith("image:")||s.startsWith("photo:")||s.startsWith("video:");
+    }
+    private static boolean isControl(String text){
+        return switch(text.toLowerCase(java.util.Locale.ROOT)){
+            case "reply","repost","retweet","like","liked","share","bookmark","bookmarked","impressions","post options","verified","verified business","show more","ad","follow","following","unmute","mute","install","explain this post with grok" -> true;
+            default -> false;
+        };
+    }
+    private static String metricRole(String description){
+        return switch(description.trim().toLowerCase(java.util.Locale.ROOT)){
+            case "reply","replies" -> "reply-count";
+            case "repost","reposted","retweet","retweeted" -> "repost-count";
+            case "like","liked" -> "like-count";
+            case "impressions","views" -> "view-count";
+            default -> "";
+        };
+    }
+    private static void put(List<Field> fields,String role,String value){
+        if(value==null||value.isBlank())return;
+        Field field=new Field(role,value);
+        if(!fields.contains(field))fields.add(field);
+    }
+}

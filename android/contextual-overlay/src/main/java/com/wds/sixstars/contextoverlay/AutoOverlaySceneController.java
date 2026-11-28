@@ -41,8 +41,9 @@ import java.util.Set;
  * avatar-gutter details icon toggles the existing on-demand bottom sheet.
  */
 final class AutoOverlaySceneController {
-    private static final int MAX_STORED_TRANSLATIONS = 96;
-    private static final int MAX_VISIBLE = 5;
+    private static final int MAX_STORED_TRANSLATIONS = 512;
+    private static final int MAX_VISIBLE = 8;
+    private String renderedTarget="";
 
     private final Context context;
     private final WindowManager windowManager;
@@ -58,7 +59,16 @@ final class AutoOverlaySceneController {
                     return size() > MAX_STORED_TRANSLATIONS;
                 }
             };
+    private final Map<String, TranslationState> partials = new HashMap<>();
     private final Map<String, Controls> controls = new HashMap<>();
+    private final Set<String> activeTranslations = new HashSet<>();
+
+    void setActiveTranslations(Set<String> ids) {
+        if(destroyed || activeTranslations.equals(ids))return;
+        activeTranslations.clear();
+        activeTranslations.addAll(ids);
+        frames.request();
+    }
     private final AutoSceneSurfaceManager surfaces;
     private String lastError = "";
     private int visibleCount;
@@ -78,6 +88,12 @@ final class AutoOverlaySceneController {
 
     int visibleCount() { return visibleCount; }
 
+    void resetWindowAttachment() {
+        if (destroyed) return;
+        surfaces.resetAttachment();
+        frames.request();
+    }
+
     String lastError() {
         String expansionError = expanded.lastWindowError();
         if (!expansionError.isEmpty()) return expansionError;
@@ -86,24 +102,54 @@ final class AutoOverlaySceneController {
     }
 
     /** Only the verified foreground X application window may host our surface. */
-    void setTargetWindow(int windowId, Rect bounds) {
+    void setTargetWindow(int windowId, Rect bounds,XOverlayOrigin.Offset origin) {
         if (destroyed) return;
         boolean changed = surfaces.setTarget(
-                bounds == null ? null : new AutoWindowTarget(windowId, bounds));
+                bounds == null ? null : new AutoWindowTarget(windowId, bounds,origin));
         // A moved/resized X window changes our screen-to-window transform.
         if (changed) frames.request();
     }
 
     /** Accept immutable post positions. NEVER called by the frame callback. */
     void publishPositions(List<TextCandidate> candidates, boolean scrolling) {
+        String targetLanguage=preferences.targetLanguage();
+        if(!targetLanguage.equals(renderedTarget)){
+            clear();translations.clear();partials.clear();renderedTarget=targetLanguage;
+        }
+
         if (destroyed) return;
         ArrayList<AutoOverlayPositionStore.Observation> observations = new ArrayList<>();
         DisplayMetrics screen = context.getResources().getDisplayMetrics();
+        long nowMs = SystemClock.uptimeMillis();
         HashSet<String> seen = new HashSet<>();
+        // Names use their own observation IDs and anchor, independent of
+        // body placement or whether the body has finished translating.
+        int nameCount=0;
+        for(TextCandidate candidate:candidates){
+            if(nameCount>=MAX_VISIBLE)break;
+            if(!candidate.authorName || candidate.author==null || !seen.add(candidate.fingerprint+"@"+candidate.bounds.flattenToString()))continue;
+            boolean foreign=AutoTranslationEligibilityService.accepts(candidate,preferences.targetLanguage());
+            if(!foreign&&!candidate.author.truncated)continue;
+            Rect n=candidate.bounds, avatar=candidate.avatarBounds;
+            AutoDetailsPlacementService.Placement badge=AutoDetailsPlacementService.locateName(
+                    n.left,n.top,n.right,n.bottom,n.left,n.top,n.right,n.bottom,false,
+                    avatar.left,avatar.top,avatar.right,avatar.bottom,
+                    screen.widthPixels,screen.heightPixels,screen.density);
+            AutoInlinePlacementService.Placement nameRect=AutoInlinePlacementService.locate(
+                    n.left,n.top,n.right,n.bottom,screen.widthPixels,screen.heightPixels,screen.density);
+            if(nameRect!=null&&(candidate.author.inlineSafe||badge!=null)){
+                observations.add(new AutoOverlayPositionStore.Observation(candidate.fingerprint,
+                        nameRect,null,badge,candidate.text,candidate.author.inlineSafe,candidate.author.truncated));
+                nameCount++;
+            }
+        }
+        int bodyCount=0;
         for (TextCandidate candidate : candidates) {
-            if (!AutoTranslationEligibilityService.accepts(
-                    candidate, preferences.targetLanguage()) ||
-                    !seen.add(candidate.fingerprint)) continue;
+            if(candidate.authorName)continue;
+            boolean translatable = AutoTranslationEligibilityService.accepts(
+                    candidate, preferences.targetLanguage());
+            if ((!translatable && !translations.containsKey(candidate.fingerprint))
+                    || !seen.add(candidate.fingerprint+"@"+candidate.bounds.flattenToString())) continue;
             AutoInlinePlacementService.Placement rectangle =
                     AutoInlinePlacementService.locate(
                             candidate.bounds.left, candidate.bounds.top,
@@ -111,31 +157,29 @@ final class AutoOverlaySceneController {
                             screen.widthPixels, screen.heightPixels, screen.density);
             if (rectangle != null) {
                 Rect avatar = candidate.avatarBounds;
-                AutoDetailsPlacementService.Placement details =
-                        AutoDetailsPlacementService.locate(
+                AutoDetailsPlacementService.Placement tweetDetails =
+                        AutoDetailsPlacementService.locateTweet(
                                 candidate.bounds.left, candidate.bounds.top,
                                 candidate.bounds.right, candidate.bounds.bottom,
-                                candidate.postBounds.left, candidate.postBounds.top,
-                                candidate.postBounds.right, candidate.postBounds.bottom,
-                                candidate.hasPostContainer,
-                                avatar.left, avatar.top, avatar.right, avatar.bottom,
-                                screen.widthPixels, screen.heightPixels, screen.density);
+                                candidate.postBounds.right, screen.widthPixels,
+                                screen.heightPixels, screen.density);
                 observations.add(new AutoOverlayPositionStore.Observation(
-                        candidate.fingerprint, rectangle, details));
+                        candidate.fingerprint, rectangle, tweetDetails));
+                if (++bodyCount >= MAX_VISIBLE) break;
             }
-            if (observations.size() >= MAX_VISIBLE) break;
         }
 
         if (scrolling) expanded.hide();
         long previousVersion = positions.version();
-        positions.publish(observations, scrolling, SystemClock.uptimeMillis());
+        positions.publishScene(observations, scrolling, nowMs);
         // A missing stationary post gets 1.1 seconds' grace. There may be no
         // later accessibility event, so expire it with ONE delayed frame.
         main.removeCallbacks(pruneMissing);
-        if (observations.size() < controls.size())
-            main.postDelayed(pruneMissing,
-                    AutoOverlayPositionStore.TRANSIENT_GAP_MS + 1);
+        long nextExpiry = positions.nextExpiryDelayMs(nowMs);
+        if (nextExpiry >= 0L) main.postDelayed(pruneMissing, nextExpiry);
         if (previousVersion != positions.version()) frames.request();
+        // The compositor compares the actual painted text. Changes to an
+        // untranslated candidate or a badge must not blank other translations.
     }
 
     private final Runnable pruneMissing = () -> {
@@ -152,22 +196,37 @@ final class AutoOverlaySceneController {
     void measuredScroll(int deltaX, int deltaY) {
         if (destroyed) return;
         expanded.hide();
-        positions.applyMeasuredScroll(deltaX, deltaY);
-        frames.request();
+        // Accessibility scroll events are delivered asynchronously. Their
+        // displacement may already be included in the last measured bounds,
+        // or may belong to a nested scroller. Do not offset the painted scene.
+        // The service schedules a new authoritative geometry snapshot.
     }
 
     /** No reliable delta reported: hide until the next measured snapshot. */
     void uncertainScroll() {
         if (destroyed) return;
         expanded.hide();
+        if(!positions.isTrusted())return;
         positions.suspendUntilMeasured();
+        // Reserved for a genuinely unverified window/geometry, not every
+        // scroll event or minor candidate update.
+        surfaces.present(java.util.Collections.emptyList());
+        for(String id:new java.util.HashSet<>(controls.keySet()))removeControls(id);
         frames.request();
     }
 
     /** A translation arrives without any AccessibilityService tree scan. */
+    void publishPartial(String id,String prefix){
+        if(destroyed||!positions.containsContent(id)||prefix==null||prefix.trim().isEmpty()||translations.containsKey(id))return;
+        TranslationState state=partials.get(id);
+        if(state==null){state=new TranslationState(id);partials.put(id,state);}
+        if(!prefix.equals(state.translation)){state.translation=prefix;state.invalidateLayout();frames.request();}
+    }
+    void clearPartial(String id){if(partials.remove(id)!=null)frames.request();}
     void publishTranslation(String fingerprint, String translation) {
         if (destroyed || fingerprint == null || translation == null ||
-                translation.trim().isEmpty() || !positions.contains(fingerprint)) return;
+                translation.trim().isEmpty() || !positions.containsContent(fingerprint)) return;
+        clearPartial(fingerprint);
         TranslationState state = translations.get(fingerprint);
         if (state == null) {
             state = new TranslationState(fingerprint);
@@ -177,8 +236,8 @@ final class AutoOverlaySceneController {
         if (!normalized.equals(state.translation)) {
             state.translation = normalized;
             state.invalidateLayout();
+            frames.request();
         }
-        frames.request();
     }
 
     /** Only the Choreographer callback enters this method. */
@@ -191,106 +250,211 @@ final class AutoOverlaySceneController {
         AutoInlineThemeService.Palette palette = AutoInlineThemeService.resolve(
                 context, preferences.inlineTheme());
 
+        int translatedCount=0;
         for (AutoOverlayPositionStore.Located item : located) {
-            TranslationState state = translations.get(item.id);
-            if (state == null || state.translation == null) continue;
-            AutoInlinePlacementService.Placement rectangle = item.rectangle;
-            state.prepareLayout(rectangle, palette);
+            String content=AutoOverlayPositionStore.contentId(item.id);
+            boolean name=content.startsWith("name:");
+            TranslationState state=translations.get(content);
+            boolean streaming=state==null&&partials.containsKey(content);
+            if(streaming)state=partials.get(content);
+            if(state==null || state.translation==null){
+                // A clipped original is still useful while its translation
+                // is pending, already localized, or uncertain.
+                if(name&&item.nameClipped&&item.nameDetails!=null&&item.authorName!=null){
+                    present.add(item.id);
+                    ensureNameAction(item.id,item.authorName,item.nameDetails,palette);
+                }else removeNameAction(item.id);
+                removeTweetAction(item.id);
+                if(preferences.showTranslationActivity() && activeTranslations.contains(content)){
+                    // A tiny touch-through dot inside the current source rectangle.
+                    int size=Math.min(dp(7),Math.min(item.rectangle.width,item.rectangle.height));
+                    if(size>0)painted.add(new AutoOverlaySceneView.TextItem(
+                        item.rectangle.x+item.rectangle.width-size,
+                        item.rectangle.y,size,size,0xFF52A9E8,null));
+                }
+                continue;
+            }
+            state.prepareLayout(item.rectangle,palette);
             present.add(item.id);
-            painted.add(new AutoOverlaySceneView.TextItem(
-                    rectangle.x, rectangle.y, rectangle.width, rectangle.height,
-                    palette.background, state.inlineLayout));
+            // A merged author+handle node is not a safe replacement rectangle.
+            if(!name||item.nameInlineSafe){
+                painted.add(new AutoOverlaySceneView.TextItem(
+                        item.rectangle.x,item.rectangle.y,item.rectangle.width,item.rectangle.height,
+                        palette.background,state.inlineLayout));
+                translatedCount++;
+            }
+            if(streaming){
+                removeNameAction(item.id);removeTweetAction(item.id);
+                int size=Math.min(dp(4),Math.min(item.rectangle.width,item.rectangle.height));
+                if(size>0)painted.add(new AutoOverlaySceneView.TextItem(item.rectangle.x+item.rectangle.width-size,item.rectangle.y,size,size,0xFF7BC4BB,null));
+                continue;
+            }
+            if(name){
+                removeTweetAction(item.id);
+                if((state.needsMore||item.nameClipped||!item.nameInlineSafe) && item.nameDetails!=null)
+                    ensureNameAction(item.id,state.translation,item.nameDetails,palette);
+                else removeNameAction(item.id);
+            }else{
+                removeNameAction(item.id);
+                if(state.needsMore && item.details!=null)
+                    ensureTweetAction(item.id,item.details,palette);
+                else removeTweetAction(item.id);
+            }
         }
 
-        // One rendering surface owns all translated body pixels. On API 34+
-        // its GPU buffer is attached to the X window with no input channel.
+        // The scene is one touchless window-attached GPU surface (API 34+),
+        // or the existing FLAG_NOT_TOUCHABLE WindowManager fallback.
         surfaces.present(painted);
-
-        for (AutoOverlayPositionStore.Located item : located) {
-            TranslationState state = translations.get(item.id);
-            if (state != null && state.translation != null)
-                ensureDetails(item.id, state, item.details, palette);
-        }
-
         for (String key : new HashSet<>(controls.keySet())) {
             if (!present.contains(key)) removeControls(key);
         }
-
-        visibleCount = present.size();
+        visibleCount = translatedCount;
     }
 
-    /** Exactly one role-aware control for each translated post, not the name row. */
-    private void ensureDetails(String id, TranslationState state,
-            AutoDetailsPlacementService.Placement placement,
-            AutoInlineThemeService.Palette palette) {
-        if (placement == null) {
-            removeControls(id);
-            return;
-        }
+    private Controls controlsFor(String id) {
         Controls existing = controls.get(id);
         if (existing == null) {
-            Controls action = new Controls();
-            action.details = new ImageView(context);
-            action.details.setImageResource(android.R.drawable.ic_menu_search);
-            action.details.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            action.details.setPadding(dp(6), dp(6), dp(6), dp(6));
-            action.details.setContentDescription("Read more: show full X post translation");
-            action.details.setFocusable(false);
-            action.details.setClickable(true);
-            action.detailsParams = params(placement.width, placement.height, false);
-            action.detailsParams.setTitle("Roots post details action");
-            styleDetails(action.details, palette);
-            action.details.setOnClickListener(v -> {
-                TranslationState current = translations.get(id);
-                if (current == null || current.translation == null) return;
-                // The same magnifier OPENS and CLOSES the full translation.
-                expanded.toggle(id, current.translation);
-                if (expanded.isShowing(id)) {
-                    raiseDetails(id); // keep it tappable above the bottom sheet
-                }
-                frames.request();
+            existing = new Controls();
+            controls.put(id, existing);
+        }
+        return existing;
+    }
+
+    /** NAME action: underneath the actual avatar, only if X clips its name. */
+    private void ensureNameAction(String id, String name,
+            AutoDetailsPlacementService.Placement placement,
+            AutoInlineThemeService.Palette palette) {
+        Controls action = controlsFor(id);
+        action.nameText = name;
+        expanded.updateName(id,name);
+        if (action.name == null) {
+            ImageView view = actionView(android.R.drawable.ic_menu_info_details,
+                    "Read full account name", palette);
+            WindowManager.LayoutParams params = params(
+                    placement.width, placement.height, false);
+            params.setTitle("Roots clipped author name");
+            view.setOnClickListener(v -> {
+                Controls current = controls.get(id);
+                if (current == null || current.nameText == null) return;
+                expanded.toggleName(id, current.nameText);
+                if (expanded.isShowing("name:" + id)) raiseAction(view, params);
             });
-            applyDetailsCoordinates(action, placement);
+            place(params, placement);
             try {
-                windowManager.addView(action.details, action.detailsParams);
-                controls.put(id, action);
+                windowManager.addView(view, params);
+                action.name = view;
+                action.nameParams = params;
+                action.lastName = placement;
                 lastError = "";
             } catch (RuntimeException error) {
                 lastError = error.getClass().getSimpleName();
-                remove(action.details);
+                remove(view);
             }
-        } else if (!existing.lastPlacement.sameAs(placement)) {
-            applyDetailsCoordinates(existing, placement);
+        } else if (!placement.sameAs(action.lastName)) {
+            place(action.nameParams, placement);
+            action.lastName = placement;
             try {
-                windowManager.updateViewLayout(existing.details, existing.detailsParams);
+                windowManager.updateViewLayout(action.name, action.nameParams);
             } catch (RuntimeException error) {
                 lastError = error.getClass().getSimpleName();
-                removeControls(id);
+                removeNameAction(id);
             }
         }
     }
 
-    private void raiseDetails(String id) {
-        Controls action = controls.get(id);
-        if (action == null) return;
-        // Expansion is added after the control. Re-add the tiny hit target so
-        // a second tap still closes the sheet when a post is near the bottom.
-        try {
-            windowManager.removeViewImmediate(action.details);
-            windowManager.addView(action.details, action.detailsParams);
-        } catch (RuntimeException error) {
-            lastError = error.getClass().getSimpleName();
-            removeControls(id);
+    /** TWEET action: thumb-side RIGHT and only for a clipped translation. */
+    private void ensureTweetAction(String id,
+            AutoDetailsPlacementService.Placement placement,
+            AutoInlineThemeService.Palette palette) {
+        Controls action = controlsFor(id);
+        if (action.tweet == null) {
+            ImageView view = actionView(android.R.drawable.ic_menu_search,
+                    "Read full translated tweet", palette);
+            WindowManager.LayoutParams params = params(
+                    placement.width, placement.height, false);
+            params.setTitle("Roots clipped tweet details");
+            view.setOnClickListener(v -> {
+                TranslationState state = translations.get(AutoOverlayPositionStore.contentId(id));
+                if (state == null || state.translation == null) return;
+                expanded.toggleTweet(id, state.translation);
+                if (expanded.isShowing("tweet:" + id)) raiseAction(view, params);
+            });
+            place(params, placement);
+            try {
+                windowManager.addView(view, params);
+                action.tweet = view;
+                action.tweetParams = params;
+                action.lastTweet = placement;
+                lastError = "";
+            } catch (RuntimeException error) {
+                lastError = error.getClass().getSimpleName();
+                remove(view);
+            }
+        } else if (!placement.sameAs(action.lastTweet)) {
+            place(action.tweetParams, placement);
+            action.lastTweet = placement;
+            try {
+                windowManager.updateViewLayout(action.tweet, action.tweetParams);
+            } catch (RuntimeException error) {
+                lastError = error.getClass().getSimpleName();
+                removeTweetAction(id);
+            }
         }
     }
 
-    private static void applyDetailsCoordinates(Controls action,
-            AutoDetailsPlacementService.Placement p) {
-        action.detailsParams.x = p.x;
-        action.detailsParams.y = p.y;
-        action.detailsParams.width = p.width;
-        action.detailsParams.height = p.height;
-        action.lastPlacement = p;
+    private ImageView actionView(int icon, String description,
+            AutoInlineThemeService.Palette palette) {
+        ImageView view = new ImageView(context);
+        view.setImageResource(icon);
+        view.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        view.setPadding(dp(6), dp(6), dp(6), dp(6));
+        view.setContentDescription(description);
+        view.setFocusable(false);
+        view.setClickable(true);
+        styleDetails(view, palette);
+        return view;
+    }
+
+    private void raiseAction(View view, WindowManager.LayoutParams params) {
+        // Keep the pressed icon above the expansion sheet so another tap
+        // can close it, without making the whole overlay touchable.
+        try {
+            windowManager.removeViewImmediate(view);
+            windowManager.addView(view, params);
+        } catch (RuntimeException error) {
+            lastError = error.getClass().getSimpleName();
+        }
+    }
+
+    private static void place(WindowManager.LayoutParams params,
+            AutoDetailsPlacementService.Placement placement) {
+        params.x = placement.x;
+        params.y = placement.y;
+        params.width = placement.width;
+        params.height = placement.height;
+    }
+
+    private void removeNameAction(String id) {
+        Controls action = controls.get(id);
+        if (action == null || action.name == null) return;
+        remove(action.name);
+        action.name = null;
+        action.nameParams = null;
+        action.lastName = null;
+        action.nameText = null;
+        expanded.hideIfSource("name:" + id);
+        if (action.tweet == null) controls.remove(id);
+    }
+
+    private void removeTweetAction(String id) {
+        Controls action = controls.get(id);
+        if (action == null || action.tweet == null) return;
+        remove(action.tweet);
+        action.tweet = null;
+        action.tweetParams = null;
+        action.lastTweet = null;
+        expanded.hideIfSource("tweet:" + id);
+        if (action.name == null) controls.remove(id);
     }
 
     private void styleDetails(ImageView details, AutoInlineThemeService.Palette palette) {
@@ -336,10 +500,10 @@ final class AutoOverlaySceneController {
     }
 
     private void removeControls(String id) {
-        Controls buttons = controls.remove(id);
-        if (buttons == null) return;
+        removeTweetAction(id);
+        removeNameAction(id);
+        controls.remove(id);
         expanded.hideIfSource(id);
-        remove(buttons.details);
     }
 
     private void remove(View view) {
@@ -352,6 +516,7 @@ final class AutoOverlaySceneController {
         main.removeCallbacks(pruneMissing);
         expanded.hide();
         positions.clear();
+        activeTranslations.clear();
         for (String id : new HashSet<>(controls.keySet())) removeControls(id);
         visibleCount = 0;
         surfaces.clear();
@@ -363,7 +528,7 @@ final class AutoOverlaySceneController {
         destroyed = true;
         clear();
         frames.stop();
-        translations.clear();
+        partials.clear();translations.clear();
     }
 
     private final class TranslationState {
@@ -373,6 +538,7 @@ final class AutoOverlaySceneController {
         int cachedHeight = -1;
         int cachedColor;
         StaticLayout inlineLayout;
+        boolean needsMore;
 
         TranslationState(String id) { this.id = id; }
 
@@ -388,21 +554,30 @@ final class AutoOverlaySceneController {
                 return;
 
             TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-            paint.setTextSize(sp(15));
+            boolean name=id.startsWith("name:");
+            paint.setTextSize(name ? Math.min(sp(16),p.height*0.78f) : sp(15));
+            paint.setFakeBoldText(name);
             paint.setColor(palette.foreground);
 
-            // There are no longer any controls inside the translated body;
-            // preserve the original 15sp typography but use its full width.
-            int textWidth = Math.max(1, p.width - dp(4));
-            int maxLines = Math.max(1, p.height / dp(18));
+            int fullWidth = Math.max(1, p.width - dp(4));
+            int maxLines = name ? 1 : Math.max(1, p.height / dp(18));
+            StaticLayout full = StaticLayout.Builder.obtain(
+                        translation, 0, translation.length(), paint, fullWidth)
+                    .setIncludePad(false)
+                    .setLineSpacing(0f, 1.09f)
+                    .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                    .build();
+            needsMore = full.getHeight() > p.height || full.getLineCount() > maxLines;
+            // Reserve the right thumb-side control without obscuring text.
+            int displayWidth = Math.max(1, fullWidth - (needsMore && !name ? dp(41) : 0));
             inlineLayout = StaticLayout.Builder.obtain(
-                        translation, 0, translation.length(), paint, textWidth)
+                        translation, 0, translation.length(), paint, displayWidth)
                     .setIncludePad(false)
                     .setLineSpacing(0f, 1.09f)
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                     .setMaxLines(maxLines)
                     .setEllipsize(TextUtils.TruncateAt.END)
-                    .setEllipsizedWidth(textWidth)
+                    .setEllipsizedWidth(displayWidth)
                     .build();
             cachedWidth = p.width;
             cachedHeight = p.height;
@@ -410,10 +585,15 @@ final class AutoOverlaySceneController {
         }
     }
 
-    /** A detail action is always linked to exactly one post fingerprint. */
+
+    /** Two independent semantic actions, keyed by the SAME post fingerprint. */
     private static final class Controls {
-        ImageView details;
-        WindowManager.LayoutParams detailsParams;
-        AutoDetailsPlacementService.Placement lastPlacement;
+        ImageView name;
+        ImageView tweet;
+        WindowManager.LayoutParams nameParams;
+        WindowManager.LayoutParams tweetParams;
+        AutoDetailsPlacementService.Placement lastName;
+        AutoDetailsPlacementService.Placement lastTweet;
+        String nameText;
     }
 }

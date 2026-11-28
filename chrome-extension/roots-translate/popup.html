@@ -14,8 +14,8 @@ small{display:block;margin:8px 0;color:#cbd5e1}
 </style>
 </head>
 <body>
-<h1>Roots · Local Translate</h1>
-<small>Requires Roots running on this PC. Only 127.0.0.1:8123 is used.</small>
+<h1>Roots · Tree and Translate</h1>
+<small>Requires Roots running on this PC. Only 127.0.0.1:8224 is used.</small>
 <label for="token">Local access token</label>
 <input type="password" id="token" autocomplete="off" placeholder="Paste token from Show-TranslationToken.ps1">
 <label for="target">Translate into</label>
@@ -27,6 +27,10 @@ small{display:block;margin:8px 0;color:#cbd5e1}
 <button id="save">Save settings</button>
 <button id="ping" style="background:#475569">Check service</button>
 <div id="status" role="status"></div>
+<hr style="border:0;border-top:1px solid #475569;margin:14px 0">
+<label><input type="checkbox" id="capture" disabled> Capture visible X posts into Roots Tree</label>
+<small id="treeStatus">Checking desktop Tree…</small>
+<button id="tree" style="background:#374151">Open Tree &amp; Mesh</button>
 <small>Manual translation buttons appear below X posts. Original text remains unchanged.</small>
 <script src="popup.js"></script>
 </body>

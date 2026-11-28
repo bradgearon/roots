@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../../src/Wds.Roots.Host/IntelligenceProtocol.cs" Link="Host/IntelligenceProtocol.cs" />
+    <Compile Include="../../src/Wds.Roots.Host/IntelligenceBackend.cs" Link="Host/IntelligenceBackend.cs" />
+    <Compile Include="../../src/Wds.Roots.Host/IntelligenceGateway.cs" Link="Host/IntelligenceGateway.cs" />
+    <Compile Include="../../src/Wds.Roots.Host/DesktopTlsIdentity.cs" Link="Host/DesktopTlsIdentity.cs" />
+  </ItemGroup>
+</Project>

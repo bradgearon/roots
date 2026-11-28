@@ -14,11 +14,109 @@ Install the .NET 9 SDK and Visual C++ 2015–2022 runtime, then run from this ch
 launch.cmd
 ```
 
-The launcher builds the Roots host and its API, downloads the small FastText model, then uses Resone's AI_ROOT resolution, hardware selection, engine pack installer and resumable model provisioner. The default desktop model is the original PLaMo 3 Translate 2B Q4_K_M (about 1.81 GB). To choose the smaller 0.8B version, change the enabled model in config/runtime.json; enable exactly one LLM model. Model digest comes from the publisher's HTTPS X-Linked-Etag if no SHA-256 has been pinned in the manifest. Pin the digest before production; first-run digest retrieval requires network access. The private llama.cpp server listens on 127.0.0.1:8081, Roots gateway on 127.0.0.1:8123. The console displays the token path (%LOCALAPPDATA%/Roots/translation-token.txt). Do not run the Six Stars translation host on the same ports concurrently.
+The launcher builds the Roots host and its API, downloads the small FastText model, then uses Resone's AI_ROOT resolution, hardware selection, engine pack installer and resumable model provisioner. The default desktop model is the original PLaMo 3 Translate 2B Q4_K_M (about 1.81 GB). To choose the smaller 0.8B version, change the enabled model in config/runtime.json; enable exactly one LLM model. Model digest comes from the publisher's HTTPS X-Linked-Etag if no SHA-256 has been pinned in the manifest. Pin the digest before production; first-run digest retrieval requires network access. The private llama.cpp server listens on 127.0.0.1:8081, Roots gateway on 127.0.0.1:8224. The console displays the token path (%LOCALAPPDATA%/Roots/translation-token.txt). The desktop bridge uses port 8223; the private model still uses 8081, so do not run another model server on 8081 concurrently.
 
-`launch.cmd --lan` explicitly enables trusted LAN access to the gateway for Android. Plain HTTP/WebSocket is not encrypted: restrict the firewall to trusted clients or use a properly secured HTTPS/VPN bridge. `launch.cmd --external-model` uses an already running compatible llama-server on 8081.
+`launch.cmd` enables the Android TLS bridge on TCP 8223 by default. Use `launch.cmd --local-only` to disable the LAN listener and skip the firewall prompt; the legacy `--lan` argument remains supported. On Windows it checks the Roots firewall rule and, if missing or misconfigured, offers to install it with administrator approval. The rule permits inbound traffic from the local subnet on Private profiles only; it does not open the model port (8081), browser bridge (8224), or Public networks. Declining or canceling the prompt leaves the firewall unchanged and the host still starts. To remove the Roots rule, run `Remove-NetFirewallRule -Name Wds.Roots.DesktopLan.Tcp8223` in an administrator PowerShell. `launch.cmd --external-model` uses an already running compatible llama-server on 8081.
 
 Roots preserves Resone's engine and model provisioning method, but keeps a separate llama-server process for PLaMo PFML3 completions rather than importing the music-specific in-process bridge.
+
+### Desktop startup and relaunch diagnostics
+
+The desktop runtime pins llama.cpp **b11960**, with matching CUDA 13.4
+runtime DLLs on NVIDIA. The earlier b10724 build cannot load the PLaMo 3
+tokenizer. Windows CPU, CUDA and Vulkan engine archives have pinned SHA-256
+digests. The launcher restores the configured engine if its installed receipt
+does not match the manifest. The model selection and existing verified model
+file are unchanged.
+
+Before loading a model, the launcher checks the exclusive Roots host lease and
+the required local ports: **8081** for PLaMo, **8224** for the local gateway, and
+**8223** when LAN mode is enabled. If a leftover server or another application
+owns a port, startup reports the conflict and, when Windows exposes the metadata,
+its PID and executable. It never terminates a process based on its name or port.
+For a conflict on 8081, inspect the reported owner in PowerShell:
+
+```powershell
+Get-NetTCPConnection -State Listen -LocalPort 8081 |
+    Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+A newly started PLaMo process belongs to this launch. Its stdout/stderr are shown
+with a `[PLaMo]` prefix and appended to the displayed daily log path. Early exits
+include the PID, decimal/hexadecimal exit code, executable path, and a bounded
+tail of recent output. Readiness timeout and cancellation clean up the owned
+process. A Windows kill-on-close job also ends an attached model process when its
+launcher is forcibly terminated; attachment happens immediately after process
+creation. An already orphaned process from an older launcher must be inspected
+separately. A model exit after startup now shuts down its gateway and reports the
+model failure.
+
+`launch.cmd --external-model` leaves the existing process under its original
+owner. It requires the expected llama.cpp health response and the
+`plamo-3-translate` model ID or alias from `/v1/models`; a generic successful
+health response is insufficient. These checks establish API compatibility, not
+proof of the model file's provenance. Start a compatible external server with
+`--alias plamo-3-translate`.
+
+The existing `AI_PLATFORM` override remains available for explicit CPU testing
+when the captured error identifies a CUDA/driver compatibility problem:
+
+```bat
+set AI_PLATFORM=cpu
+launch
+```
+
+Clear the override with `set AI_PLATFORM=` before returning to automatic backend
+selection. Selecting CUDA from a detected NVIDIA adapter does not by itself prove
+successful GPU execution; inspect the PLaMo startup output for actual device use.
+
+Host lifecycle checks run without a model download:
+
+```bat
+dotnet build src\Wds.Roots.Host -c Release
+dotnet run --project tests\Roots.HostChecks -c Release
+```
+
+The Roots Host Checks workflow runs the build and checks on Windows and Linux.
+The Windows suite includes listener-PID diagnostics and forced-launcher-exit job
+cleanup. Host checks do not replace testing the real Windows GPU and model.
+
+### Desktop intelligence on port 8221
+
+General intelligence has a separate launcher and pairing key:
+
+```bat
+launch-intelligence.cmd
+get-intelligence-key.cmd
+```
+
+This starts the pinned **Qwen3.5 0.8B Q4_0** model and an authenticated HTTPS
+listener at `https://YOUR-PC:8221`. The first launch downloads the model if needed.
+The launcher configures a private-local-subnet firewall rule for TCP 8221 and
+uses its own host lease. `launch-intelligence.cmd --local-only` binds the listener
+to loopback. Existing translation continues to use `launch.cmd`.
+
+On Android, open **Intelligence model settings**, select **Qwen3.5 0.8B**, save
+the desktop intelligence HTTPS address and the key from
+`get-intelligence-key.cmd`, then test that connection and enable desktop
+intelligence. General intelligence, Axon-assisted requests, and Mesh connection
+analysis use the selected route. The default remains the on-device model.
+Poetic movement and element-flow measurements still run on the phone.
+
+| Port | Service |
+| --- | --- |
+| **8221** | Paired desktop general intelligence, HTTPS |
+| 8223 | Paired desktop PLaMo translation, HTTPS |
+| 8224 | Local/Chrome translation gateway, loopback |
+| 8233 | Android Mesh knowledge sharing, pinned TLS |
+| 8081 / 8082 | Internal loopback model backends: translation / intelligence |
+
+The intelligence key is separate from the translation key. Requests validate
+the selected model and exact model hash; the initial desktop profile serves
+Qwen3.5 0.8B only and reports other selections as a mismatch. A failed desktop
+request does not silently change inference route. The API accepts bounded
+plain-text requests, disables model thinking for the small response budget,
+and cancels backend work when the request expires or disconnects.
 
 ## Chrome
 
@@ -41,9 +139,15 @@ Open android/ in Android Studio. Use the Gradle version specified in android/gra
 1. Open Roots and grant the in-app disclosure and Android Accessibility permission.
 2. Tap Download local PLaMo model (~550 MB); Android DownloadManager downloads it over Wi-Fi. Once complete, test translation. The Android runtime uses the publisher-tested llama.cpp b11960; an existing verified GGUF can be reused. Inference failures now report the actual stage and native error rather than only IllegalStateException. Local model lifecycle events (no prompt or completion text) are recorded in app-private files/diagnostics/plamo-lifecycle.jsonl with one rotated predecessor.
 3. On-device inference is default. Choose manual or automatic mode, target language and overlay theme.
-4. To use desktop inference instead, start launch.cmd --lan on your PC, save http://YOUR-PC:8123 and the Roots token in the app, and explicitly enable "Use desktop host instead of on-device PLaMo". Disable that toggle to return to local inference. No silent fallback or transmission in local mode.
+4. Start `launch.cmd` and run `get-key.cmd` on your desktop. Save `https://YOUR-PC:8223` and the desktop key in Android Settings → Desktop bridge. Enable automatic paired compute. The current network is remembered on save; no idle host probes.
 
 The local model and inference context remain resident; each request clears the context's memory before processing independent text. Android debug builds optimize native C/C++ inference code while retaining debug symbols/assertions. Lifecycle diagnostics include queue delay, context reuse/setup, tokenization, prompt prefill, generation, token counts and thread count. Device latency and memory usage must be measured; no particular speedup is guaranteed. To test, run the same short translation three times, then alternate two different samples to confirm state isolation. No prompt or output text is written to the lifecycle log.
+
+### Predictive translation scheduling
+
+Automatic translation ranks already-discovered visible X posts by expected usefulness when inference finishes, using measured scroll direction/velocity and a bounded latency estimate for the selected CPU, Vulkan or desktop profile and input-length bucket. At rest, readable bodies precede display names, then recent previously seen content may be processed as a lower-priority rollup (up to 15 seconds since last observation). During rapid movement, defer candidates projected to leave before completion. There is one outstanding overlay request; remaining work stays in a reprioritizable pool rather than the provider FIFO. A manual tap takes the next free slot. Estimates adapt in memory and do not determine rendering coordinates. After an uncertain scroll, only a fresh accessibility snapshot restores coordinate trust. Completion publishes translation text without republishing older geometry. The activity dot still reflects the actual provider-start callback.
+
+The prediction horizon is bounded to 1.5 seconds, and discovery remains limited to the existing authorized visible-node reader. This is not concurrent CPU/GPU execution or access to undisclosed offscreen posts. Compare the selected backends on a device; a slower one automatically looks farther toward incoming content. For a metadata-only scheduling trace, use `adb logcat -s RootsTranslationSchedule:D "*:S"` (direction, lane, estimated/actual elapsed time, and visibility; no post text or identifiers).
 
 ### Independent native brain build
 
@@ -68,6 +172,8 @@ If the optional upstream KleidiAI dependency cannot build, `-ProotsEnableKleidiA
 **Experimental Vulkan:** build with `-ProotsEnableVulkan=true` using a host Vulkan SDK containing recent Vulkan headers and glslc; Android NDK Vulkan loader is linked instead of the desktop loader. CMake resolves SPIRV-Headers from the SDK package or SDK headers, or fetches the pinned Khronos vulkan-sdk-1.4.350.0 header-only dependency if needed. You do not need to install a separate SPIRV-Headers package. On Windows, run from a Visual Studio developer command prompt with a host compiler available. If needed set `-ProotsVulkanSdk=<SDK path>`, `-ProotsSpirvHeadersDir=<directory containing SPIRV-HeadersConfig.cmake>` (optional override), and `-ProotsVulkanHostToolchain=<host toolchain file>`. Then explicitly enable Vulkan GPU in Roots' local inference settings and test the same sample two or three times. The Vulkan build targets Android API 28 (Android 9) or newer because the Vulkan 1.1 loader exports vkGetPhysicalDeviceFeatures2 starting at API 28. CPU-only builds retain API 26. The APK minimum SDK follows the selected native build profile, including the cached brain manifest. Existing older native caches must be rebuilt, and the API-28 Vulkan build uses a new, shorter build directory to avoid stale API-26 linker paths and reduce Windows object path lengths. The native runtime requests all model layers on a registered GPU; CPU may execute unsupported operations. No unsupported-device fallback to desktop or cloud occurs. Turn the Vulkan toggle off if GPU inference fails, produces invalid output, or is slower. Vulkan build and PowerVR driver behavior must be validated on-device before shipping.
 
 Tensor G5's TPU is a separate backend path: Google Tensor SDK/LiteRT-LM requires a compatible converted/compiled model and tokenizer. The existing GGUF is not a TPU executable. Do not claim TPU support or measured GPU speedup from this implementation.
+
+The Tree Core is enabled by default and compiled separately when the brain is cached. Android CMake automatically downloads and verifies the pinned SQLite amalgamation into android/.roots-deps; use -ProotsSqliteAmalgamationDir=<directory> or ROOTS_SQLITE_DIR to override, or -ProotsEnableTree=false for a translation-only build. Switching branches with different native sources invalidates the cache; rerun build-brain.cmd if requested.
 
 Android uses the existing eligibility heuristics and a CPU llama.cpp provider; desktop/Chrome uses the existing FastText model. GPU/NPU acceleration on Android and a native FastText mobile provider are follow-up work. The existing Android automatic overlay covers original text; Chrome continues to show translations underneath.
 
@@ -103,3 +209,37 @@ Do not distribute until the native ABI, model digest, privacy/consent flows, and
 Forge and Roots are intended open specifications; the WDS Roots application remains its own product. Independent applications may eventually exchange Trees and Branches through compatible files or APIs without depending on ChristEye or a proprietary SDK. The intended source/design reuse needs explicit licensing terms; the existing LICENSE is unchanged. See [openness](design/openness.md), [portable knowledge](design/portable-knowledge.md), [Network Brain and weighted feed](design/network-brain.md), and [accessible Garden journeys](design/listening-journeys.md). Engram AI is the reference for bounded artificial neural mesh, RNA tiles, Wind readouts and response assembly; these are proposed adaptations, not features already shipped in Roots. The translation instructions above are unchanged.
 
 Further design: [root:// protocol](design/root-protocol.md), [Whirlwind peer exchange](design/whirlwind-exchange.md), [developing neural intelligence and poetic cognition](design/developing-neural-intelligence.md), and [optional economy and bounties](design/economy-bounties.md). These are proposals; no runtime, financial or licensing changes.
+
+## Native Tree Core (experimental)
+
+The [shared C++ Tree Core](native/tree-core/README.md) is the first implementation slice for scroll observation storage, composed predicates, exact search, branch agents and GGUF compilation. The experimental Android JNI path adds a separately opted-in local capture lane and searchable paginated Tree viewer; the desktop P/Invoke binding exposes a standalone CLI without starting translation. Follow the native core build and verification instructions, including the optional Android SQLite amalgamation. Platform builds and live capture remain unverified. See [Lily Tendrils](design/tendrils.md) for the separate proposed semantic-growth architecture.
+
+
+### Export Android knowledge and diagnostics
+
+From the repository root with an authorized ADB-connected debug device:
+
+```cmd
+export-android.cmd
+export-android.cmd -LogsOnly
+export-android.cmd -Serial YOUR_DEVICE_SERIAL
+```
+
+The default export copies the private Tree database, any WAL/journal sidecars, the latest GGUF and lifecycle logs without stopping Roots. It verifies the source hashes before and after the copy and compares the local files; if the database changes, it retries and refuses to package an inconsistent set. The transient SHM index is regenerated by SQLite. Switch to Roots from X if the database is busy. Force-stopping a package can disable its Android accessibility service, so the exporter no longer force-stops the app. The logs-only variant does not stop the app; logs may change during copying. Each run writes to a unique ignored `logs/device-exports` directory with a SHA-256 manifest. The GGUF is a derived snapshot and can be older than the SQLite database. Keep SQLite sidecars beside the database when opening a copy. No inference model weights, preferences, access keys or unrelated app data are exported. Missing files are reported. Exports can contain private acquired text; store them securely. `-OutputDir` and `-Adb` allow explicit overrides. Debug builds must support `adb shell run-as com.wds.roots`.
+
+The export also includes `tree-lifecycle.jsonl` and its rotated predecessor when present. By default it creates a ZIP alongside the export directory, preferring 7-Zip on PATH or in its standard Windows install locations, otherwise using .NET ZIP compression. Pass `-SevenZip C:\path\to\7z.exe` to override or `-NoZip` to retain only the directory. The archive contains private local observations; it is not encrypted.
+
+### Desktop mobile TLS
+`launch.cmd` creates a persistent self-signed TLS identity in `%LOCALAPPDATA%/Roots`. The LAN mobile socket is `wss://YOUR-PC:8223/api/translation/v1/socket`. Run `get-key.cmd` and paste its combined token and certificate SHA-256 fingerprint into the existing Android key field once; existing bare tokens need this update. The Chrome extension uses the loopback-only HTTP bridge on port 8224 and its existing bare token. The model stays on 8081. Standard TLS protects JSON messages, no custom message encryption.
+
+### Roots Mesh and knowledge stream
+Open **Roots Mesh** from Home to publish a shareable remembrance, start the Wi-Fi TLS listener, or receive from a `roots://mesh/v1` invitation. The ranked home feed prefers localized knowledge; tap a captured exact X status link, hold for record actions. Raw capture and originals stay private in SQLite. See [Roots Mesh v1](design/roots-mesh.md) for protocol, ranking, localization, and two-device smoke test.
+
+Use **Test connection** in the Mesh view to inspect each invitation through subnet,
+TCP, pinned TLS, access, and inventory checks. **Copy connection report** provides
+the measured details without invitation credentials. **Analyze connection with
+intelligence** uses the selected local model and a compact Mustache request to
+explain the evidence and suggest next steps; a model is optional for testing.
+
+### Android NDK selection
+Gradle (including Android Studio) and `build-brain.cmd` now select the newest complete stable side-by-side NDK from the configured SDK's `ndk` directory, using the numerical package revision. Set `ROOTS_NDK_VERSION` to an exact installed version to pin both builds; e.g. `$env:ROOTS_NDK_VERSION = '30.0.16248370'` in PowerShell. The brain's explicit `-Ndk` path is still supported, but its recorded revision must match Gradle's selection for reuse. A changed NDK or older cache lacking its revision requires one `build-brain.cmd` rebuild. The old implicit `ANDROID_NDK_HOME` override is no longer used. The native Android API floor (26 CPU / 28 Vulkan) is independent of the toolchain version and unchanged. No automatic NDK downloads.

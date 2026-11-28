@@ -49,8 +49,30 @@ public class PostTextHeuristicsTest {
                 "android.widget.ImageView"));
     }
 
+    @Test public void japaneseDisplayNameIsNotATweetBody() {
+        assertTrue(PostTextHeuristics.isUiLabel("夕海ソラ",
+                "com.twitter.android:id/display_name",
+                "android.widget.TextView"));
+        assertTrue(PostTextHeuristics.isUiLabel("Long screen name",
+                "com.twitter.android:id/author_name",
+                "android.widget.TextView"));
+    }
+
+    @Test public void mixedLanguageAuthorHeaderIsNotTranslatedAsTweetText() {
+        assertTrue(PostTextHeuristics.isUiLabel(
+                "夕海ソラ @sora_jp… · 31m", null, "android.view.View"));
+        assertFalse(PostTextHeuristics.isUiLabel(
+                "こんにちは @friend 明日会える？", null, "android.widget.TextView"));
+    }
+
     @Test public void recyclerViewRowDiscovery() {
         assertTrue(PostTextHeuristics.isListClass("androidx.recyclerview.widget.RecyclerView"));
         assertTrue(PostTextHeuristics.isListClass("android.widget.ListView"));
+    }
+    @Test public void detailAndReplyBodyIdentifiersAndShortText() {
+        assertTrue(PostTextHeuristics.isPostTextId("com.twitter.android:id/tweet_detail_text"));
+        assertTrue(PostTextHeuristics.isPostTextId("com.twitter.android:id/reply_context_text"));
+        assertTrue(PostTextHeuristics.score("Great!",null,"android.widget.TextView",false,true,320,30,"",true)>0);
+        assertTrue(PostTextHeuristics.score("Post your reply",null,"android.widget.TextView",false,true,320,30,"en",true)<0);
     }
 }

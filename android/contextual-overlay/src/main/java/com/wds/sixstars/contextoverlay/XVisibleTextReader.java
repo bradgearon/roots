@@ -1,12 +1,17 @@
 package com.wds.sixstars.contextoverlay;
 
 import android.graphics.Rect;
+import android.graphics.Paint;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Captures only X's foreground accessibility nodes. The reader extracts likely
@@ -14,53 +19,197 @@ import java.util.Locale;
  * viewport geometry. No screenshot, persistence or non-X application reading.
  */
 public final class XVisibleTextReader {
+    private record ScanNode(AccessibilityNodeInfo node, boolean sourceAllowed,String path){}
     public static final String X_PACKAGE = "com.twitter.android";
-    private static final int MAX_VISITED_NODES = 650;
+    private static final int MAX_VISITED_NODES = 850;
+    private static final int MAX_DETAIL_NODES = 1400;
     private static final int MAX_SOURCE_CHARS = 1100;
     private final XPostSpatialAnalyzer spatial = new XPostSpatialAnalyzer();
     private int lastVisited;
     private int lastTextNodes;
     private int lastCandidateCount;
+    private int lastAvatarCount;
+    private int lastAuthorSampleCount;
+    private int lastAuthorMatchCount;
+    private int lastClippedNameCount;
+    private boolean lastPostDetail;
+    private long nextMetadataProbeAt;
+    private XOverlayOrigin.Offset lastOverlayOrigin;
+    private int lastOverlayWindow=-1;
+    XOverlayOrigin.Offset lastOverlayOrigin(){return lastOverlayOrigin;}
+    int lastOverlayWindow(){return lastOverlayWindow;}
+    // In-memory discovery snapshot, independent of the chosen render layout.
+    private List<TextCandidate> lastDiscovered = Collections.emptyList();
+    public List<TextCandidate> lastDiscovered() { return lastDiscovered; }
+    private List<com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> lastKnowledge=Collections.emptyList();
+    private boolean lastKnowledgeBounded;
+    public List<com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> lastKnowledge(){return lastKnowledge;}
+    public boolean lastKnowledgeBounded(){return lastKnowledgeBounded;}
 
     public int lastVisitedNodes() { return lastVisited; }
     public int lastTextNodes() { return lastTextNodes; }
     public int lastCandidateCount() { return lastCandidateCount; }
+    public int lastAvatarCount() { return lastAvatarCount; }
+    public int lastAuthorSampleCount() { return lastAuthorSampleCount; }
+    public int lastAuthorMatchCount() { return lastAuthorMatchCount; }
+    public int lastClippedNameCount() { return lastClippedNameCount; }
+    public boolean lastPostDetail() { return lastPostDetail; }
 
     public List<TextCandidate> find(AccessibilityNodeInfo root, int width, int height) {
+        return find(root, width, height,
+                android.content.res.Resources.getSystem()
+                        .getDisplayMetrics().scaledDensity);
+    }
+
+    public List<TextCandidate> find(AccessibilityNodeInfo root,
+            int width, int height, float scaledDensity) {
+        return find(root,width,height,scaledDensity,false);
+    }
+
+    public List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
+            boolean retainKnowledge) {
+        return find(root,width,height,scaledDensity,retainKnowledge,null);
+    }
+
+    List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
+            boolean retainKnowledge,XAccessibilityInspector.Scan inspector) {
+        Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> observations=new LinkedHashMap<>();
+        Map<Integer,List<XKnowledgeRecords.Sample>> samplesByOrder=new LinkedHashMap<>();
+        List<XTimelineCardRecords.Node> cardNodes=new ArrayList<>();
+        Map<Integer,Rect> cardNodeBounds=new HashMap<>();
+        Map<Rect,Rect> windowTextBounds=new HashMap<>();
+        lastOverlayOrigin=null;lastOverlayWindow=-1;
+        long observedAt=System.currentTimeMillis();
+        // Do not turn fast scrolling into repeated metadata IPC. Explicit
+        // values already present in extras are still read on every scan.
+        long uptime=android.os.SystemClock.uptimeMillis();
+        XPostMetadata.Probe metadataProbe=new XPostMetadata.Probe(retainKnowledge&&uptime>=nextMetadataProbeAt?6:0);
+        if(retainKnowledge&&uptime>=nextMetadataProbeAt)nextMetadataProbeAt=uptime+1000;
+        lastKnowledge=Collections.emptyList();
+        lastKnowledgeBounded=false;
         List<TextCandidate> raw = new ArrayList<>();
         List<Rect> avatars = new ArrayList<>();
+        List<AuthorSample> authorSamples = new ArrayList<>();
         lastVisited = 0;
         lastTextNodes = 0;
         lastCandidateCount = 0;
+        lastAvatarCount = 0;
+        lastAuthorSampleCount = 0;
+        lastAuthorMatchCount = 0;
+        lastClippedNameCount = 0;
+        lastPostDetail = false;
+        lastDiscovered = Collections.emptyList();
         if (root == null || root.getPackageName() == null
                 || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
 
-        ArrayDeque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
-        queue.add(root);
+        lastOverlayWindow=root.getWindowId();
+        ArrayDeque<ScanNode> queue = new ArrayDeque<>();
+        queue.add(new ScanNode(root,true,"0"));
+        boolean detailScreen = false;
+        int detailHeadingBottom=0;
 
-        while (!queue.isEmpty() && lastVisited < MAX_VISITED_NODES) {
-            AccessibilityNodeInfo node = queue.removeFirst();
+        while (!queue.isEmpty()
+                && lastVisited < (detailScreen ? MAX_DETAIL_NODES : MAX_VISITED_NODES)) {
+            ScanNode entry=queue.removeFirst();
+            AccessibilityNodeInfo node=entry.node();
             final int order = ++lastVisited;
             try {
                 // Descendants of custom X containers can still be readable even
                 // when the container itself is not considered visible.
+                // Never descend into editable or password controls. The raw
+                // knowledge lane is limited to foreground X, not the keyboard.
+                if(node.getPackageName()!=null && !X_PACKAGE.contentEquals(node.getPackageName()))continue;
+                // Observe the reply editor's resource ID only, never its text.
+                if (XPostDetailContextService.isReplyContextId(node.getViewIdResourceName())) detailScreen=true;
+                if(node.isEditable() || node.isPassword())continue;
+                boolean sourceAllowed=entry.sourceAllowed()&&!XKnowledgeRecords.secondarySourceRole(node.getViewIdResourceName());
                 int childCount = Math.min(node.getChildCount(), 45);
+                if(node.getChildCount()>childCount)lastKnowledgeBounded=true;
                 for (int i = 0; i < childCount; i++) {
                     AccessibilityNodeInfo child = node.getChild(i);
-                    if (child != null) queue.add(child);
+                    if (child != null) queue.add(new ScanNode(child,sourceAllowed,entry.path()==null?null:entry.path()+"/"+i));
+                }
+                android.os.Bundle inspectedMetadata=null;
+                if(inspector!=null&&node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())){
+                    try{
+                        Rect bounds=new Rect();node.getBoundsInScreen(bounds);
+                        if(node.isVisibleToUser()||XPostSpatialAnalyzer.onScreen(bounds,width,height)||order==1)
+                            inspectedMetadata=inspector.node(node,entry.path(),bounds);
+                    }catch(RuntimeException ignored){/* A transient or unsupported inspector property must not interrupt capture. */}
+                }
+                if(node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())&&
+                        !node.isVisibleToUser()&&(XPostMetadata.conversationCard(node)||XPostMetadata.timelineHeader(node.getViewIdResourceName()))){
+                    // A clipped parent can own visible descendants. Do not
+                    // read its invisible text; keep only its structural marker.
+                    cardNodes.add(new XTimelineCardRecords.Node(order,entry.path(),node.getViewIdResourceName(),
+                        "", "", "", XPostMetadata.conversationCard(node),XPostMetadata.timelineHeader(node.getViewIdResourceName()),false,false,sourceAllowed,List.of(),""));
                 }
                 if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
                 if (node.getPackageName() != null && !X_PACKAGE.contentEquals(node.getPackageName()))
                     continue;
 
+                // Record visible accessibility text before translation or
+                // post-role eligibility, including English and short labels.
+                if(node.getPackageName()!=null && X_PACKAGE.contentEquals(node.getPackageName())){
+                    Rect observedBounds=new Rect();
+                    node.getBoundsInScreen(observedBounds);
+                    if(XPostSpatialAnalyzer.onScreen(observedBounds,width,height)){
+                        CharSequence value=node.getText(),descriptionValue=node.getContentDescription();
+                        String resource=node.getViewIdResourceName();
+                        boolean conversation=XPostMetadata.conversationCard(node);
+                        List<String> links=new ArrayList<>();
+                        if(retainKnowledge){
+                        retain(observations,value,observedAt);
+                        retain(observations,descriptionValue,observedAt);
+                        List<XKnowledgeRecords.Sample> nodeSamples=new ArrayList<>();
+                        XKnowledgeRecords.sample(nodeSamples,value,resource,observedBounds,false,sourceAllowed);
+                        XKnowledgeRecords.sample(nodeSamples,descriptionValue,resource,observedBounds,true,sourceAllowed);
+                        String metadataRole=sourceAllowed&&conversation?"post_container":resource;
+                        if(sourceAllowed&&XKnowledgeRecords.hasPostMetadataRole(metadataRole)){
+                            try{
+                                XKnowledgeRecords.sampleMetadata(nodeSamples,node.getExtras(),metadataRole,observedBounds);
+                                XKnowledgeRecords.sampleMetadata(nodeSamples,inspectedMetadata!=null?inspectedMetadata:metadataProbe.read(node,true),metadataRole,observedBounds);
+                            }catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
+                        }
+                        samplesByOrder.put(order,nodeSamples);
+                        for(XKnowledgeRecords.Sample sample:nodeSamples)if(sample.sourceLink)links.add(sample.text);
+                        }
+                        cardNodes.add(new XTimelineCardRecords.Node(order,entry.path(),resource,
+                            node.getClassName()==null?"":node.getClassName().toString(),
+                            value==null?"":value.toString(),descriptionValue==null?"":descriptionValue.toString(),
+                            conversation,XPostMetadata.timelineHeader(resource),PostTextHeuristics.isPostTextId(resource),
+                            hasBodySpan(value==null||value.length()==0?descriptionValue:value),
+                            sourceAllowed,links,reportedLanguage(node,value==null||value.length()==0?descriptionValue:value)));
+                        cardNodeBounds.put(order,new Rect(observedBounds));
+                        if(android.os.Build.VERSION.SDK_INT>=34&&node.getWindowId()==lastOverlayWindow&&
+                                ((value!=null&&value.length()>0)||(descriptionValue!=null&&descriptionValue.length()>0))){
+                            Rect local=new Rect();node.getBoundsInWindow(local);
+                            Rect previous=windowTextBounds.putIfAbsent(new Rect(observedBounds),local);
+                            if(previous!=null&&!previous.equals(local))windowTextBounds.put(new Rect(observedBounds),new Rect());
+                        }
+                    }
+                }
+
                 // Avatar identity is a separate card element, not translatable
                 // body text. Capture its rectangle without retaining X nodes.
                 String nodeId = node.getViewIdResourceName();
+                if (XPostDetailContextService.isDetailContainerId(nodeId))
+                    detailScreen = true;
                 CharSequence accessibilityLabel = node.getContentDescription();
-                if (avatars.size() < 32 && looksLikeAvatar(nodeId, accessibilityLabel)) {
+                if (avatars.size() < 48) {
                     Rect avatar = new Rect();
                     node.getBoundsInScreen(avatar);
-                    if (plausibleAvatar(avatar, width, height)) avatars.add(avatar);
+                    String imageClass = node.getClassName() == null ? ""
+                            : node.getClassName().toString().toLowerCase(Locale.ROOT);
+                    boolean namedAvatar = looksLikeAvatar(nodeId, accessibilityLabel);
+                    // X sometimes omits avatar resource IDs/descriptions. A
+                    // plausible square ImageView in the left PFP gutter is
+                    // still usable, but only when matched to a post header.
+                    boolean gutterImage = imageClass.contains("imageview")
+                            && avatar.left >= 0 && avatar.right <= width / 4;
+                    if ((namedAvatar || gutterImage)
+                            && plausibleAvatar(avatar, width, height))
+                        avatars.add(avatar);
                 }
 
                 CharSequence textValue = node.getText();
@@ -74,18 +223,56 @@ public final class XVisibleTextReader {
                 String viewId = node.getViewIdResourceName();
                 String className = node.getClassName() == null
                         ? "" : node.getClassName().toString();
-                String language = languageHint(text);
+                String language = PostLanguage.hint(text,reportedLanguage(node,textValue));
 
                 Rect bounds = new Rect();
                 node.getBoundsInScreen(bounds);
+                if (XPostDetailContextService.isDetailHeading(
+                        text, viewId, className, node.isClickable(),
+                        node.isEditable(), bounds.top, bounds.bottom, height)){
+                    detailScreen = true;
+                    detailHeadingBottom=Math.max(detailHeadingBottom,bounds.bottom);
+                }
                 if (!XPostSpatialAnalyzer.onScreen(bounds, width, height)) continue;
-                if (description && childCount > 5) continue; // whole-feed descriptions
+                // X sometimes exposes the OPENED post on detail pages through
+                // one localized container description rather than a TextView.
+                // Keep timeline descriptions conservative to avoid translating
+                // a whole feed or navigation labels.
+                if (description && childCount > 5
+                        && !((PostTextHeuristics.isPostTextId(viewId)
+                            || detailScreen && !language.isEmpty())
+                            && text.length() <= 1100
+                            && bounds.height() < height / 2)) continue;
+
+                boolean knownAuthor = XAuthorNameHeuristics.isNameId(viewId);
+                if (authorSamples.size() < 160
+                        && XAuthorNameHeuristics.mayBeAuthorLabel(
+                                text, viewId, className, description)) {
+                    // Author/handle are potential HEADER roles, not post text.
+                    authorSamples.add(new AuthorSample(text, bounds, knownAuthor));
+                }
+                // In some X versions the direct TextView is ellipsized while
+                // its contentDescription contains a richer name+handle line.
+                // Keep that description as a possible header separately.
+                CharSequence desc = node.getContentDescription();
+                if (!description && desc != null && authorSamples.size() < 160) {
+                    String label = TextFingerprint.normalized(desc.toString());
+                    if (!label.equals(text) &&
+                            XAuthorNameHeuristics.mayBeAuthorLabel(
+                                    label, viewId, className, true))
+                        authorSamples.add(new AuthorSample(label, bounds, knownAuthor));
+                }
+                // Author names are translated by their own role, not as bodies.
+                if (knownAuthor) continue;
 
                 int score = PostTextHeuristics.score(text, viewId, className, description,
                         node.isClickable(), bounds.width(), bounds.height(), language);
-                if (score < 0) continue;
-
+                if (score < 0 && PostTextHeuristics.isUiLabel(text, viewId, className)) continue;
                 PostCard card = findCard(node, bounds, width, height);
+                if(score < 0)score=PostTextHeuristics.score(text,viewId,className,description,
+                        node.isClickable(),bounds.width(),bounds.height(),language,
+                        card.found || detailScreen && !description && bounds.width() >= width / 2);
+                if (score < 0) continue;
                 // Prefer the body node exposed with a known tweet-text resource ID,
                 // then bounded text within a known tweet card, then fallback text.
                 if (card.found) score += 28;
@@ -98,20 +285,280 @@ public final class XVisibleTextReader {
             }
         }
 
+        lastKnowledgeBounded|=!queue.isEmpty();
+        XTimelineCardRecords.Result joined=XTimelineCardRecords.assemble(cardNodes);
+        // A structurally selected body is authoritative for the overlay as
+        // well as for storage. Never let a sibling poll choice win the card.
+        // This works even without capture consent or a complete author handle.
+        Map<String,Rect> cardBounds=new HashMap<>();
+        for(XTimelineCardRecords.Node n:cardNodes)if(n.card()&&cardNodeBounds.containsKey(n.order()))
+            cardBounds.put(n.path(),cardNodeBounds.get(n.order()));
+        raw.removeIf(candidate->joined.primaryBodies().containsKey(joined.cardByOrder().getOrDefault(candidate.order,"")));
+        for(var entry:joined.primaryBodies().entrySet()){
+            XTimelineCardRecords.Node body=entry.getValue();
+            String text=TextFingerprint.normalized(body.text());
+            Rect bounds=cardNodeBounds.get(body.order());
+            if(bounds==null||text.isEmpty()||text.length()>MAX_SOURCE_CHARS)continue;
+            Rect postBounds=cardBounds.getOrDefault(entry.getKey(),bounds);
+            raw.add(new TextCandidate(text,PostLanguage.hint(text,body.language()),bounds,postBounds,
+                body.order(),300,true,false,true));
+        }
+        for(XTimelineCardRecords.Node body:joined.quotedBodies().values()){
+            String text=TextFingerprint.normalized(body.text());
+            Rect bounds=cardNodeBounds.get(body.order());
+            if(bounds==null||text.isEmpty()||text.length()>MAX_SOURCE_CHARS)continue;
+            raw.removeIf(candidate->candidate.order==body.order());
+            // Each embedded body has its own overlay bounds, not the outer
+            // conversation's full card rectangle or its master record key.
+            raw.add(new TextCandidate(text,PostLanguage.hint(text,body.language()),bounds,bounds,
+                body.order(),290,true,false,true));
+        }
+        XPostDetailContextService.OpenedBody opened=null;
+        if(detailScreen){
+            List<XPostDetailContextService.Surface> surfaces=new ArrayList<>();
+            for(XTimelineCardRecords.Node node:cardNodes){
+                Rect box=cardNodeBounds.get(node.order());
+                if(box!=null)surfaces.add(new XPostDetailContextService.Surface(node,box.left,box.top,box.right,box.bottom,
+                    joined.cardByOrder().getOrDefault(node.order(),"")));
+            }
+            opened=XPostDetailContextService.selectOpenedBody(surfaces,width,height,detailHeadingBottom);
+            if(opened!=null){
+                Rect bounds=cardNodeBounds.get(opened.order());
+                if(bounds!=null){
+                    int order=opened.order();
+                    Rect postBounds=new Rect(bounds);
+                    String owner=joined.cardByOrder().get(order);
+                    if(owner!=null&&cardBounds.containsKey(owner))postBounds=cardBounds.get(owner);
+                    raw.removeIf(candidate->candidate.order==order);
+                    // This is a verified detail body, not an arbitrary
+                    // description. The classifier, not the reader, decides
+                    // whether to translate its language.
+                    raw.add(new TextCandidate(opened.text(),opened.language(),bounds,postBounds,
+                        order,400,true,opened.fromDescription(),true));
+                }
+            }
+        }
+        // The raw lane remains intact. Structural associations are added
+        // only after resolving the same measured post/header candidates.
         // Associate each readable body with its nearest profile image. The
         // spatial analyzer may then deduplicate header/body descriptions of
         // the SAME tweet even when X omits recognizable post-container IDs.
         List<TextCandidate> associated = new ArrayList<>(raw.size());
         for (TextCandidate candidate : raw) {
             Rect avatar = nearestAvatar(candidate, avatars, width);
+            XAuthorInfo author = findAuthor(candidate, avatar, authorSamples, width,
+                    scaledDensity);
             associated.add(new TextCandidate(candidate.text, candidate.languageHint,
                     candidate.bounds, candidate.postBounds, candidate.order,
                     candidate.bodyScore, candidate.hasPostContainer,
-                    candidate.fromDescription, candidate.knownPostTextId, avatar));
+                    candidate.fromDescription, candidate.knownPostTextId, avatar, author));
         }
-        List<TextCandidate> selected = spatial.locate(associated, width, height);
-        lastCandidateCount = selected.size();
-        return selected;
+        List<TextCandidate> selected =
+                spatial.locate(associated, width, height, detailScreen);
+        lastPostDetail = detailScreen;
+        // Protect the opened tweet from avatar/card deduplication and
+        // reply ranking, even when its only representation is a description.
+        if(opened!=null){
+            TextCandidate primary=null;
+            for(TextCandidate candidate:associated)if(candidate.order==opened.order()){primary=candidate;break;}
+            if(primary!=null){
+                final TextCandidate body=primary;
+                selected.removeIf(other->other.order==body.order||Rect.intersects(other.bounds,body.bounds));
+                selected.add(0,body);
+            }
+        }
+        List<TextCandidate> authorNames = independentAuthors(authorSamples, avatars,
+                selected, raw, width, scaledDensity);
+        // Keep recognized author roles out of the body compositor even
+        // when the generic body scorer selected their text.
+        selected.removeIf(body -> !body.knownPostTextId && overlapsAuthor(body,authorNames));
+        List<TextCandidate> cardTranslationBodies=new ArrayList<>();
+        if(retainKnowledge){
+            // A partial/recycled Compose card is not an independent post.
+            // Preserve its raw text and wait for a complete header/body rather
+            // than creating a second master using a guessed author.
+            List<TextCandidate> legacy=new ArrayList<>();
+            for(TextCandidate body:selected)if(!joined.cardByOrder().containsKey(body.order))legacy.add(body);
+            List<com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> all=new ArrayList<>(
+                    XKnowledgeRecords.assembleCards(joined.posts(),observedAt));
+            List<XKnowledgeRecords.Sample> legacySamples=new ArrayList<>();
+            for(var entry:samplesByOrder.entrySet())if(!joined.cardByOrder().containsKey(entry.getKey()))
+                XKnowledgeRecords.appendSamples(legacySamples,entry.getValue());
+            all.addAll(XKnowledgeRecords.assemble(legacy,legacySamples,observedAt));
+            for(XTimelineCardRecords.Post post:joined.posts()){
+                for(TextCandidate candidate:selected)bindCardBody(candidate,post);
+                for(TextCandidate candidate:associated)bindCardBody(candidate,post);
+                for(TextCandidate candidate:raw)bindCardBody(candidate,post);
+                // The compositor can reject a body for layout reasons. The
+                // translation scheduler may still localize the actual record.
+                Rect bounds=cardNodeBounds.get(post.bodyOrder());
+                if(bounds!=null&&post.body().length()<=MAX_SOURCE_CHARS){
+                    TextCandidate candidate=new TextCandidate(post.body(),post.language(),bounds,bounds,
+                        post.bodyOrder(),200,true,false,true);
+                    candidate.knowledgeKey=post.key();cardTranslationBodies.add(candidate);
+                }
+            }
+            all.addAll(observations.values());
+            lastKnowledge=Collections.unmodifiableList(all);
+        }
+        Map<String, TextCandidate> work = new LinkedHashMap<>();
+        for (TextCandidate name : authorNames) work.put(name.fingerprint, name);
+        for (TextCandidate body : selected) work.put(body.fingerprint, body);
+        for(TextCandidate body:cardTranslationBodies){
+            TextCandidate existing=work.get(body.fingerprint);
+            if(existing==null||existing.knowledgeKey.isEmpty())work.put(body.fingerprint,body);
+        }
+        for (TextCandidate body : raw) {
+            if (body.fromDescription && !body.knownPostTextId
+                    || !body.knownPostTextId && overlapsAuthor(body, authorNames))
+                continue;
+            boolean duplicateRegion = false;
+            for (TextCandidate chosen : selected) {
+                if (!body.fingerprint.equals(chosen.fingerprint)
+                        && Rect.intersects(body.bounds, chosen.bounds)) {
+                    duplicateRegion = true; break;
+                }
+            }
+            if (!duplicateRegion && work.size() < 256)
+                work.putIfAbsent(body.fingerprint, body);
+        }
+        lastDiscovered = Collections.unmodifiableList(new ArrayList<>(work.values()));
+        List<TextCandidate> scene = new ArrayList<>(selected);
+        scene.addAll(authorNames);
+        if(android.os.Build.VERSION.SDK_INT>=34){
+            XOverlayOrigin origin=new XOverlayOrigin();
+            for(TextCandidate candidate:scene){
+                // Unsafe merged headers are not painted inline.
+                if(candidate.authorName&&candidate.author!=null&&!candidate.author.inlineSafe)continue;
+                Rect screen=candidate.bounds,local=windowTextBounds.get(screen);
+                if(local==null)origin.missing();
+                else origin.observe(screen.left,screen.top,screen.right,screen.bottom,
+                    local.left,local.top,local.right,local.bottom);
+            }
+            lastOverlayOrigin=origin.result();
+        }
+        lastCandidateCount = scene.size();
+        lastAvatarCount = avatars.size();
+        lastAuthorSampleCount = authorSamples.size();
+        for (TextCandidate item : authorNames) {
+            if (!item.avatarBounds.isEmpty()) lastAuthorMatchCount++;
+            if (item.author.truncated) lastClippedNameCount++;
+        }
+        return scene;
+    }
+
+    private static void bindCardBody(TextCandidate candidate,XTimelineCardRecords.Post post){
+        if(!candidate.authorName&&candidate.order==post.bodyOrder()&&candidate.text.equals(post.body()))
+            candidate.knowledgeKey=post.key();
+    }
+
+    private static boolean hasBodySpan(CharSequence value){
+        if(!(value instanceof android.text.Spanned)||value.length()==0)return false;
+        android.text.Spanned text=(android.text.Spanned)value;
+        for(android.text.style.ClickableSpan span:text.getSpans(0,text.length(),android.text.style.ClickableSpan.class)){
+            if(span instanceof android.text.style.URLSpan||text.getSpanStart(span)!=0)continue;
+            int end=text.getSpanEnd(span);
+            if(end<=0||end>text.length())continue;
+            String suffix=text.subSequence(end,text.length()).toString().trim();
+            if(suffix.isEmpty()||suffix.matches("(?i)(?:…|\\.\\.\\.)?\\s*show more"))return true;
+        }
+        return false;
+    }
+
+    private static void retain(Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> out,
+            CharSequence value,long at){
+        for(String text:KnowledgeText.fragments(value)){
+            if(!out.containsKey(text))out.put(text,new com.wds.sixstars.contextoverlay.tree.NativeTree.Observation(
+                    "x.android.visible.fragment","",text,languageHint(text),at));
+        }
+    }
+
+    private static boolean overlapsAuthor(TextCandidate body, List<TextCandidate> names) {
+        for (TextCandidate name : names)
+            if (body.text.equals(name.text) && Rect.intersects(body.bounds,name.bounds)
+                    || body.bounds.equals(name.bounds)) return true;
+        return false;
+    }
+
+    /** A name can be discovered without a body. An ambiguous header requires
+     * a matching avatar; strong IDs/composite headers may queue without one. */
+    private static List<TextCandidate> independentAuthors(List<AuthorSample> samples,
+            List<Rect> avatars, List<TextCandidate> selected, List<TextCandidate> raw,
+            int width, float density) {
+        Map<String, TextCandidate> names = new LinkedHashMap<>();
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setTextSize(18f * Math.max(1f, density));
+        paint.setFakeBoldText(true);
+        for (AuthorSample sample : samples) {
+            if (XAuthorNameHeuristics.looksLikeHandle(sample.text)) continue;
+            boolean composite = XAuthorNameHeuristics.looksCompositeHeader(sample.text);
+            boolean body = false;
+            for (TextCandidate candidate : raw)
+                if (candidate.knownPostTextId && candidate.bounds.equals(sample.bounds)) {
+                    body = true; break;
+                }
+            if (body) continue;
+            Rect avatar = new Rect();
+            int best = Integer.MAX_VALUE;
+            for (Rect a : avatars) {
+                int gap = sample.bounds.left - a.right;
+                int dy = Math.abs(sample.bounds.top - a.top);
+                if (gap < -Math.max(6, width/75) || gap > width/6
+                        || sample.bounds.top < a.top-a.height()/3
+                        || sample.bounds.top > a.top+a.height()/3
+                        || sample.bounds.height() > a.height()*4/5) continue;
+                int score = Math.abs(gap)+dy;
+                if (score < best) { best=score; avatar=new Rect(a); }
+            }
+            if (avatar.isEmpty() && !sample.knownNameId && !composite) continue;
+            String name = composite ? sample.text.substring(0,sample.text.indexOf('@')).trim() : sample.text;
+            if (name.isEmpty()) continue;
+            if (avatar.isEmpty() && sample.bounds.left >= width/7) {
+                int size=Math.min(Math.max(36,width/10),width/5);
+                int right=sample.bounds.left-Math.max(5,width/55);
+                int top=Math.max(0,sample.bounds.top-size/12);
+                if(right>=size) avatar=new Rect(right-size,top,right,top+size);
+            }
+            boolean clipped=XAuthorNameHeuristics.looksTruncated(sample.text,
+                    paint.measureText(sample.text),sample.bounds.width());
+            if (!sample.knownNameId && !composite) {
+                boolean selectedBody=false;
+                for(TextCandidate candidate:selected)
+                    if(candidate.bounds.equals(sample.bounds) && candidate.text.equals(sample.text)){
+                        selectedBody=true;break;
+                    }
+                if(selectedBody)continue;
+            }
+            for(AuthorSample other:samples) {
+                if(other==sample || !XAuthorNameHeuristics.looksLikeHandle(other.text))continue;
+                if(Math.abs(other.bounds.top-sample.bounds.top)<=Math.max(10,avatar.height()/2)
+                        && other.bounds.left>=sample.bounds.left
+                        && XAuthorNameHeuristics.hasVisibleEllipsis(other.text))clipped=true;
+            }
+            addAuthor(names,new XAuthorInfo(name,sample.bounds,avatar,clipped,!composite));
+        }
+        // Preserve verified associations as a fallback; they no longer gate
+        // name discovery. Do not duplicate a richer independent header.
+        for(TextCandidate candidate:selected) {
+            if(candidate.author==null)continue;
+            XAuthorInfo a=candidate.author;
+            boolean already=false;
+            for(TextCandidate name:names.values())
+                if(Rect.intersects(name.bounds,a.nameBounds)){already=true;break;}
+            if(!already)addAuthor(names,a);
+        }
+        return new ArrayList<>(names.values());
+    }
+
+    private static void addAuthor(Map<String, TextCandidate> names, XAuthorInfo info) {
+        TextCandidate c=TextCandidate.forAuthor(info,names.size());
+        String occurrence=c.fingerprint+"@"+c.bounds.flattenToString();
+        TextCandidate existing=names.get(occurrence);
+        if(existing==null || !existing.author.inlineSafe && info.inlineSafe
+                || existing.author.inlineSafe==info.inlineSafe &&
+                    (existing.avatarBounds.isEmpty() && !c.avatarBounds.isEmpty()
+                        || !existing.author.truncated && info.truncated))
+            names.put(occurrence,c);
     }
 
     private static PostCard findCard(AccessibilityNodeInfo node, Rect body, int width, int height) {
@@ -123,7 +570,9 @@ public final class XVisibleTextReader {
                     && rect.width() <= width && rect.height() <= height * 2
                     && rect.right > 0 && rect.left < width) {
                 String id = parent.getViewIdResourceName();
-                if (PostTextHeuristics.isPostContainerId(id))
+                if (parent.isScrollable() || XPostDetailContextService.isDetailContainerId(id)
+                        || XPostDetailContextService.isReplyContextId(id)) break;
+                if (PostTextHeuristics.isPostContainerId(id)||XPostMetadata.conversationCard(parent))
                     return new PostCard(rect, true);
 
                 AccessibilityNodeInfo grand = parent.getParent();
@@ -163,22 +612,118 @@ public final class XVisibleTextReader {
         Rect nearest = null;
         int best = Integer.MAX_VALUE;
         for (Rect avatar : avatars) {
-            // The profile picture is in X's LEFT GUTTER of the same post,
-            // slightly above the body text. Never borrow an image from an
-            // adjacent tweet or from the media region below the body.
             int gap = body.bounds.left - avatar.right;
-            if (gap < 0 || gap > Math.max(60, width / 6)
+            int verticalGap = body.bounds.top - avatar.bottom;
+            int maxVerticalGap = Math.max(width / 5, avatar.height() * 2);
+            if (gap < -Math.max(8, width / 65)
+                    || gap > Math.max(60, width / 6)
                     || avatar.top > body.bounds.top + width / 24
-                    || avatar.bottom < body.bounds.top - width / 8) continue;
-            if (body.hasPostContainer && (avatar.centerY() < body.postBounds.top
-                    || avatar.centerY() > body.postBounds.bottom)) continue;
-            int score = gap + Math.abs(avatar.bottom - body.bounds.top);
+                    || verticalGap > maxVerticalGap) continue;
+
+            // X often exposes a body-only "post container". Reject an
+            // unrelated avatar only when the returned card is demonstrably
+            // a full-width container INCLUDING the avatar's gutter.
+            if (body.hasPostContainer && body.postBounds.left <= avatar.left
+                    && body.postBounds.right >= avatar.right
+                    && (avatar.centerY() < body.postBounds.top
+                        || avatar.centerY() > body.postBounds.bottom)) continue;
+
+            int score = Math.max(0, gap) + Math.abs(verticalGap);
             if (score < best) {
                 best = score;
                 nearest = avatar;
             }
         }
         return nearest == null ? null : new Rect(nearest);
+    }
+
+    private static final class AuthorSample {
+        final String text;
+        final Rect bounds;
+        final boolean knownNameId;
+
+        AuthorSample(String text, Rect bounds, boolean knownNameId) {
+            this.text = text;
+            this.bounds = new Rect(bounds);
+            this.knownNameId = knownNameId;
+        }
+    }
+
+    /**
+     * Bind one author to its body through the actual avatar/header geometry.
+     * A conservative inferred avatar gutter is used only when X provides a
+     * strong name ID or a compact name+handle header but hides its image node.
+     */
+    private static XAuthorInfo findAuthor(TextCandidate body, Rect foundAvatar,
+            List<AuthorSample> samples, int screenWidth, float density) {
+        AuthorSample best = null;
+        int bestScore = Integer.MIN_VALUE;
+
+        for (AuthorSample sample : samples) {
+            if (sample.text.equals(body.text) ||
+                    XAuthorNameHeuristics.looksLikeHandle(sample.text)) continue;
+            boolean known = sample.knownNameId;
+            boolean composite = XAuthorNameHeuristics.looksCompositeHeader(sample.text);
+            boolean plausible;
+            if (foundAvatar != null && !foundAvatar.isEmpty()) {
+                plausible = XAuthorNameHeuristics.plausibleHeader(
+                        sample.bounds.left, sample.bounds.top, sample.bounds.right,
+                        sample.bounds.bottom, body.bounds.left, body.bounds.top,
+                        foundAvatar.left, foundAvatar.top, foundAvatar.right,
+                        foundAvatar.bottom, screenWidth, known);
+            } else {
+                plausible = XAuthorNameHeuristics.plausibleHeaderWithoutAvatar(
+                        sample.bounds.left, sample.bounds.top, sample.bounds.right,
+                        sample.bounds.bottom, body.bounds.left, body.bounds.top,
+                        screenWidth, known, composite);
+            }
+            if (!plausible) continue;
+            int score = (known ? 180 : 0) + (composite ? 60 : 0)
+                    - Math.abs(sample.bounds.left - body.bounds.left) / 4
+                    - Math.abs(sample.bounds.bottom - body.bounds.top) / 4;
+            if (score > bestScore) {
+                bestScore = score;
+                best = sample;
+            }
+        }
+        if (best == null) return null;
+
+        Rect avatar = foundAvatar;
+        if (avatar == null || avatar.isEmpty()) {
+            // The inferred PFP sits in X's measured LEFT GUTTER, not on the
+            // author row. Never synthesize one without a confirmed header.
+            int size = Math.min(Math.max(36, screenWidth / 10), screenWidth / 5);
+            int gap = Math.max(5, screenWidth / 55);
+            int right = best.bounds.left - gap;
+            int top = Math.max(0, best.bounds.top - size / 12);
+            avatar = new Rect(Math.max(0, right - size), top, right, top + size);
+            if (avatar.width() < size * 3 / 4) return null;
+        }
+
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setTextSize(18f * Math.max(1f, density));
+        paint.setFakeBoldText(true);
+        boolean clipped = XAuthorNameHeuristics.looksTruncated(best.text,
+                paint.measureText(best.text), best.bounds.width());
+
+        // X can truncate the @handle even if the display name fits. The
+        // badge is useful in either case; keep the actual available name.
+        for (AuthorSample other : samples) {
+            if (other == best || other.text.equals(body.text)) continue;
+            boolean isHandle = XAuthorNameHeuristics.looksLikeHandle(other.text);
+            boolean composite = XAuthorNameHeuristics.looksCompositeHeader(other.text);
+            if (!isHandle && !composite) continue;
+            if (Math.abs(other.bounds.top - best.bounds.top) >
+                    Math.max(28, avatar.height() / 2)) continue;
+            if (other.bounds.left < best.bounds.left ||
+                    other.bounds.left > screenWidth) continue;
+            if (XAuthorNameHeuristics.hasVisibleEllipsis(other.text))
+                clipped = true;
+        }
+
+        boolean composite=XAuthorNameHeuristics.looksCompositeHeader(best.text);
+        String name=composite?best.text.substring(0,best.text.indexOf('@')).trim():best.text;
+        return new XAuthorInfo(name, best.bounds, avatar, clipped,!composite);
     }
 
     private static final class PostCard {
@@ -194,22 +739,32 @@ public final class XVisibleTextReader {
      * Best-effort language hint. Actual translation stays with PLaMo. Native X
      * doesn't necessarily expose the tweet's language or normalized post ID.
      */
-    public static String languageHint(String text) {
-        if (text == null || text.isEmpty()) return "";
-        if (text.codePoints().anyMatch(c -> (c >= 0x3040 && c <= 0x30ff))) return "ja";
-        if (text.codePoints().anyMatch(c -> c >= 0xac00 && c <= 0xd7af)) return "ko";
-        if (text.codePoints().anyMatch(c -> c >= 0x0600 && c <= 0x06ff)) return "ar";
-        if (text.codePoints().anyMatch(c -> c >= 0x0400 && c <= 0x04ff)) return "ru";
-        if (text.codePoints().anyMatch(c -> c >= 0x4e00 && c <= 0x9fff)) return "zh";
-        String s = " " + text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}]+", " ") + " ";
-        if (containsAny(s, " bonjour ", " merci ", " pourquoi ", " aujourd hui ", " je suis ", " avec vous ")) return "fr";
-        if (containsAny(s, " hola ", " gracias ", " buenos dias ", " buenas noches ", " estoy ", " nosotros ")) return "es";
-        if (containsAny(s, " hallo ", " danke ", " bitte ", " guten morgen ", " ich bin ")) return "de";
+    static String bodyLanguageHint(String text) {return PostLanguage.hint(text,"");}
+
+    public static String languageHint(String text) {return PostLanguage.hint(text,"");}
+
+    private static String reportedLanguage(AccessibilityNodeInfo node,CharSequence value){
+        try{
+            android.os.Bundle extras=node.getExtras();
+            for(String key:extras.keySet()){
+                String name=XPostMetadata.keyRole(key);
+                if(!name.matches("(post|tweet|source|text|content)?(lang|language|languagecode)"))continue;
+                Object raw=extras.get(key);
+                if(raw instanceof CharSequence){
+                    String code=PostLanguage.code(raw.toString());
+                    if(!code.isEmpty())return code;
+                }
+            }
+        }catch(RuntimeException ignored){}
+        if(value instanceof android.text.Spanned){
+            android.text.Spanned text=(android.text.Spanned)value;
+            for(android.text.style.LocaleSpan span:text.getSpans(0,text.length(),android.text.style.LocaleSpan.class)){
+                if(text.getSpanEnd(span)-text.getSpanStart(span)<text.length()*.8)continue;
+                java.util.Locale locale=span.getLocale();
+                if(locale!=null)return PostLanguage.code(locale.toLanguageTag());
+            }
+        }
         return "";
     }
 
-    private static boolean containsAny(String text, String... words) {
-        for (String candidate : words) if (text.contains(candidate)) return true;
-        return false;
-    }
 }

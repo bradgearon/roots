@@ -123,7 +123,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
     @Override public void translate(String text,String source,String target,Result callback) {
         if(callback==null)return;
         if(!new OverlayPreferences(app).enabled()){callback.completed(null,"Grant X text processing consent first.");return;}
-        if(text==null || text.trim().isEmpty() || text.length()>1200 || target==null || !target.matches("[a-z]{2,3}") || text.contains("<|plamo:")){callback.completed(null,"Invalid translation request.");return;}
+        if(text==null || text.trim().isEmpty() || text.length()>1200 || !TranslationLanguages.isModelLanguage(target) || text.contains("<|plamo:")){callback.completed(null,"Invalid translation request.");return;}
         long submitted=SystemClock.elapsedRealtime();
         try{WORK.execute(()->{
             long started=SystemClock.elapsedRealtime();
@@ -131,7 +131,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
             String stage="verify_model";
             try {
                 OverlayPreferences preferences=new OverlayPreferences(app);
-                if(!preferences.enabled() || preferences.desktopTranslationEnabled()){callback.completed(null,"Translation mode changed.");return;}
+                if(!preferences.enabled()){callback.completed(null,"Translation permission is off.");return;}
                 boolean useVulkan=preferences.localVulkanEnabled();
                 int threads=preferences.localThreads();
                 File file=model(app);
@@ -155,14 +155,16 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
                     loadedAcceleration=Native.accelerationInfo();
                     trace(app,stage,"ok",loadStart,"runtime="+revision+" "+loadedAcceleration);
                 }
+                String sourceCode=TranslationLanguages.sourceCode(source);
                 String prompt="<|plamo:tag|>dataset<|plamo:msg|>translation<|plamo:tag|>input"+
-                    (source!=null&&source.matches("[a-z]{2,3}")?"<|plamo:key|>lang<|plamo:val|>"+source:"")+
+                    (!sourceCode.isEmpty()?"<|plamo:key|>lang<|plamo:val|>"+sourceCode:"")+
                     "<|plamo:msg|>"+text+"<|plamo:tag|>output<|plamo:key|>lang<|plamo:val|>"+target+"<|plamo:msg|>";
                 stage="inference";
+                callback.started();
                 long inferenceStart=SystemClock.elapsedRealtime();
                 trace(app,stage,"start",inferenceStart,"runtime="+revision+" requested_backend="+requestedBackend+" requested_threads="+threads,null,queueMs);
                 long[] stats=new long[8];
-                byte[] result=Native.generate(prompt.getBytes(StandardCharsets.UTF_8),stats,threads);
+                byte[] result=Native.generateStreaming(prompt.getBytes(StandardCharsets.UTF_8),stats,threads,bytes->{if(preferences.enabled())callback.partial(StreamText.translationPreview(bytes));});
                 if(result==null)throw new IllegalStateException("Native runtime returned no result buffer");
                 trace(app,stage,"ok",inferenceStart,"runtime="+revision+" "+loadedAcceleration+" result_bytes="+result.length,stats,queueMs);
                 String translated=new String(result,StandardCharsets.UTF_8).trim();
@@ -176,6 +178,7 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         });}catch(Exception busy){callback.completed(null,"Translation queue is busy.");}
     }
     // Keep all JNI declarations here so the separate brain build validates its complete ABI.
+    interface PrefixListener { void onPrefix(byte[] prefix); }
     static class Native {
         static { System.loadLibrary("roots_plamo"); }
         static void ensure(){}
@@ -185,8 +188,16 @@ public final class LocalPLaMoTranslationProvider implements TranslationProvider 
         static native void load(String path,boolean useVulkan);
         static native void unload();
         static native byte[] generate(byte[] prompt,long[] stats,int threads);
+        static native void configureFlow(boolean enabled,int[] plan);
+        static native String flowReport();
+        static native void loadIntelligence(String path);
+        static native void releaseIntelligenceContext();
+        static native void unloadIntelligence();
+        static native byte[] generateIntelligence(byte[] prompt,long[] stats,int threads,PrefixListener listener);
         static native void loadFunction(String path);
         static native void unloadFunction();
         static native byte[] generateFunction(byte[] prompt,long[] stats,int threads);
+        static native byte[] generateStreaming(byte[] prompt,long[] stats,int threads,PrefixListener listener);
+        static native byte[] generateFunctionStreaming(byte[] prompt,long[] stats,int threads,PrefixListener listener);
     }
 }

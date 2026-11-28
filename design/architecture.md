@@ -2,6 +2,10 @@
 
 Status: proposal; not implemented. See [design index](README.md).
 
+## Transport security requirement
+
+Follow [transport security](transport-security.md): preserve normal secure connections and Axon authentication. Send ordinary serialized/compressed knowledge through the connection without additional application-level encryption. Do not remove TLS or normal platform security.
+
 ## Existing foundation
 
 Roots is a local-first translation and social integration platform. The repository README documents the Android accessibility overlay and on-device PLaMo 0.8B model, Chrome extension and Windows desktop host (.NET 9, llama.cpp, PLaMo 2B by default). The existing translation API and transport-neutral Wds.Roots.Api Forge contracts (ForgeActorReference, ForgeServiceRequest, ForgeServicePacket, IForgeService.InvokeAsync, correlation IDs and state update notices) are the starting point. Do not replace the existing viewport or translation implementations to introduce social intelligence.
@@ -134,3 +138,15 @@ These phases extend the prior roadmap rather than remove its requirements. Open 
 Add [root:// resolution](root-protocol.md), [Whirlwind peer exchange](whirlwind-exchange.md), [developing neural intelligence](developing-neural-intelligence.md) and [economy/bounty services](economy-bounties.md) as independent capabilities. Selectively reuse Engram AI mechanisms, not the whole application. Separate master model, compiled knowledge tensors and developed student model snapshots; no arbitrary weight-to-fact mapping. Poetic association and style belong in Network Brain as well as separately scoped personal micro-cognition. Whirlwind handles peer transfer and reciprocal contribution; only evidenced reciprocal development qualifies as a cognitive episode. Models are passive records and service logic owns validation, authorization and state changes.
 
 Roadmap additions: phase 1 local root URI resolution and file manifests; phase 2 authenticated peer transfer/deltas and student experiments (graph baseline first), independent conformance tests; phase 3 mock social payments, signed recognition and bounty lifecycle, provider sandbox gated separately; phases 4–5 poetic styles, independently evaluated neural learning, optional paid Whirlwind work and verified contribution receipts; optional production economic services only after provider/legal/security approval. No blockchain or payment requirement for any base phase.
+
+## First native implementation slice
+
+The Tree Core is shared C++17 (`native/tree-core`), not duplicated in Java or C#. Use JNI for Android and a versioned C ABI/P/Invoke for desktop; keep platform-specific capture, scheduling, consent and UI in host services. SQLite remains authoritative and GGUF is a derived, revision-bound snapshot. Predicate keys are ordered reusable components (e.g. is.a, is.from, is.in, is.part.of), not a closed relationship enum. Initial native contracts implement observed fragments, exact search/cursor pagination, literal-interest branch agents and evidence-backed type/source/membership relations. Full typed claims, semantic cognition, portable manifests, feed activation and external agent discovery remain follow-up work. See [native core](../native/tree-core/README.md). The earlier Android-only prototype is not the canonical core. Preserve the existing translation path and validate native Windows/Android builds before enabling capture.
+
+### Lily semantic growth
+
+[Lily Tendrils](tendrils.md) are the semantic recognition and relationship-development structures. Neuronal knowledge semantics/activation and Lily predicate/sensor weights are distinct but cooperative spaces. Higher-level agents coordinate Lily sensors; a bounded worker pool proposes development and independent judgment gates commits. The native v1 literal-interest branches remain a baseline, not an implemented Lily engine.
+
+### Native platform integration milestone
+
+Draft implementation: Android JNI adapter, bounded separate X Home capture thread, batch writer, revision-checked GGUF compiler and native-backed paginated Tree viewer; desktop C# P/Invoke binding and local CLI. Android Tree is a separate build option requiring an approved SQLite amalgamation and separate storage consent. Desktop CLI is independent of the translation host. No automatic desktop capture, native network endpoints, semantic Lily engine or weighted feed yet. Validate real device capture, Windows/Linux native and managed tests, and actual JNI build before release.

@@ -37,6 +37,7 @@ import java.util.concurrent.Executors;
 @TargetApi(34)
 final class AutoWindowAttachedSurface {
     private static final int BUFFER_COUNT = 2;
+    private static final long FRAME_STALL_MS=300L;
     private static final long USAGE = HardwareBuffer.USAGE_GPU_COLOR_OUTPUT
             | HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE
             | HardwareBuffer.USAGE_COMPOSER_OVERLAY;
@@ -53,24 +54,39 @@ final class AutoWindowAttachedSurface {
     private final Slot[] slots = new Slot[BUFFER_COUNT];
     private final int width;
     private final int height;
-    private Rect windowBounds;
+    private XOverlayOrigin.Offset paintOrigin;
 
     private List<AutoOverlaySceneView.TextItem> latest = Collections.emptyList();
+    private long sceneEpoch;
     private boolean drawing;
     private boolean dirty;
     private boolean closed;
     private boolean failed;
     private final Runnable onFailure;
+    private boolean watchdogArmed;
+    private long submittedFrame,committedFrame;
+    private boolean waitingForFrame(){return dirty||drawing||submittedFrame>committedFrame;}
+    // A dirty frame may wait for a GPU render or a release fence. Do not
+    // leave its predecessor frozen onscreen if neither callback arrives.
+    private final Runnable frameWatchdog=()->{
+        watchdogArmed=false;
+        if(!closed&&!failed&&!latest.isEmpty()&&waitingForFrame())fail();
+    };
+    private void watchFrame(){
+        if(!watchdogArmed&&!closed&&!failed&&!latest.isEmpty()&&waitingForFrame())
+            watchdogArmed=main.postDelayed(frameWatchdog,FRAME_STALL_MS);
+    }
+    private void cancelWatchdog(){main.removeCallbacks(frameWatchdog);watchdogArmed=false;}
 
     AutoWindowAttachedSurface(AccessibilityService service,
             AutoWindowTarget target, AutoScenePresentation presentation,
             Runnable onFailure) {
-        if (!target.isValid()) throw new IllegalArgumentException("Missing X window");
+        if (!target.hasVerifiedOrigin()) throw new IllegalArgumentException("Missing verified X window origin");
         this.presentation = presentation;
         this.onFailure = onFailure;
-        this.windowBounds = new Rect(target.screenBounds);
-        width = windowBounds.width();
-        height = windowBounds.height();
+        this.paintOrigin=target.origin;
+        width=target.bufferWidth();
+        height=target.bufferHeight();
 
         if (!HardwareBuffer.isSupported(width, height,
                 HardwareBuffer.RGBA_8888, 1, USAGE))
@@ -99,19 +115,32 @@ final class AutoWindowAttachedSurface {
 
     void present(List<AutoOverlaySceneView.TextItem> source, AutoWindowTarget target) {
         if (closed || failed) return;
-        windowBounds = new Rect(target.screenBounds);
+        if(!target.hasVerifiedOrigin()||target.bufferWidth()!=width||target.bufferHeight()!=height){fail();return;}
+        paintOrigin=target.origin;
         present(source);
     }
 
     void present(List<AutoOverlaySceneView.TextItem> source) {
         if (closed || failed) return;
         latest = Collections.unmodifiableList(new ArrayList<>(source));
+        // Every new scene supersedes a render still being produced, but
+        // retain the last committed buffer until its replacement is ready.
+        ++sceneEpoch;
+        if(latest.isEmpty()){
+            // Hiding does not depend on acquiring a free hardware buffer.
+            dirty=false;committedFrame=submittedFrame;cancelWatchdog();
+            try(SurfaceControl.Transaction transaction=new SurfaceControl.Transaction()){
+                transaction.setVisibility(surface,false).setBuffer(surface,null).apply();
+            }catch(RuntimeException e){fail();}
+            return;
+        }
         dirty = true;
+        watchFrame();
         pump();
     }
 
     private void pump() {
-        if (closed || drawing || !dirty) return;
+        if (closed || failed || drawing || !dirty) return;
         Slot slot = null;
         for (Slot candidate : slots) {
             if (candidate != null && !candidate.busy && !candidate.disposed) {
@@ -124,19 +153,20 @@ final class AutoWindowAttachedSurface {
         drawing = true;
         slot.busy = true;
         final Slot frameSlot = slot;
+        final long frameEpoch=sceneEpoch;
 
         try {
             // Record on our main thread, execute GPU rendering on Android's
             // RenderThread, and return to main without blocking accessibility.
             RecordingCanvas canvas = slot.node.beginRecording(width, height);
             canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR);
-            presentation.draw(canvas, latest, windowBounds.left, windowBounds.top);
+            presentation.draw(canvas, latest,paintOrigin.x(),paintOrigin.y());
             slot.node.endRecording();
 
             slot.renderer.setContentRoot(slot.node);
             slot.renderer.obtainRenderRequest().draw(
                     command -> main.post(command),
-                    result -> onRendered(frameSlot, result));
+                    result -> onRendered(frameSlot, result,frameEpoch));
         } catch (RuntimeException error) {
             drawing = false;
             slot.busy = false;
@@ -150,11 +180,12 @@ final class AutoWindowAttachedSurface {
         }
     }
 
-    private void onRendered(Slot slot, RenderResult result) {
+    private void onRendered(Slot slot, RenderResult result,long frameEpoch) {
         drawing = false;
         android.hardware.SyncFence ready = result.getFence();
-        if (closed) {
-            // The GPU may still be writing this never-presented buffer.
+        if (closed || frameEpoch!=sceneEpoch) {
+            // Never submit a frame for an invalidated geometry epoch. The
+            // GPU may still be writing this never-presented buffer.
             // Await its render fence away from the main/UI thread before
             // disposing it, even if the X window was closed in the meantime.
             fenceWorker.execute(() -> {
@@ -163,10 +194,12 @@ final class AutoWindowAttachedSurface {
                 }
                 main.post(() -> {
                     slot.busy = false;
-                    slot.dispose();
-                    shutdownWhenDone();
+                    if(closed){slot.dispose();shutdownWhenDone();}
+                    else pump();
                 });
             });
+            // The other slot may already be free for the current geometry.
+            if(!closed)pump();
             return;
         }
         if (result.getStatus() != RenderResult.SUCCESS) {
@@ -196,6 +229,15 @@ final class AutoWindowAttachedSurface {
                                 }
                             });
                         }));
+                // A render submitted before an uncertain-scroll hide must
+                // never make old text visible again.
+                transaction.setVisibility(surface,frameEpoch==sceneEpoch&&!latest.isEmpty());
+                long sequence=++submittedFrame;
+                transaction.addTransactionCommittedListener(command->main.post(command),()->{
+                    if(closed||failed||sequence<=committedFrame)return;
+                    committedFrame=sequence;
+                    cancelWatchdog();watchFrame();
+                });
                 transaction.apply();
             }
         } catch (RuntimeException error) {
@@ -210,6 +252,10 @@ final class AutoWindowAttachedSurface {
             ready.close();
         }
 
+        // Only an actual SurfaceControl commit resets the watchdog. A
+        // successful render callback alone does not prove that a new frame
+        // was accepted by the compositor.
+        watchFrame();
         // Submit the newest replacement while the previous buffer is
         // displayed; the old slot is only reused once its release fence fires.
         pump();
@@ -219,7 +265,9 @@ final class AutoWindowAttachedSurface {
         if (closed) return;
         closed = true;
         dirty = false;
+        cancelWatchdog();
         try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
+            transaction.setVisibility(surface,false);
             transaction.setBuffer(surface, null);
             transaction.reparent(surface, null);
             transaction.apply();

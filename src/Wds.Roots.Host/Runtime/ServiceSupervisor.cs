@@ -75,7 +75,8 @@ internal partial class RuntimeJson : JsonSerializerContext;
 /// live beneath AI_ROOT rather than beneath the Roots installation so multiple WDS products
 /// can share the same verified binaries and model files.
 /// </summary>
-public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient http, Action<string>? onStatus = null) : IDisposable
+public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient http, Action<string>? onStatus = null,
+    string manifestRelativePath = "config/runtime.json") : IDisposable
 {
     private readonly List<Process> _owned = [];
     private readonly SemaphoreSlim _provisionGate = new(1, 1);
@@ -83,10 +84,12 @@ public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient 
     private AiHardwareProfile? _hardware;
     private void Report(string message) { Console.WriteLine(message); onStatus?.Invoke(message); }
     public string SelectedBackend { get; private set; } = "cpu";
+    // Exact engine directory selected and successfully installed by this supervisor.
+    internal string? ProvisionedLlmDirectory { get; private set; }
 
     public async Task StartAsync(CancellationToken token)
     {
-        string path = Path.Combine(appRoot, "config", "runtime.json");
+        string path = Path.Combine(appRoot, manifestRelativePath);
         if (!File.Exists(path)) return;
         _config = await LoadRuntimeConfigAsync(token).ConfigureAwait(false);
         ConfigureLogging(_config.Logging, appRoot);
@@ -201,10 +204,14 @@ public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient 
             }
 
             foreach (EnginePack pack in packs)
+            {
                 await EnginePackInstaller.InstallAsync(
                     aiRoot, pack, http, Report, token,
                     forceFullVerification: forceFullVerification && component.Equals("llm", StringComparison.OrdinalIgnoreCase))
                     .ConfigureAwait(false);
+                if (component.Equals("llm", StringComparison.OrdinalIgnoreCase))
+                    ProvisionedLlmDirectory = EnginePackInstaller.Under(aiRoot, pack.Directory);
+            }
         }
         finally
         {
@@ -215,7 +222,7 @@ public sealed class ServiceSupervisor(string appRoot, string aiRoot, HttpClient 
 
     private async Task<RuntimeConfig> LoadRuntimeConfigAsync(CancellationToken token)
     {
-        string path = Path.Combine(appRoot, "config", "runtime.json");
+        string path = Path.Combine(appRoot, manifestRelativePath);
         if (!File.Exists(path)) throw new FileNotFoundException("AI runtime manifest was not found.", path);
         return JsonSerializer.Deserialize(await File.ReadAllTextAsync(path, token).ConfigureAwait(false), RuntimeJson.Default.RuntimeConfig)
             ?? new RuntimeConfig();

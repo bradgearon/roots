@@ -1,0 +1,64 @@
+name: Roots Native Tree Core
+on:
+  pull_request:
+    paths:
+      - 'native/tree-core/**'
+      - '.github/workflows/roots-native-tree.yml'
+      - 'src/Wds.Roots.Tree/**'
+      - 'src/Wds.Roots.TreeCli/**'
+      - 'tests/Roots.TreeBindingChecks/**'
+      - 'android/contextual-overlay/src/main/java/com/wds/sixstars/contextoverlay/tree/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - run: cmake -S native/tree-core -B build/tree-core -DCMAKE_BUILD_TYPE=Release -DROOTS_TREE_HOST_JNI=ON
+      - run: cmake --build build/tree-core --parallel
+      - run: ctest --test-dir build/tree-core --output-on-failure
+      - run: ROOTS_TREE_LIBRARY="$PWD/build/tree-core/libroots_tree.so" dotnet run --project tests/Roots.TreeBindingChecks -c Release
+      - run: dotnet build src/Wds.Roots.TreeCli -c Release
+      - name: JNI binding checks (host JVM, not Android device)
+        run: |
+          mkdir -p build/tree-jni-checks
+          javac -encoding UTF-8 -d build/tree-jni-checks android/contextual-overlay/src/main/java/com/wds/sixstars/contextoverlay/tree/{NativeTree,KnowledgeGguf,KnowledgeWave}.java native/tree-core/tests/{NativeTreeJniChecks,KnowledgeWaveChecks}.java
+          java -Djava.library.path="$PWD/build/tree-core" -cp build/tree-jni-checks NativeTreeJniChecks
+          java -cp build/tree-jni-checks KnowledgeWaveChecks
+      - name: Axon weighted allocation checks
+        run: |
+          javac -encoding UTF-8 -d build/tree-jni-checks android/contextual-overlay/src/main/java/com/wds/sixstars/contextoverlay/AxonPlanner.java native/tree-core/tests/AxonPlannerChecks.java
+          java -cp build/tree-jni-checks com.wds.sixstars.contextoverlay.AxonPlannerChecks
+      - name: Runtime Need contract checks
+        run: |
+          javac -encoding UTF-8 -d build/tree-jni-checks android/contextual-overlay/src/main/java/com/wds/sixstars/contextoverlay/RuntimeNeed.java native/tree-core/tests/RuntimeNeedChecks.java
+          java -cp build/tree-jni-checks com.wds.sixstars.contextoverlay.RuntimeNeedChecks
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - shell: pwsh
+        run: vcpkg install sqlite3:x64-windows-static-md
+      - shell: pwsh
+        run: cmake -S native/tree-core -B build/tree-core -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+      - run: cmake --build build/tree-core --config Release --parallel
+      - run: ctest --test-dir build/tree-core -C Release --output-on-failure
+      - shell: pwsh
+        run: |
+          $env:ROOTS_TREE_LIBRARY = (Resolve-Path build/tree-core/Release/roots_tree.dll).Path
+          dotnet run --project tests/Roots.TreeBindingChecks -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build src/Wds.Roots.TreeCli -c Release

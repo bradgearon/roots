@@ -4,6 +4,9 @@ import java.util.Properties
 plugins {
     id("com.android.library")
 }
+val rootsTreeEnabled = providers.gradleProperty("rootsEnableTree").orElse("true")
+val rootsSqliteDir = providers.gradleProperty("rootsSqliteAmalgamationDir")
+    .orElse(providers.environmentVariable("ROOTS_SQLITE_DIR"))
 val rootsKleidiAI = providers.gradleProperty("rootsEnableKleidiAI").orElse("true")
 val rootsVulkan = providers.gradleProperty("rootsEnableVulkan").orElse("false")
 val rootsVulkanSdk = providers.gradleProperty("rootsVulkanSdk")
@@ -32,6 +35,9 @@ if (usePrebuiltBrain) {
         manifest.getProperty("cpp_sha256") == sha256(source.resolve("roots_plamo.cpp").readBytes()) &&
         manifest.getProperty("jni_sha256") == sha256(signatures.toByteArray(Charsets.UTF_8)) &&
         manifest.getProperty("library_sha256") == sha256(brainLib.readBytes())) { invalid }
+    require(manifest.getProperty("ndk_version") == (rootProject.extra["rootsNdkVersion"] as String)) {
+        "Cached brain NDK differs from selected NDK (or its version is unknown). Run build-brain.cmd again."
+    }
     val expectedApi = if (manifest.getProperty("vulkan") == "ON") 28 else 26
     require(manifest.getProperty("android_api")?.toIntOrNull() == expectedApi) { invalid }
     nativeMinSdk = expectedApi
@@ -44,19 +50,24 @@ if (usePrebuiltBrain) {
     }
     logger.lifecycle("Roots: reusing cached ARM64 brain (${manifest.getProperty("kleidiai")} KleidiAI, ${manifest.getProperty("vulkan")} Vulkan)")
 }
+logger.lifecycle("Roots: native Tree ${if (rootsTreeEnabled.get().toBoolean()) "enabled" else "disabled"}")
 android {
     namespace = "com.wds.sixstars.contextoverlay"
     compileSdk = 36
+    ndkVersion = rootProject.extra["rootsNdkVersion"] as String
     defaultConfig {
         minSdk = nativeMinSdk
         ndk { abiFilters += listOf("arm64-v8a") }
-        if (!usePrebuiltBrain) externalNativeBuild {
+        if (!usePrebuiltBrain || rootsTreeEnabled.get().toBoolean()) externalNativeBuild {
             cmake {
                 arguments += "-DROOTS_ENABLE_KLEIDIAI=${if (rootsKleidiAI.get().toBoolean()) "ON" else "OFF"}"
                 arguments += "-DROOTS_ENABLE_VULKAN=${if (rootsVulkan.get().toBoolean()) "ON" else "OFF"}"
                 rootsVulkanSdk.orNull?.let { arguments += "-DROOTS_VULKAN_SDK=${file(it).absolutePath}" }
                 rootsSpirvHeaders.orNull?.let { arguments += "-DROOTS_SPIRV_HEADERS_DIR=${file(it).absolutePath}" }
                 rootsVulkanHostToolchain.orNull?.let { arguments += "-DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN=${file(it).absolutePath}" }
+                arguments += "-DROOTS_ENABLE_TREE=${if (rootsTreeEnabled.get().toBoolean()) "ON" else "OFF"}"
+                arguments += "-DROOTS_TREE_TESTS=OFF"
+                rootsSqliteDir.orNull?.let { arguments += "-DROOTS_SQLITE_AMALGAMATION_DIR=${file(it).absolutePath}" }
             }
         }
     }
@@ -64,8 +75,18 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    // Optional independently built Rust transport; does not invalidate the brain cache.
+    sourceSets { named("main").configure { jniLibs.srcDir(rootProject.file(".roots-whirlwind/jniLibs")) } }
     if (usePrebuiltBrain) {
-        sourceSets.getByName("main").jniLibs.srcDir(brainJniDir)
+        // AGP 9.2+ getter exposes a legacy source-set type (Google issue 550220873).
+        sourceSets {
+            named("main").configure {
+                jniLibs.srcDir(brainJniDir)
+            }
+        }
+        if (rootsTreeEnabled.get().toBoolean()) {
+            externalNativeBuild { cmake { path = file("../../native/tree-core/CMakeLists.txt"); version = "3.22.1" } }
+        }
     } else {
         externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     }
@@ -75,5 +96,8 @@ android {
 }
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation("com.samskivert:jmustache:1.16")
+    // Small bundled language classifier; no Roots brain/llama.cpp rebuild.
+    implementation("com.google.mlkit:language-id:17.0.6")
     testImplementation("junit:junit:4.13.2")
 }

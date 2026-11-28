@@ -1,0 +1,82 @@
+{
+  "manifestVersion": 2,
+  "provisionAiRuntime": true,
+  "useExistingStack": false,
+  "requireHashes": true,
+  "logging": {
+    "directory": "logs/intelligence",
+    "retentionDays": 14
+  },
+  "dependencyPins": {
+    "llama.cpp": {
+      "repository": "https://github.com/ggerganov/llama.cpp.git",
+      "gitRef": "8642541b255bfb5dc39cd351a178be09013a55d6"
+    }
+  },
+  "enginePacks": [
+    {
+      "cpu": {
+        "llm": {
+          "version": "b11960",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cpu-x64.zip",
+          "sha256": "73F962F82850D244DB47EAACB9D913637027B82399124324298576D58C5F4287",
+          "enabled": true,
+          "requiredFiles": [
+            "llama.dll",
+            "ggml.dll",
+            "llama-server.exe"
+          ]
+        }
+      },
+      "cuda": {
+        "llm": {
+          "version": "b11960",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-cuda-13.4-x64.zip",
+          "sha256": "31C75EA62B80F0816C855EA783EF68757BC2D48028EDAA57D904E4982BDDEA4A",
+          "enabled": true,
+          "requiredFiles": [
+            "llama.dll",
+            "ggml.dll",
+            "llama-server.exe",
+            "ggml-cuda.dll",
+            "cudart64_13.dll",
+            "cublas64_13.dll",
+            "cublasLt64_13.dll"
+          ],
+          "additionalArchives": [
+            {
+              "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/cudart-llama-bin-win-cuda-13.4-x64.zip",
+              "sha256": "738F8C251AC22B70C3AE6F83A10CF222725DF0395246A2CF58F32BDB85FBE668"
+            }
+          ]
+        }
+      },
+      "vulkan": {
+        "llm": {
+          "version": "b11960",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11960/llama-b11960-bin-win-vulkan-x64.zip",
+          "sha256": "BAC6914B5E83523EB008C6789EAA12669F93FBC196C3B9E8237B6672323B33E9",
+          "enabled": true,
+          "requiredFiles": [
+            "llama.dll",
+            "ggml.dll",
+            "llama-server.exe",
+            "ggml-vulkan.dll"
+          ]
+        }
+      }
+    }
+  ],
+  "models": [
+    {
+      "enabled": true,
+      "id": "qwen3.5-0.8b-q4_0",
+      "version": "9447f74",
+      "path": "models/llm/Qwen3.5-0.8B-Q4_0.gguf",
+      "url": "https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/9447f74/Qwen3.5-0.8B-Q4_0.gguf",
+      "sha256": "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf",
+      "maxBytes": 650000000
+    }
+  ],
+  "services": []
+}

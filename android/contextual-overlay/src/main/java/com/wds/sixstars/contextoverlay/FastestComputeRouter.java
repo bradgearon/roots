@@ -1,0 +1,259 @@
+package com.wds.sixstars.contextoverlay;
+
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.os.SystemClock;
+import org.json.JSONObject;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/** Capability-based routing. Wi-Fi availability is only a transport hint.
+ * Identity is possession of the paired key, proven by an encrypted response. */
+final class FastestComputeRouter implements TranslationProvider {
+    private static volatile FastestComputeRouter instance;
+    private static volatile String status="On-device PLaMo";
+    private static final java.util.concurrent.atomic.AtomicLong generation=new java.util.concurrent.atomic.AtomicLong();
+    private final SecureComputeSocket socket=new SecureComputeSocket();
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private volatile Network selectedNetwork;
+    private volatile String selectedFingerprint="";
+    private final FamiliarComputeNetworks familiar;
+    private volatile boolean maintaining;
+    private volatile String connection="Not connected";
+    private final Context app;
+    private final OverlayPreferences prefs;
+    private final LocalPLaMoTranslationProvider local;
+    private final ThreadPoolExecutor routes=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(3));
+    private final Map<String,Estimate> timings=new HashMap<>();
+    private final OnDeviceLanguageDetector localDetector=new OnDeviceLanguageDetector();
+    private long detectorRetryAfter;
+    private String detectorRoute="";
+    private static final class Estimate {double ms;long at;int count;}
+    static synchronized FastestComputeRouter get(Context context){
+        if(instance==null)instance=new FastestComputeRouter(context.getApplicationContext());
+        return instance;
+    }
+    static String status(){
+        FastestComputeRouter router=instance;
+        return status+(router==null?"":" · "+router.connection);
+    }
+    static synchronized void invalidate(){
+        generation.incrementAndGet();status="On-device PLaMo";
+        if(instance!=null){instance.socket.disconnect();instance.updateNetworkState();}
+    }
+    synchronized void startBackground(){
+        if(maintaining)return;
+        maintaining=true;
+        ConnectivityManager cm=manager();
+        if(cm!=null){
+            networkCallback=new ConnectivityManager.NetworkCallback(){
+                @Override public void onAvailable(Network n){updateNetworkState();}
+                @Override public void onLost(Network n){updateNetworkState();}
+                @Override public void onCapabilitiesChanged(Network n,NetworkCapabilities caps){updateNetworkState();}
+                @Override public void onLinkPropertiesChanged(Network n,android.net.LinkProperties props){updateNetworkState();}
+            };
+            try{cm.registerDefaultNetworkCallback(networkCallback);}
+            catch(RuntimeException e){networkCallback=null;}
+        }
+        updateNetworkState();
+    }
+    synchronized void stopBackground(){
+        maintaining=false;generation.incrementAndGet();
+        if(networkCallback!=null){
+            try{manager().unregisterNetworkCallback(networkCallback);}catch(RuntimeException ignored){}
+            networkCallback=null;
+        }
+        selectedNetwork=null;selectedFingerprint="";socket.disconnect();connection="Compute connection stopped";
+    }
+    /** Android callbacks change the routing state; no packets sent here. */
+    private synchronized void updateNetworkState(){
+        Network next=maintaining&&prefs.enabled()&&prefs.desktopTranslationEnabled()?wifi():null;
+        String fingerprint=next==null?"":familiar.fingerprint(next);
+        if(!java.util.Objects.equals(next,selectedNetwork)||!fingerprint.equals(selectedFingerprint))socket.disconnect();
+        selectedNetwork=next;selectedFingerprint=fingerprint;
+        if(next==null)connection="Local compute";
+        else if(!familiar.contains(prefs.bridgeUrl(),fingerprint))connection="Unfamiliar network · local compute";
+        else connection="Familiar network · paired desktop eligible";
+    }
+    private FastestComputeRouter(Context app){
+        this.app=app;prefs=new OverlayPreferences(app);local=new LocalPLaMoTranslationProvider(app);
+        familiar=new FamiliarComputeNetworks(app);
+    }
+    private ConnectivityManager manager(){return (ConnectivityManager)app.getSystemService(Context.CONNECTIVITY_SERVICE);}
+    private Network wifi(){
+        ConnectivityManager cm=manager();
+        if(cm==null)return null;
+        Network n=cm.getActiveNetwork();NetworkCapabilities caps=n==null?null:cm.getNetworkCapabilities(n);
+        return caps!=null&&caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)?n:null;
+    }
+    static boolean rememberCurrent(Context context){
+        FastestComputeRouter r=get(context);Network n=r.wifi();
+        if(n==null||!OverlayTranslationKeyStore.isConfigured(context))return false;
+        boolean remembered=r.familiar.remember(r.prefs.bridgeUrl(),r.familiar.fingerprint(n));
+        r.updateNetworkState();return remembered;
+    }
+    static void forgetNetworks(Context context){
+        FastestComputeRouter r=get(context);r.familiar.clear();r.updateNetworkState();
+    }
+    interface DesktopTestResult {void completed(String message,String error);}
+    static void testDesktop(Context context,DesktopTestResult result){
+        FastestComputeRouter r=get(context);
+        if(!r.prefs.enabled()||!r.prefs.desktopTranslationEnabled()){
+            result.completed(null,"Enable X processing and automatic paired compute first.");return;
+        }
+        final String base=r.prefs.bridgeUrl(),key=OverlayTranslationKeyStore.read(r.app);
+        final Network network=r.wifi();
+        if(!key.contains(":")){result.completed(null,"Run get-key.cmd and save the updated connection key first.");return;}
+        if(network==null){result.completed(null,"No active Wi-Fi. Check Wi-Fi or VPN routing.");return;}
+        try{r.routes.execute(()->{
+            if(!r.authorized(base,key)||!network.equals(r.wifi())){result.completed(null,"Network or desktop configuration changed.");return;}
+            r.socket.disconnect(); // manual retry clears connection cooldown
+            long start=SystemClock.elapsedRealtime();
+            InferenceHistory.Attempt attempt=InferenceHistory.get(r.app).begin("Desktop","PLaMo","Desktop-only test","Explicit sample; no local fallback");
+            try{
+                JSONObject input=new JSONObject().put("text","Bonjour à tous!").put("sourceLang","fr").put("targetLang","en").put("maxTokens",64);
+                JSONObject reply=r.socket.translate(network,base,key,new JSONObject().put("kind","translate").put("request",input),()->attempt.running("Sent"));
+                String translated=reply.optString("translation","").trim();
+                if(translated.isEmpty())throw new SecureComputeSocket.Failure("Desktop returned empty translation");
+                if(!r.authorized(base,key)||!network.equals(r.wifi()))throw new SecureComputeSocket.Failure("Configuration or network changed during test");
+                long elapsed=SystemClock.elapsedRealtime()-start;
+                String fp=r.familiar.fingerprint(network);
+                boolean remembered=r.familiar.remember(base,fp);
+                r.updateNetworkState();
+                r.observe("desktop:"+base+":"+fp,15,elapsed);
+                status="Paired desktop PLaMo · TLS";
+                r.connection="Authenticated TLS desktop response";
+                attempt.finish(true,"Authenticated desktop sample");
+                result.completed("Desktop confirmed at "+base+": "+translated+" · "+elapsed+" ms"+(remembered?" · network remembered":" · network fingerprint unavailable"),null);
+            }catch(Exception e){
+                String why=SecureComputeSocket.reason(e);
+                attempt.finish(false,why);r.connection=why;
+                result.completed(null,why);
+            }
+        });}catch(java.util.concurrent.RejectedExecutionException e){result.completed(null,"Compute routing queue busy.");}
+    }
+    private boolean authorized(String base,String key){
+        return prefs.enabled()&&prefs.desktopTranslationEnabled()&&base.equals(prefs.bridgeUrl())&&key.equals(OverlayTranslationKeyStore.read(app));
+    }
+    private String localProfile(){return "local:"+(prefs.localVulkanEnabled()?"vulkan:":"cpu:")+prefs.localThreads();}
+    private static String bucket(String route,int chars){return route+":"+(chars<=40?0:chars<=160?1:chars<=400?2:3);}
+    private synchronized void observe(String route,int chars,long ms){
+        if(timings.size()>128)timings.clear();
+        Estimate e=timings.computeIfAbsent(bucket(route,chars),k->new Estimate());
+        e.ms=e.count==0?ms:.75*e.ms+.25*ms;e.count++;e.at=SystemClock.elapsedRealtime();
+    }
+    @Override public void translate(String text,String source,String target,Result callback){
+        translateChecked(text,source,target,false,false,callback);
+    }
+    @Override public void translateChecked(String text,String source,String target,boolean name,boolean automatic,Result callback){
+        if(callback==null)return;
+        if(!prefs.enabled()){callback.completed(null,"Translation permission is off.");return;}
+        if(text==null||text.trim().isEmpty()||text.length()>1200||!TranslationLanguages.isModelLanguage(target)||text.contains("<|plamo:")){
+            callback.completed(null,"Invalid translation request.");return;
+        }
+        AtomicBoolean finished=new AtomicBoolean();
+        try{routes.execute(()->{
+            if(!prefs.enabled()){finish(callback,finished,null,"Translation permission is off.");return;}
+            String phone=localProfile();
+            Network network=prefs.desktopTranslationEnabled()?wifi():null;
+            String base=prefs.bridgeUrl(),key=network==null?"":OverlayTranslationKeyStore.read(app);
+            String fingerprint=network==null?"":familiar.fingerprint(network);
+            boolean remote=network!=null&&key.contains(":")&&familiar.contains(base,fingerprint);
+            String reason=!prefs.desktopTranslationEnabled()?"Desktop permission off":
+                network==null?"No active Wi-Fi":!key.contains(":")?"Desktop TLS connection key required":
+                !remote?"Network not remembered":"Paired desktop preferred";
+            String desktop="desktop:"+base+":"+fingerprint;
+            String language="";
+            try{language=localDetector.detect(text).accepted(name);}
+            catch(Exception|LinkageError unavailable){android.util.Log.d("RootsLanguage","On-device classifier unavailable");}
+            if(language.isEmpty()&&remote&&authorized(base,key)&&network.equals(wifi())&&!PostLanguage.clean(text).isBlank()){
+                long now=SystemClock.elapsedRealtime();
+                if(!desktop.equals(detectorRoute)){detectorRoute=desktop;detectorRetryAfter=0;}
+                if(now>=detectorRetryAfter){
+                    try{
+                        JSONObject detected=socket.detect(network,base,key,PostLanguage.clean(text));
+                        if(authorized(base,key)&&network.equals(wifi()))
+                            language=detected.optBoolean("reliable",false)&&detected.optDouble("confidence",0)>=.70
+                                ?PostLanguage.code(detected.optString("language")):"";
+                    }catch(Exception unavailable){
+                        detectorRetryAfter=SystemClock.elapsedRealtime()+15000;
+                    }
+                }
+            }
+            if(!prefs.enabled()){finish(callback,finished,null,"Translation permission is off.");return;}
+            if(language.isEmpty()&&automatic){
+                finish(callback,finished,null,TranslationProvider.LANGUAGE_UNCERTAIN);return;
+            }
+            callback.identifiedLanguage(language);
+            if(target.equalsIgnoreCase(language)){
+                if(finished.compareAndSet(false,true))callback.alreadyLocalized(text,target);
+                return;
+            }
+            // A manual request can still ask PLaMo to infer an uncertain language.
+            final String effectiveSource=TranslationLanguages.sourceCode(language);
+            // Scheduling decides which post is next, never where to run it.
+            // A paired desktop is primary for all text sizes and both visible
+            // and retained/off-screen work. Only an actual failed/busy request
+            // or unavailable/disabled desktop permits a phone fallback.
+            if(remote){
+                if(remoteTranslate(network,base,key,desktop,text,effectiveSource,target,callback,finished))return;
+                reason="Desktop fallback · "+connection;
+            }
+            if(!prefs.enabled()){finish(callback,finished,null,"Translation permission is off.");return;}
+            status="On-device PLaMo · "+reason;
+            long start=SystemClock.elapsedRealtime();
+            final String localReason=reason;
+            InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin(
+                phone.contains(":vulkan:")?"Phone · Vulkan":"Phone · CPU","PLaMo","Translation",localReason);
+            local.translate(text,effectiveSource,target,new Result(){
+                @Override public void started(){attempt.running("Running");if(!finished.get())callback.started();}
+                @Override public void partial(String prefix){if(!finished.get()&&prefs.enabled())callback.partial(prefix);}
+                @Override public void completed(String translated,String error){
+                    boolean ok=error==null&&translated!=null&&!translated.trim().isEmpty();
+                    attempt.finish(ok,ok?localReason:"Local model unavailable or inference failed · "+localReason);
+                    if(ok){
+                        observe(phone,text.length(),SystemClock.elapsedRealtime()-start);
+                        finish(callback,finished,translated,null);return;
+                    }
+                    finish(callback,finished,null,error==null?"No translation returned.":error);
+                }
+            });
+        });}catch(java.util.concurrent.RejectedExecutionException e){finish(callback,finished,null,"Compute routing queue is busy.");}
+    }
+    private boolean remoteTranslate(Network network,String base,String key,String route,String text,String source,String target,Result callback,AtomicBoolean finished){
+        if(!authorized(base,key)||!network.equals(wifi())||!familiar.contains(base,familiar.fingerprint(network)))return false;
+        long start=SystemClock.elapsedRealtime();
+        InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin("Desktop","PLaMo","Translation","Paired desktop route");
+        try{
+            JSONObject input=new JSONObject().put("text",text).put("targetLang",target).put("maxTokens",768);
+            String sourceCode=TranslationLanguages.sourceCode(source);
+            if(!sourceCode.isEmpty())input.put("sourceLang",sourceCode);
+            status="Paired desktop PLaMo · TLS";
+            JSONObject reply=socket.translate(network,base,key,new JSONObject().put("kind","translate").put("request",input),()->{
+                attempt.running("Sent");callback.started();
+            });
+            String translated=reply.optString("translation","").trim();
+            if(translated.isEmpty())throw new IllegalStateException("Empty translation");
+            attempt.finish(true,"Authenticated TLS desktop response");
+            if(!authorized(base,key)){finish(callback,finished,null,"Desktop compute permission changed.");return true;}
+            familiar.remember(base,familiar.fingerprint(network));
+            connection="Familiar network · desktop responding";
+            observe(route,text.length(),SystemClock.elapsedRealtime()-start);
+            finish(callback,finished,translated,null);return true;
+        }catch(Exception e){
+            String why=SecureComputeSocket.reason(e);
+            attempt.finish(false,why+" · local fallback");
+            connection=why;
+            status="Desktop route unavailable · falling back to phone";return false;
+        }
+    }
+    private static void finish(Result callback,AtomicBoolean finished,String value,String error){
+        if(finished.compareAndSet(false,true))callback.completed(value,error);
+    }
+}

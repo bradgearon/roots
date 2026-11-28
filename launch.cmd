@@ -1,7 +1,30 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "ROOTS_LAN=--lan"
+for %%A in (%*) do if "%%~A"=="--local-only" set "ROOTS_LAN="
+if defined ROOTS_LAN (
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Ensure-LanFirewall.ps1
+    if errorlevel 1 echo Roots LAN firewall setup was not completed. Continuing launch.
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Ensure-LanFirewall.ps1 -Port 8233
+    if errorlevel 1 echo Roots Mesh firewall setup was not completed. Continuing launch.
+)
+rem Optional Windows WinRT BLE route reader. Local IP discovery works without it.
+if defined ROOTS_LAN (
+    if not "%ROOTS_PUBLIC_AXONS_DISABLED%"=="1" (
+        dotnet build src\Wds.Roots.BleDiscovery -c Release
+        if errorlevel 1 echo BLE route reader build unavailable. Continuing with local IP discovery.
+    )
+)
+call build-desktop-tree.cmd
+if errorlevel 1 (
+    set "ROOTS_TREE_DISABLED=1"
+    echo Roots Tree build failed. Continuing translation-only host.
+)
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Install-LanguageDetectorModel.ps1
 if errorlevel 1 exit /b %ERRORLEVEL%
-dotnet run --project src\Wds.Roots.Host -c Release -- %*
+dotnet build src\Wds.Roots.Host -c Release
+if errorlevel 1 exit /b %ERRORLEVEL%
+rem Run the actual host directly; do not leave dotnet run supervising it.
+dotnet "%CD%\src\Wds.Roots.Host\bin\Release\net9.0\Wds.Roots.Host.dll" %ROOTS_LAN% %*
 exit /b %ERRORLEVEL%
