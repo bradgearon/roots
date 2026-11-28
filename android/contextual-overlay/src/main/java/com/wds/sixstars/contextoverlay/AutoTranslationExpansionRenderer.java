@@ -31,6 +31,7 @@ final class AutoTranslationExpansionRenderer {
     private final OverlayPreferences preferences;
     private View window;
     private String sourceFingerprint;
+    private String shownText="";
     private String lastError = "";
 
     AutoTranslationExpansionRenderer(AccessibilityService service) {
@@ -52,6 +53,12 @@ final class AutoTranslationExpansionRenderer {
 
     void toggleName(String fingerprint, String displayName) {
         toggle("name:" + fingerprint, displayName, "Full account name");
+    }
+
+    void updateName(String fingerprint,String displayName){
+        String key="name:"+fingerprint;
+        if(isShowing(key)&&displayName!=null&&!displayName.equals(shownText))
+            show(key,displayName,"Full account name");
     }
 
     /** Legacy entry points remain for callers using the old single action. */
@@ -162,6 +169,7 @@ final class AutoTranslationExpansionRenderer {
             windowManager.addView(root, params);
             window = root;
             sourceFingerprint = fingerprint;
+            shownText=translation;
             lastError = "";
         } catch (RuntimeException error) {
             lastError = error.getClass().getSimpleName();
@@ -180,6 +188,7 @@ final class AutoTranslationExpansionRenderer {
         View previous = window;
         window = null;
         sourceFingerprint = null;
+        shownText="";
         if (previous != null) {
             try { windowManager.removeViewImmediate(previous); }
             catch (RuntimeException ignored) { }
