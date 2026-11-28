@@ -18,5 +18,6 @@ public class EncounterArbitrationTest {
         assertEquals(30000,EncounterArbitration.cooldownMs(5));
         assertEquals(120000,EncounterArbitration.cooldownMs(0));
         assertEquals(600000,EncounterArbitration.cooldownMs(-2));
+        assertTrue(EncounterArbitration.cooldownMs(EncounterArbitration.MORE_PENDING)<5000);
     }
 }

@@ -326,7 +326,7 @@ public final class EncounterService extends Service {
             android.os.PowerManager.WakeLock transferWake=null;
             try{
                 android.os.PowerManager power=getSystemService(android.os.PowerManager.class);
-                if(power!=null){transferWake=power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK,"Roots:AxonTransfer");transferWake.acquire(125000L);}
+                if(power!=null)try{transferWake=power.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK,"Roots:AxonTransfer");transferWake.acquire(125000L);}catch(SecurityException unavailable){transferWake=null;}
                 // Bound time and explicit cancellation, not a tiny fixed item count.
                 deadline=timer.schedule(()->{closeResource(connection);closeResource(bulkSocket);},120,TimeUnit.SECONDS);
                 status="Authenticating nearby Axon";
@@ -340,7 +340,7 @@ public final class EncounterService extends Service {
                 sync=new EncounterSync(EncounterService.this,channel,this::active,key,
                     message->{if(radio==this){status=message;AxonReceiveCoordinator.progress(authenticatedPeer,message);}},socket->{bulkSocket=socket;if(!active()||EncounterBindings.get(EncounterService.this).blocked(authenticatedPeer))closeResource(socket);});
                 sync.exchange(client);result=(sync.firstEncounter()?"New binding":"Binding refreshed")+" · "+sync.transport()+" · "+sync.summary();return sync.pending()?EncounterArbitration.MORE_PENDING:Math.max(sync.sent()+sync.received(),0);
-            }catch(Exception|LinkageError failure){result="Interrupted · "+(sync==null?"authentication or catalog setup":sync.stage())+" ("+failure.getClass().getSimpleName()+")";return sync!=null&&sync.received()>0?EncounterArbitration.MORE_PENDING:-1;}
+            }catch(Exception|LinkageError failure){result="Interrupted · "+(sync==null?"authentication or catalog setup":sync.stage())+" ("+failure.getClass().getSimpleName()+")";return sync!=null&&(sync.received()>0||sync.sent()>0)?EncounterArbitration.MORE_PENDING:-1;}
             finally{
                 if(deadline!=null)deadline.cancel(false);
                 if(sync!=null)sync.close();closeResource(bulkSocket);bulkSocket=null;

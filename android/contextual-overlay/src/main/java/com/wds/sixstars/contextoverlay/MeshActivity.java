@@ -541,21 +541,23 @@ public final class MeshActivity extends Activity {
                 }catch(Exception|LinkageError e){lanMessage="Private LAN receive failed: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
                 lanReport=mesh.lastConnectionReport();
             }
-            String publicMessage="";
-            if(publicJob!=null){
-                try{publicMessage=publicJob.finished.get().summary();}
-                catch(InterruptedException e){Thread.currentThread().interrupt();publicMessage="Receive view interrupted; automatic synchronization continues.";}
-                catch(Exception e){publicMessage="Public Axon receive unavailable.";}
-            }
-            final String result=publicMessage+(publicMessage.isEmpty()||lanMessage.isEmpty()?"":"\n")+lanMessage;
+            final String privateResult=lanMessage;
             final MeshConnectionDiagnostics.Report report=lanReport;
-            runOnUiThread(()->{
-                if(isDestroyed())return;
-                busy=false;refresh();status.setText(result);
-                if(revision==diagnosticRevision&&report!=null){
-                    if(subscription!=null)lastBoundHealth=updateBoundHealth(report);
-                    showConnectionReport(report);
-                }else if(revision==diagnosticRevision)analysisOutput.setText("Receive result shown below · public Axon progress is independent of private LAN diagnostics.");
+            // Do not occupy the shared UI worker while a radio session is
+            // waiting for another encounter. Completion is event-driven.
+            java.util.concurrent.CompletableFuture<AxonReceiveCoordinator.Result> completion=
+                publicJob==null?java.util.concurrent.CompletableFuture.completedFuture(null):publicJob.finished;
+            completion.whenComplete((publicResult,error)->{
+                String publicMessage=error!=null?"Public Axon receive unavailable.":publicResult==null?"":publicResult.summary();
+                String result=publicMessage+(publicMessage.isEmpty()||privateResult.isEmpty()?"":"\n")+privateResult;
+                runOnUiThread(()->{
+                    if(isDestroyed())return;
+                    busy=false;refresh();status.setText(result);
+                    if(revision==diagnosticRevision&&report!=null){
+                        if(subscription!=null)lastBoundHealth=updateBoundHealth(report);
+                        showConnectionReport(report);
+                    }else if(revision==diagnosticRevision)analysisOutput.setText("Receive result shown below · public Axon progress is independent of private LAN diagnostics.");
+                });
             });
         });
     }

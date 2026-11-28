@@ -33,7 +33,7 @@ final class AxonRegistry {
         return new Snapshot(Collections.unmodifiableList(entries),unavailable);
     }
     static String display(Entry entry){
-        return entry.label()+" · "+entry.transport()+" · "+(entry.blocked()?"blocked":entry.connected()?"connected":entry.transport().equals("Bluetooth")?"bound":"saved")+
+        return entry.label()+" · "+(entry.transport().equals("Bluetooth")?"Nearby":entry.transport())+" · "+(entry.blocked()?"blocked":entry.connected()?"connected":entry.transport().equals("Bluetooth")?"bound":"saved")+
             " · "+(entry.topics().equals("*")?"all knowledge":entry.topics())+(entry.transport().equals("Bluetooth")?" · "+entry.received()+" received":"");
     }
 }

@@ -88,7 +88,7 @@ final class EncounterLanUpgrade {
             boolean commit=read(control,"route_commit").getBoolean("ready");
             if(commit&&channel==null)throw new IOException("Invalid route commitment");
             if(!commit)return null;
-            socket.setSoTimeout(15000);accepted=true;return new Upgrade(socket,channel);
+            socket.setSoTimeout(45000);accepted=true;return new Upgrade(socket,channel);
         }finally{if(!accepted)close(socket);}
     }
     private static Upgrade server(Route route,EncounterChannel control,KeyPair key,BooleanSupplier active)throws Exception{
@@ -116,7 +116,7 @@ final class EncounterLanUpgrade {
             boolean ready=read(control,"route_ready").getBoolean("ready")&&channel!=null&&active.getAsBoolean();
             send(control,new JSONObject().put("op","route_commit").put("ready",ready));
             if(!ready)return null;
-            socket.setSoTimeout(15000);accepted=true;return new Upgrade(socket,channel);
+            socket.setSoTimeout(45000);accepted=true;return new Upgrade(socket,channel);
         }finally{close(listener);if(!accepted)close(socket);}
     }
 }
