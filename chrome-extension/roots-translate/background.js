@@ -255,6 +255,27 @@ function cleanTreePost(raw) {
 }
 async function treeCommand(request){
   switch(request.operation){
+    case "viewStatus":case "viewRecords":case "viewFeed":case "viewWeights":
+    case "viewBranches":case "viewAddBranch":case "viewRemoveBranch":{
+      const source=request.source;
+      if(source!=="experience"&&source!=="knowledge")return {ok:false,error:"invalid_source"};
+      const path="/view/"+source;
+      const positive=v=>Number.isSafeInteger(v)&&v>0?v:0;
+      switch(request.operation){
+        case "viewStatus":return treeCall(path+"/status");
+        case "viewRecords":case "viewFeed":{
+          const params=new URLSearchParams({term:String(request.term||"").slice(0,512),
+            beforeMs:String(positive(request.beforeMs)),beforeSequence:String(positive(request.beforeSequence)),
+            agent:String(positive(request.agent)),limit:"30"});
+          return treeCall(path+(request.operation==="viewRecords"?"/records":"/feed")+"?"+params);
+        }
+        case "viewWeights":return positive(request.sequence)?treeCall(path+"/weights/"+request.sequence):{ok:false,error:"invalid_sequence"};
+        case "viewBranches":return treeCall(path+"/branches");
+        case "viewAddBranch":return treeCall(path+"/branches","POST",{name:String(request.name||"").slice(0,160),term:String(request.term||"").slice(0,512)});
+        case "viewRemoveBranch":return positive(request.id)?treeCall(path+"/branches/"+request.id,"DELETE"):{ok:false,error:"invalid_branch"};
+      }
+      break;
+    }
     case "status":return treeCall("/status");
     case "capture":return treeCall("/capture","POST",{enabled:request.enabled===true});
     case "listen":return treeCall("/mesh/listen","POST",{enabled:request.enabled===true});
