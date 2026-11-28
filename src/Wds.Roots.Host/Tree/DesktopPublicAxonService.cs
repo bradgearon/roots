@@ -75,9 +75,10 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
             try
             {
                 if(new FileInfo(path).Length>256*1024)continue;
-                var receipt=JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path))??throw new InvalidDataException();
+                var receipt=JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path),ReceiptOptions)??throw new InvalidDataException();
+                if(!ValidReceipt(receipt))continue;
                 var item=DesktopPublicItem.Parse(receipt.Item);
-                if(Path.GetFileNameWithoutExtension(path)!=item.Id||!MeshGraphItem.IsHash(receipt.Peer))continue;
+                if(Path.GetFileNameWithoutExtension(path)!=item.Id)continue;
                 _receipts[item.Id]=receipt;
             }catch(Exception){/* malformed receipt does not prevent other peers */}
         }
