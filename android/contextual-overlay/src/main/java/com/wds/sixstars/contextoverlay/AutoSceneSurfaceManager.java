@@ -69,6 +69,17 @@ final class AutoSceneSurfaceManager {
         return true;
     }
 
+    /** Geometry changed: immediately hide pixels that belong to the old
+     * snapshot, even while the replacement frame is being rendered. */
+    void invalidateGeometry() {
+        lastPaint=Collections.emptyList();
+        if(attached!=null)attached.present(lastPaint);
+        if(fallback!=null){
+            fallback.setVisibility(android.view.View.INVISIBLE);
+            fallback.setTextItems(lastPaint);
+        }
+    }
+
     void present(List<AutoOverlaySceneView.TextItem> items) {
         if(target==null){releaseAttached();removeFallback();lastPaint=Collections.emptyList();return;}
         lastPaint = Collections.unmodifiableList(new ArrayList<>(items));
@@ -106,7 +117,10 @@ final class AutoSceneSurfaceManager {
             }
         }
         if (items.isEmpty()) {
-            if (fallback != null) fallback.setTextItems(items);
+            if (fallback != null) {
+                fallback.setVisibility(android.view.View.INVISIBLE);
+                fallback.setTextItems(items);
+            }
             return;
         }
         if (fallback == null) {
@@ -132,6 +146,7 @@ final class AutoSceneSurfaceManager {
             }
         }
         fallback.setTextItems(items);
+        fallback.setVisibility(android.view.View.VISIBLE);
     }
 
     private void onAttachedFailure(int originalWindowId, long generation) {
