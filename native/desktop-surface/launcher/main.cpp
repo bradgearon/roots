@@ -83,7 +83,7 @@ static Target target(const std::set<std::wstring>& excluded) {
         L"credentialuibroker.exe",L"logonui.exe",L"keepass.exe",L"keepassxc.exe",L"1password.exe",L"bitwarden.exe",
         L"outlook.exe",L"olk.exe",L"thunderbird.exe",L"ms-teams.exe",L"teams.exe",L"slack.exe",L"discord.exe",
         L"signal.exe",L"telegram.exe",L"whatsapp.exe",L"skype.exe",L"mstsc.exe",L"msrdc.exe"};
-    if(name.empty()||excluded.contains(name)||denied.contains(name))return {};
+    if(name.size()<=4||name.size()>128||!name.ends_with(L".exe")||excluded.contains(name)||denied.contains(name))return {};
     DWORD affinity=0;
     // This query can fail on ordinary non-layered windows; WGC still honors OS capture protection.
     if(GetWindowDisplayAffinity(hwnd,&affinity)&&affinity!=WDA_NONE)return {};
@@ -227,7 +227,8 @@ int wmain(int argc,wchar_t** argv) {
         }
         if(current.hwnd && now-spanStart>=std::chrono::seconds(5))close(now,wall);
         previous=now;lastUtc=wall;
-        if(!current.hwnd || isIdle)continue;
+        // Idle is an activity label, not a reason to stop observing an unlocked screen.
+        if(!current.hwnd)continue;
         std::vector<SurfaceText> rows;bool sensitive=false;
         bool valid=uia(automation.Get(),current.hwnd,rows,sensitive);const char* kind="uia";
 #ifdef ROOTS_SURFACE_OCR
