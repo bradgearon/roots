@@ -1,4 +1,7 @@
 using System.Net.Sockets;
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -217,10 +220,26 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
         using(var setup=CancellationTokenSource.CreateLinkedTokenSource(ct)){setup.CancelAfter(5000);await client.ConnectAsync(route.Address,DesktopAxonDiscovery.Port,setup.Token);}
         client.NoDelay=true;
         using var key=Key();
-        using var channel=await DesktopRepChannel.OpenAsync(client.GetStream(),key,true,route.Id,ct);
+        // A discovered Axon ID, not a DNS hostname, authenticates this peer.
+        // The certificate is provisional until the signed TLS transcript
+        // proves the expected persistent Axon key against the exact certificate.
+        using var tls=new SslStream(client.GetStream(),false,(_,certificate,_,_)=>{
+            if(certificate==null)return false;
+            using var cert=X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
+            using var ec=cert.GetECDsaPublicKey();
+            return ec!=null&&cert.NotBefore.ToUniversalTime()<=DateTime.UtcNow&&cert.NotAfter.ToUniversalTime()>DateTime.UtcNow;
+        });
+        using(var setup=CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            setup.CancelAfter(8000);
+            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions{
+                TargetHost=route.Address.ToString(),EnabledSslProtocols=SslProtocols.Tls12|SslProtocols.Tls13,
+                CertificateRevocationCheckMode=X509RevocationMode.NoCheck},setup.Token);
+        }
+        using var channel=await DesktopRepChannel.OpenOverTlsAsync(tls,key,true,route.Id,ct);
         string peer=channel.PeerId;Require(peer,ct);
         bool firstBinding=!Contains(peer);
-        var bind=Message("bind");bind["root_graph"]=true;bind["bulk_receive_v1"]=true;bind["knowledge_archives_v1"]=true;bind["public_plaintext_v1"]=true;bind["lan_upgrade_v1"]=false;
+        var bind=Message("bind");bind["root_graph"]=true;bind["bulk_receive_v1"]=true;bind["knowledge_archives_v1"]=true;bind["archive_channel_v2"]=true;bind["lan_tls_v1"]=false;
         await channel.SendAsync(bind,ct);var response=await channel.ReadAsync(ct);Expect(response,"bound");
         if(!B(response,"root_graph")||!B(response,"bulk_receive_v1"))throw new IOException("Phone needs current public Axon protocol.");
         lock(_gate)
@@ -230,11 +249,8 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
             Save(existing with{Host=route.Address.ToString(),Via=route.Via,Status="Receiving",LastSeen=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()});
         }
         if(firstBinding)Console.WriteLine("ROOTS PUBLIC AXON: bound "+peer[..12]+" via "+route.Via+" · "+route.Address);
-        if(B(response,"knowledge_archives_v1")&&B(response,"public_plaintext_v1"))
-        {
-            channel.EnablePublicPlaintext();
+        if(B(response,"knowledge_archives_v1")&&B(response,"archive_channel_v2"))
             return await ExchangeArchivesAsync(channel,peer,ct);
-        }
         // Freeze the offer inventory before pulling, matching Android's session snapshot.
         var catalog=new SortedDictionary<string,Receipt>(_receipts,StringComparer.Ordinal);
         string root=InventoryRoot(catalog.Keys);

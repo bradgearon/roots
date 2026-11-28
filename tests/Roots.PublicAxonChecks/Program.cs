@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -14,29 +17,37 @@ using var b=ECDsa.Create(ECCurve.NamedCurves.nistP256);
 string aid=DesktopRepChannel.Fingerprint(a),bid=DesktopRepChannel.Fingerprint(b);
 Check(aid!=bid,"Separate identities");
 byte[] publicArchive=new byte[2*1024*1024];new Random(42).NextBytes(publicArchive);
+using var tlsKey=ECDsa.Create(ECCurve.NamedCurves.nistP256);
+var certificateRequest=new CertificateRequest("CN=Roots Axon test",tlsKey,HashAlgorithmName.SHA256);
+using var cert=certificateRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),DateTimeOffset.UtcNow.AddDays(1));
 var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();
 try
 {
     int port=((IPEndPoint)listener.LocalEndpoint).Port;
     var server=Task.Run(async ()=>{
         using var socket=await listener.AcceptTcpClientAsync(ct);
-        using var channel=await DesktopRepChannel.OpenAsync(socket.GetStream(),b,false,aid,ct);
+        using var tls=new SslStream(socket.GetStream(),false);
+        await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{
+            ServerCertificate=cert,EnabledSslProtocols=SslProtocols.Tls12|SslProtocols.Tls13},ct);
+        using var channel=await DesktopRepChannel.OpenOverTlsAsync(tls,b,false,aid,ct);
         Check(channel.PeerId==aid,"Authenticated client");
         var request=await channel.ReadAsync(ct);
         Check(request["op"]?.GetValue<string>()=="bind","Encrypted request");
         await channel.SendAsync(new JsonObject{["op"]="bound",["root_graph"]=true},ct);
-        channel.EnablePublicPlaintext();
-        Check((await channel.ReadPublicBytesAsync(publicArchive.Length,DesktopKnowledgeArchive.MaxWire,ct)).SequenceEqual(publicArchive),"Large plaintext archive");
+        Check((await channel.ReadPublicBytesAsync(publicArchive.Length,DesktopKnowledgeArchive.MaxWire,ct)).SequenceEqual(publicArchive),"Large archive through TLS without additional payload encryption");
         await channel.SendAsync(new JsonObject{["op"]="archive_ack"},ct);
     },ct);
     using var client=new TcpClient();await client.ConnectAsync(IPAddress.Loopback,port,ct);
-    using var channel=await DesktopRepChannel.OpenAsync(client.GetStream(),a,true,bid,ct);
+    using var tls=new SslStream(client.GetStream(),false,(_,presented,_,_)=>presented!=null&&presented.GetRawCertData().SequenceEqual(cert.RawData));
+    await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions{
+        TargetHost="Roots Axon test",EnabledSslProtocols=SslProtocols.Tls12|SslProtocols.Tls13,
+        CertificateRevocationCheckMode=X509RevocationMode.NoCheck},ct);
+    using var channel=await DesktopRepChannel.OpenOverTlsAsync(tls,a,true,bid,ct);
     Check(channel.PeerId==bid,"Authenticated server");
     await channel.SendAsync(new JsonObject{["op"]="bind"},ct);
     Check((await channel.ReadAsync(ct))["op"]?.GetValue<string>()=="bound","Encrypted reply");
-    channel.EnablePublicPlaintext();
     await channel.SendPublicBytesAsync(publicArchive,DesktopKnowledgeArchive.MaxWire,ct);
-    Check((await channel.ReadAsync(ct))["op"]?.GetValue<string>()=="archive_ack","Plaintext archive receipt");
+    Check((await channel.ReadAsync(ct))["op"]?.GetValue<string>()=="archive_ack","TLS archive receipt");
     await server;
 }
 finally{listener.Stop();}
