@@ -149,6 +149,12 @@ internal sealed class DesktopTreeService : IDisposable
     }
     public ulong ImportExternal(DesktopPublicItem item,string peer,long receivedAt)
     { lock(_gate) return _tree.Observe(item.Rows(peer,receivedAt)); }
+    public ulong ImportExternalBatch(IReadOnlyList<Observation> rows)
+    {
+        ulong added=0;
+        lock(_gate)foreach(var batch in rows.Chunk(256))added+=_tree.Observe(batch);
+        return added;
+    }
     public object CompileLocalized(string language)
     {
         language=Lang(language);

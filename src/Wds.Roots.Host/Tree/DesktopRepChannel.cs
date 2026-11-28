@@ -103,23 +103,26 @@ internal sealed class DesktopRepChannel : IDisposable
         if(seq<0||seq==long.MaxValue)throw new CryptographicException("REP sequence exhausted.");
         byte[] nonce=new byte[12];BinaryPrimitives.WriteInt64BigEndian(nonce.AsSpan(4),seq);return nonce;
     }
-    public async Task SendAsync(JsonObject value,CancellationToken ct)
+    public Task SendAsync(JsonObject value,CancellationToken ct)=>
+        SendFrameAsync(JsonSerializer.SerializeToUtf8Bytes(value,DesktopPublicItem.WireOptions),ct);
+    public async Task SendFrameAsync(byte[] data,CancellationToken ct)
     {
-        byte[] data=JsonSerializer.SerializeToUtf8Bytes(value,DesktopPublicItem.WireOptions);
         if(data.Length<1||data.Length>MaxFrame)throw new InvalidDataException("REP payload too large.");
         byte[] nonce=Nonce(_sent),encrypted=new byte[data.Length+16];
         using var aes=new AesGcm(_send,16);
         aes.Encrypt(nonce,data,encrypted.AsSpan(0,data.Length),encrypted.AsSpan(data.Length,16),[..Label,..nonce]);
         await BlobAsync(_stream,encrypted,ct);_sent++;
     }
-    public async Task<JsonObject> ReadAsync(CancellationToken ct)
+    public async Task<JsonObject> ReadAsync(CancellationToken ct)=>
+        JsonNode.Parse(await ReadFrameAsync(ct),documentOptions:new JsonDocumentOptions{MaxDepth=24}) as JsonObject??throw new InvalidDataException("Invalid REP message.");
+    public async Task<byte[]> ReadFrameAsync(CancellationToken ct)
     {
         byte[] encrypted=await ReadBlobAsync(_stream,MaxFrame+16,ct);
         if(encrypted.Length<17)throw new InvalidDataException("Invalid encrypted REP frame.");
         byte[] nonce=Nonce(_received),data=new byte[encrypted.Length-16];
         using var aes=new AesGcm(_receive,16);
         aes.Decrypt(nonce,encrypted.AsSpan(0,data.Length),encrypted.AsSpan(data.Length),data,[..Label,..nonce]);_received++;
-        return JsonNode.Parse(data,documentOptions:new JsonDocumentOptions{MaxDepth=24}) as JsonObject??throw new InvalidDataException("Invalid REP message.");
+        return data;
     }
     public void Dispose(){CryptographicOperations.ZeroMemory(_send);CryptographicOperations.ZeroMemory(_receive);}
 }

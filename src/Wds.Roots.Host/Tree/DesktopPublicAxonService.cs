@@ -13,7 +13,7 @@ internal sealed record DesktopAxonPeerView(string Host,string Pin,string Transpo
 
 /// <summary>Receive-first public Axon service. Public receipts may be forwarded;
 /// private local Tree content and private invitations are never offered here.</summary>
-internal sealed class DesktopPublicAxonService : IAsyncDisposable
+internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
 {
     const int Page=32,MaxItems=4096,MaxIds=65536,MaxReceipts=100000;
     sealed record Peer(string Id,string Root,string After,long Received,bool Blocked,string Host,string Via,string Status,long LastSeen);
@@ -78,6 +78,7 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
                 _receipts[item.Id]=receipt;
             }catch(Exception){/* malformed receipt does not prevent other peers */}
         }
+        LoadArchiveReceipts();
         Console.WriteLine("ROOTS PUBLIC AXONS: "+_id[..12]+" · automatic BLE and local IP discovery; receive public knowledge into Tree.");
         _worker=Task.Run(()=>RunAsync(_lifetime.Token));
     }
@@ -146,10 +147,10 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
     async Task RunAsync(CancellationToken ct)
     {
         // Recover prior interrupted writes, never replay already promoted receipts.
-        foreach(var receipt in _receipts.Values.Where(r=>!r.Promoted).ToArray())
+        foreach(var batch in _receipts.Values.Where(r=>!r.Promoted).ToArray().Chunk(4096))
         {
             if(ct.IsCancellationRequested)return;
-            try{Retain(DesktopPublicItem.Parse(receipt.Item),receipt.Peer);}catch(Exception){}
+            try{RetainArchive(batch.Select(r=>DesktopPublicItem.Parse(r.Item)).ToArray(),_id);}catch(Exception){}
         }
         bool pending=false;long lastBle=0;
         while(!ct.IsCancellationRequested)
@@ -219,7 +220,7 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
         using var channel=await DesktopRepChannel.OpenAsync(client.GetStream(),key,true,route.Id,ct);
         string peer=channel.PeerId;Require(peer,ct);
         bool firstBinding=!Contains(peer);
-        var bind=Message("bind");bind["root_graph"]=true;bind["bulk_receive_v1"]=true;bind["lan_upgrade_v1"]=false;
+        var bind=Message("bind");bind["root_graph"]=true;bind["bulk_receive_v1"]=true;bind["knowledge_archives_v1"]=true;bind["lan_upgrade_v1"]=false;
         await channel.SendAsync(bind,ct);var response=await channel.ReadAsync(ct);Expect(response,"bound");
         if(!B(response,"root_graph")||!B(response,"bulk_receive_v1"))throw new IOException("Phone needs current public Axon protocol.");
         lock(_gate)
@@ -229,6 +230,7 @@ internal sealed class DesktopPublicAxonService : IAsyncDisposable
             Save(existing with{Host=route.Address.ToString(),Via=route.Via,Status="Receiving",LastSeen=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()});
         }
         if(firstBinding)Console.WriteLine("ROOTS PUBLIC AXON: bound "+peer[..12]+" via "+route.Via+" · "+route.Address);
+        if(B(response,"knowledge_archives_v1"))return await ExchangeArchivesAsync(channel,peer,ct);
         // Freeze the offer inventory before pulling, matching Android's session snapshot.
         var catalog=new SortedDictionary<string,Receipt>(_receipts,StringComparer.Ordinal);
         string root=InventoryRoot(catalog.Keys);
