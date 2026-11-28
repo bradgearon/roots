@@ -15,13 +15,15 @@ final class XPostIdEvidence {
     private static final Pattern DECIMAL=Pattern.compile("(?<![0-9])[1-9][0-9]{14,18}(?![0-9])");
     record Hit(String id,String kind,String field,String location){}
     private final LinkedHashMap<String,Hit> hits=new LinkedHashMap<>();
+    private final LinkedHashMap<String,Hit> guesses=new LinkedHashMap<>();
     private final long now;
     private static final int MAX_HITS=64;
     XPostIdEvidence(long now){this.now=now;}
-    List<Hit> hits(){return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(hits.values()));}
+    List<Hit> hits(){java.util.ArrayList<Hit> all=new java.util.ArrayList<>(hits.values());all.addAll(guesses.values());return java.util.Collections.unmodifiableList(all);}
     private void add(String id,String kind,String field,String location){
         String key=kind+"|"+id+"|"+field+"|"+location;
-        if(hits.size()<MAX_HITS)hits.putIfAbsent(key,new Hit(id,kind,field,location));
+        LinkedHashMap<String,Hit> lane=kind.startsWith("raw")?guesses:hits;
+        if(lane.size()<(lane==guesses?24:MAX_HITS))lane.putIfAbsent(key,new Hit(id,kind,field,location));
     }
     static boolean plausibleSnowflake(long id,long now,long oldest){
         if(id<=0)return false;
