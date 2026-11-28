@@ -9,7 +9,7 @@ final class AutoSceneAttachmentPolicy {
     }
 
     static boolean canAttach(int sdk, AutoWindowTarget target) {
-        return target != null && supports(sdk, target.windowId,
+        return target != null && target.hasVerifiedOrigin() && supports(sdk, target.windowId,
                 target.screenBounds.width(), target.screenBounds.height());
     }
 }
