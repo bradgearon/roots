@@ -256,6 +256,46 @@ roots_tree_result roots_tree_records(roots_tree *t,const char *term,int64_t agen
         }
     });
 }
+roots_tree_result roots_tree_records_time(roots_tree *t,const char *term,int64_t agent_id,
+        int64_t before_ms,int64_t before_seq,uint32_t limit,roots_record_member_callback cb,void *user){
+    return guard([&]{
+        require(t&&cb&&agent_id>=0&&before_ms>=0&&before_seq>=0&&limit>0&&limit<=100);
+        require(before_seq!=0||before_ms==0);bounded(term,512);
+        std::vector<std::pair<int64_t,row>> rows;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,
+                "WITH members AS (SELECT * FROM fragments WHERE source GLOB 'record.*' AND external_id GLOB 'local:*'), "
+                "masters AS (SELECT external_id,min(seq) AS master_seq,min(observed_ms) AS observed FROM members GROUP BY external_id "
+                "HAVING (?=0 OR min(observed_ms)<? OR (min(observed_ms)=? AND min(seq)<?)) "
+                "AND max(CASE WHEN instr(lower(body),lower(?))>0 "
+                "AND (?=0 OR EXISTS(SELECT 1 FROM branch_members b WHERE b.fragment_seq=members.seq AND b.agent_id=?)) "
+                "THEN 1 ELSE 0 END)=1 ORDER BY observed DESC,master_seq DESC LIMIT ?) "
+                "SELECT f.seq,f.source,f.external_id,f.body,f.language,f.observed_ms,m.master_seq "
+                "FROM masters m JOIN members f ON f.external_id=m.external_id ORDER BY m.observed DESC,m.master_seq DESC,f.seq");
+            s.number(1,before_seq);s.number(2,before_ms);s.number(3,before_ms);s.number(4,before_seq);
+            s.text(5,term);s.number(6,agent_id);s.number(7,agent_id);s.number(8,limit);
+            while(s.next())rows.emplace_back(s.integer(6),read_row(s));
+        }
+        for(const auto &entry:rows){const auto &r=entry.second;
+            roots_fragment f{r.id,r.source.c_str(),r.external.c_str(),r.body.c_str(),r.lang.c_str(),r.at};
+            if(cb(user,entry.first,&f))break;
+        }
+    });
+}
+roots_tree_result roots_tree_fragment_weights(roots_tree *t,int64_t sequence,float *weights,size_t count){
+    return guard([&]{
+        require(t&&sequence>0&&weights&&count==dim);
+        std::string body;
+        {
+            std::lock_guard<std::mutex> lock(t->mutex);
+            statement s(t->db,"SELECT body FROM fragments WHERE seq=?");
+            s.number(1,sequence);require(s.next());body=s.str(0);
+        }
+        const auto values=lexical_vector(body);
+        std::copy(values.begin(),values.end(),weights);
+    });
+}
 roots_tree_result roots_tree_count(roots_tree *t,int64_t *out){return guard([&]{require(t&&out);std::lock_guard<std::mutex> lock(t->mutex);*out=scalar(t->db,"SELECT count(*) FROM fragments");});}
 roots_tree_result roots_tree_revision(roots_tree *t,int64_t *out){return guard([&]{require(t&&out);std::lock_guard<std::mutex> lock(t->mutex);*out=revision_of(t->db);});}
 roots_tree_result roots_tree_agent_create(roots_tree *t,const char *name,const char *term,int64_t *id){
