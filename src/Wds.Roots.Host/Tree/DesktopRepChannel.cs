@@ -10,11 +10,52 @@ namespace Wds.Roots.Host;
 /// identity is independent of the private Mesh certificate and GPU grants.</summary>
 internal sealed class DesktopRepChannel : IDisposable
 {
-    const int Magic=0x52455031, MaxFrame=65536;
+    const int Magic=0x52455031, MaxFrame=65536, PublicControlMax=1024*1024;
+    static readonly byte[] PublicLabel=Encoding.ASCII.GetBytes("Roots public plaintext v1");
+    static readonly byte[] PublicKeyLabel=Encoding.ASCII.GetBytes("Roots REP public integrity key v1");
     static readonly byte[] Label=Encoding.ASCII.GetBytes("Roots REP/1 handshake");
     readonly Stream _stream;
     readonly byte[] _send,_receive;
     long _sent,_received;
+    byte[]? _publicSend,_publicReceive;
+    public bool PublicPlaintext=>_publicSend!=null;
+    public void EnablePublicPlaintext()
+    {
+        if(PublicPlaintext)return;
+        _publicSend=HMACSHA256.HashData(_send,PublicKeyLabel);
+        _publicReceive=HMACSHA256.HashData(_receive,PublicKeyLabel);
+    }
+    static byte[] PublicTag(byte[] key,long sequence,byte[] bytes)
+    {
+        if(sequence<0||sequence==long.MaxValue)throw new CryptographicException("REP sequence exhausted.");
+        using var mac=IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256,key);
+        byte[] prefix=new byte[12];BinaryPrimitives.WriteInt64BigEndian(prefix,sequence);
+        BinaryPrimitives.WriteInt32BigEndian(prefix.AsSpan(8),bytes.Length);
+        mac.AppendData(PublicLabel);mac.AppendData(prefix);mac.AppendData(bytes);
+        return mac.GetHashAndReset();
+    }
+    async Task SendPlainAsync(byte[] data,int limit,CancellationToken ct)
+    {
+        if(_publicSend==null||data.Length<1||data.Length>limit)throw new InvalidDataException("Invalid public payload length.");
+        byte[] header=new byte[4];BinaryPrimitives.WriteInt32BigEndian(header,data.Length);
+        byte[] tag=PublicTag(_publicSend,_sent,data);
+        await _stream.WriteAsync(header,ct);await _stream.WriteAsync(data,ct);await _stream.WriteAsync(tag,ct);
+        await _stream.FlushAsync(ct);_sent++;
+    }
+    async Task<byte[]> ReadPlainAsync(int limit,int expected,CancellationToken ct)
+    {
+        if(_publicReceive==null)throw new InvalidDataException("Public plaintext not negotiated.");
+        byte[] header=new byte[4];await _stream.ReadExactlyAsync(header,ct);
+        int length=BinaryPrimitives.ReadInt32BigEndian(header);
+        if(length<1||length>limit||(expected>=0&&length!=expected))throw new InvalidDataException("Invalid public payload length.");
+        byte[] data=new byte[length],tag=new byte[32];
+        await _stream.ReadExactlyAsync(data,ct);await _stream.ReadExactlyAsync(tag,ct);
+        if(!CryptographicOperations.FixedTimeEquals(tag,PublicTag(_publicReceive,_received,data)))
+            throw new CryptographicException("Public payload integrity failure.");
+        _received++;return data;
+    }
+    public Task SendPublicBytesAsync(byte[] data,int limit,CancellationToken ct)=>SendPlainAsync(data,limit,ct);
+    public Task<byte[]> ReadPublicBytesAsync(int expected,int limit,CancellationToken ct)=>ReadPlainAsync(limit,expected,ct);
     public string PeerId {get;}
     DesktopRepChannel(Stream stream,string peer,byte[] send,byte[] receive)
     {_stream=stream;PeerId=peer;_send=send;_receive=receive;}
@@ -107,6 +148,7 @@ internal sealed class DesktopRepChannel : IDisposable
         SendFrameAsync(JsonSerializer.SerializeToUtf8Bytes(value,DesktopPublicItem.WireOptions),ct);
     public async Task SendFrameAsync(byte[] data,CancellationToken ct)
     {
+        if(PublicPlaintext){await SendPlainAsync(data,PublicControlMax,ct);return;}
         if(data.Length<1||data.Length>MaxFrame)throw new InvalidDataException("REP payload too large.");
         byte[] nonce=Nonce(_sent),encrypted=new byte[data.Length+16];
         using var aes=new AesGcm(_send,16);
@@ -117,6 +159,7 @@ internal sealed class DesktopRepChannel : IDisposable
         JsonNode.Parse(await ReadFrameAsync(ct),documentOptions:new JsonDocumentOptions{MaxDepth=24}) as JsonObject??throw new InvalidDataException("Invalid REP message.");
     public async Task<byte[]> ReadFrameAsync(CancellationToken ct)
     {
+        if(PublicPlaintext)return await ReadPlainAsync(PublicControlMax,-1,ct);
         byte[] encrypted=await ReadBlobAsync(_stream,MaxFrame+16,ct);
         if(encrypted.Length<17)throw new InvalidDataException("Invalid encrypted REP frame.");
         byte[] nonce=Nonce(_received),data=new byte[encrypted.Length-16];
@@ -124,5 +167,10 @@ internal sealed class DesktopRepChannel : IDisposable
         aes.Decrypt(nonce,encrypted.AsSpan(0,data.Length),encrypted.AsSpan(data.Length),data,[..Label,..nonce]);_received++;
         return data;
     }
-    public void Dispose(){CryptographicOperations.ZeroMemory(_send);CryptographicOperations.ZeroMemory(_receive);}
+    public void Dispose()
+    {
+        CryptographicOperations.ZeroMemory(_send);CryptographicOperations.ZeroMemory(_receive);
+        if(_publicSend!=null)CryptographicOperations.ZeroMemory(_publicSend);
+        if(_publicReceive!=null)CryptographicOperations.ZeroMemory(_publicReceive);
+    }
 }

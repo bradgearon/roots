@@ -7,16 +7,16 @@ import java.util.*;
 import java.util.zip.*;
 import org.json.*;
 
-/** A logical compressed archive spans many authenticated REP frames. Content
- * identity is independent of assignment weights and transport frame boundaries. */
+/** One compressed public archive is sent directly over the byte stream.
+ * Content identity is independent of assignment weights and transport. */
 final class KnowledgeChunk {
     static final int INITIAL_ITEMS=4096,MAX_ITEMS=16384,MAX_RAW=16*1024*1024,MAX_WIRE=8*1024*1024;
-    static final int FRAME=65536;
+    static final int MIN_BUDGET=65536; // Minimum advertised memory budget, not a frame size.
     record Packed(byte[] bytes,String codec,String sha,int rawSize,int count){}
     private KnowledgeChunk(){}
     static String hash(byte[] bytes)throws Exception{return MeshItem.hex(MessageDigest.getInstance("SHA-256").digest(bytes));}
     static void limits(int raw,int wire)throws IOException{
-        if(raw<FRAME||raw>MAX_RAW||wire<FRAME||wire>MAX_WIRE)throw new IOException("Invalid archive byte budget");
+        if(raw<MIN_BUDGET||raw>MAX_RAW||wire<MIN_BUDGET||wire>MAX_WIRE)throw new IOException("Invalid archive byte budget");
     }
     static Packed pack(List<MeshItem> items,int rawLimit,int wireLimit)throws Exception{
         limits(rawLimit,wireLimit);

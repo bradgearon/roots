@@ -9,12 +9,15 @@ import java.util.Arrays;
 import javax.crypto.*;
 import javax.crypto.spec.*;
 
-/** REP/1 experimental encrypted record layer. The radio channel is untrusted.
- * First contact is self-authenticated, not a verified real-world identity.
- * No data is sent before mutual proof of possession of the persistent key.
- * Protocol requires independent review before production use. */
+/** REP/1 public Axon channel. Retain the original encrypted bind negotiation
+ * for old peers; mutually capable peers switch to authenticated plaintext
+ * public messages and whole compressed archives. No confidentiality is
+ * promised for public knowledge. Private Mesh and GPU transports are separate. */
 final class EncounterChannel {
-    static final int MAX_FRAME=65536;
+    static final int MAX_FRAME=65536; // Legacy REP message limit only.
+    private static final int PUBLIC_CONTROL_MAX=1024*1024;
+    private static final byte[] PUBLIC_LABEL="Roots public plaintext v1".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] PUBLIC_KEY_LABEL="Roots REP public integrity key v1".getBytes(StandardCharsets.US_ASCII);
     private static final int MAGIC=0x52455031;
     private static final byte[] LABEL="Roots REP/1 handshake".getBytes(StandardCharsets.US_ASCII);
     private final DataInputStream in;
@@ -22,6 +25,38 @@ final class EncounterChannel {
     private final SecretKeySpec sendKey,receiveKey;
     final String peerId;
     private long sent,received;
+    private byte[] publicSend,publicReceive;
+    boolean publicPlaintext(){return publicSend!=null;}
+    void enablePublicPlaintext()throws GeneralSecurityException{
+        if(publicPlaintext())return;
+        publicSend=hmac(sendKey.getEncoded(),PUBLIC_KEY_LABEL);
+        publicReceive=hmac(receiveKey.getEncoded(),PUBLIC_KEY_LABEL);
+    }
+    private static Mac publicMac(byte[] key,long sequence,int length)throws GeneralSecurityException{
+        if(sequence<0||sequence==Long.MAX_VALUE)throw new GeneralSecurityException("REP sequence exhausted");
+        Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(key,"HmacSHA256"));
+        mac.update(PUBLIC_LABEL);mac.update(ByteBuffer.allocate(12).putLong(sequence).putInt(length).array());
+        return mac;
+    }
+    private void sendPlain(byte[] data,int limit)throws Exception{
+        if(!publicPlaintext()||data.length<1||data.length>limit)throw new IOException("Invalid public payload length");
+        Mac mac=publicMac(publicSend,sent,data.length);
+        mac.update(data);
+        // One length, one unencrypted payload, one integrity tag. The stream
+        // and network stack handle segmentation; there is no frame splitting.
+        out.writeInt(data.length);out.write(data);out.write(mac.doFinal());out.flush();sent++;
+    }
+    private byte[] readPlain(int limit,int expected)throws Exception{
+        if(!publicPlaintext())throw new IOException("Public plaintext not negotiated");
+        int length=in.readInt();
+        if(length<1||length>limit||(expected>=0&&length!=expected))throw new IOException("Invalid public payload length");
+        byte[] bytes=new byte[length],tag=new byte[32];in.readFully(bytes);in.readFully(tag);
+        Mac mac=publicMac(publicReceive,received,length);
+        if(!MessageDigest.isEqual(mac.doFinal(bytes),tag))throw new GeneralSecurityException("Public payload integrity failure");
+        received++;return bytes;
+    }
+    void sendPublicBytes(byte[] bytes,int limit)throws Exception{sendPlain(bytes,limit);}
+    byte[] receivePublicBytes(int expected,int limit)throws Exception{return readPlain(limit,expected);}
 
     private EncounterChannel(DataInputStream in,DataOutputStream out,byte[] send,byte[] receive,String peerId){
         this.in=in;this.out=out;sendKey=new SecretKeySpec(send,"AES");receiveKey=new SecretKeySpec(receive,"AES");this.peerId=peerId;
@@ -116,11 +151,13 @@ final class EncounterChannel {
         cipher.init(mode,key,new GCMParameterSpec(128,nonce));cipher.updateAAD(LABEL);cipher.updateAAD(nonce);return cipher;
     }
     void send(byte[] data)throws Exception{
+        if(publicPlaintext()){sendPlain(data,PUBLIC_CONTROL_MAX);return;}
         if(data.length<1||data.length>MAX_FRAME)throw new IOException("Invalid REP payload size");
         byte[] encrypted=cipher(Cipher.ENCRYPT_MODE,sendKey,sent).doFinal(data);
         blob(out,encrypted);out.flush();sent++;
     }
     byte[] receive()throws Exception{
+        if(publicPlaintext())return readPlain(PUBLIC_CONTROL_MAX,-1);
         byte[] encrypted=blob(in,MAX_FRAME+16);
         if(encrypted.length<17)throw new IOException("Invalid encrypted REP frame");
         byte[] result=cipher(Cipher.DECRYPT_MODE,receiveKey,received).doFinal(encrypted);received++;return result;

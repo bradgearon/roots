@@ -220,7 +220,7 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
         using var channel=await DesktopRepChannel.OpenAsync(client.GetStream(),key,true,route.Id,ct);
         string peer=channel.PeerId;Require(peer,ct);
         bool firstBinding=!Contains(peer);
-        var bind=Message("bind");bind["root_graph"]=true;bind["bulk_receive_v1"]=true;bind["knowledge_archives_v1"]=true;bind["lan_upgrade_v1"]=false;
+        var bind=Message("bind");bind["root_graph"]=true;bind["bulk_receive_v1"]=true;bind["knowledge_archives_v1"]=true;bind["public_plaintext_v1"]=true;bind["lan_upgrade_v1"]=false;
         await channel.SendAsync(bind,ct);var response=await channel.ReadAsync(ct);Expect(response,"bound");
         if(!B(response,"root_graph")||!B(response,"bulk_receive_v1"))throw new IOException("Phone needs current public Axon protocol.");
         lock(_gate)
@@ -230,7 +230,11 @@ internal sealed partial class DesktopPublicAxonService : IAsyncDisposable
             Save(existing with{Host=route.Address.ToString(),Via=route.Via,Status="Receiving",LastSeen=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()});
         }
         if(firstBinding)Console.WriteLine("ROOTS PUBLIC AXON: bound "+peer[..12]+" via "+route.Via+" · "+route.Address);
-        if(B(response,"knowledge_archives_v1"))return await ExchangeArchivesAsync(channel,peer,ct);
+        if(B(response,"knowledge_archives_v1")&&B(response,"public_plaintext_v1"))
+        {
+            channel.EnablePublicPlaintext();
+            return await ExchangeArchivesAsync(channel,peer,ct);
+        }
         // Freeze the offer inventory before pulling, matching Android's session snapshot.
         var catalog=new SortedDictionary<string,Receipt>(_receipts,StringComparer.Ordinal);
         string root=InventoryRoot(catalog.Keys);

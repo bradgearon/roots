@@ -109,12 +109,12 @@ final class EncounterSync {
         return received;
     }
     private JSONObject capabilities(String op)throws JSONException{
-        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_archives_v1",true).put("lan_upgrade_v1",!directLan);
+        return message(op).put("root_graph",true).put("bulk_receive_v1",true).put("knowledge_archives_v1",true).put("public_plaintext_v1",true).put("lan_upgrade_v1",!directLan);
     }
     private void negotiate(JSONObject hello,boolean client)throws Exception{
         peerGraph=hello.optBoolean("root_graph",false);
         peerBulk=peerGraph&&hello.optBoolean("bulk_receive_v1",false);
-        peerChunks=peerBulk&&hello.optBoolean("knowledge_archives_v1",false);
+        peerChunks=peerBulk&&hello.optBoolean("knowledge_archives_v1",false)&&hello.optBoolean("public_plaintext_v1",false);
         if(peerGraph){maxItems=32;maxIds=256;maxPages=9;}
         if(peerBulk){maxItems=128;maxIds=2048;maxPages=65;}
         if(peerBulk&&directLan){maxItems=4096;maxIds=65536;maxPages=2049;}
@@ -127,6 +127,7 @@ final class EncounterSync {
                 maxItems=4096;maxIds=65536;maxPages=2049;
             }
         }
+        if(peerChunks)channel.enablePublicPlaintext();
         stage="Preparing Root inventory";
         catalog.putAll(external.catalog());pendingReceipts=external.pendingSet();
         catalog.putAll(MeshPeer.get(context).encounterCatalog());
@@ -214,24 +215,15 @@ final class EncounterSync {
         send(message("release").put("more_pending",!complete));
     }
     private void sendBytes(byte[] bytes)throws Exception{
-        for(int offset=0;offset<bytes.length;offset+=KnowledgeChunk.FRAME){
-            check();channel.send(Arrays.copyOfRange(bytes,offset,Math.min(bytes.length,offset+KnowledgeChunk.FRAME)));
-        }
+        check();channel.sendPublicBytes(bytes,KnowledgeChunk.MAX_WIRE);check();
     }
     private byte[] readBytes(int size,int limit)throws Exception{
-        if(size<1||size>limit)throw new IOException("Invalid archive wire size");
-        byte[] bytes=new byte[size];int offset=0;
-        while(offset<size){
-            check();byte[] frame=channel.receive();check();
-            if(frame.length!=Math.min(KnowledgeChunk.FRAME,size-offset))throw new IOException("Invalid archive frame length");
-            System.arraycopy(frame,0,bytes,offset,frame.length);offset+=frame.length;
-        }
-        return bytes;
+        check();byte[] bytes=channel.receivePublicBytes(size,limit);check();return bytes;
     }
     private List<MeshItem> receiveArchive(List<String> requested,ArchiveSizing.Budget budget)throws Exception{
         long start=android.os.SystemClock.elapsedRealtime();
         stage="Receiving compressed archive";
-        progress.accept("Requesting archive · "+requested.size()+" records · "+(budget.estimatedMs()<0?"measuring device performance":budget.estimatedMs()+" ms estimated for "+budget.records()+" records"));
+        progress.accept("Requesting public archive · "+requested.size()+" records · "+(budget.estimatedMs()<0?"measuring device performance":budget.estimatedMs()+" ms estimated for "+budget.records()+" records"));
         send(message("want_archive").put("count",requested.size()).put("raw_limit",budget.rawBytes()).put("wire_limit",budget.wireBytes()));
         sendBytes(KnowledgeChunk.encodeIds(requested));
         JSONObject header=read();expect(header,"archive");

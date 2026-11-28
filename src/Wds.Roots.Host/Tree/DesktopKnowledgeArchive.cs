@@ -9,12 +9,12 @@ namespace Wds.Roots.Host;
 
 internal static class DesktopKnowledgeArchive
 {
-    public const int Frame=65536, Initial=4096, MaxItems=16384, MaxRaw=16*1024*1024, MaxWire=8*1024*1024;
+    public const int MinBudget=65536, Initial=4096, MaxItems=16384, MaxRaw=16*1024*1024, MaxWire=8*1024*1024;
     internal sealed record Packed(byte[] Bytes,string Codec,string Sha,int RawSize,int Count);
     public static string Hash(byte[] bytes)=>Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     public static void Limits(int raw,int wire)
     {
-        if(raw<Frame||raw>MaxRaw||wire<Frame||wire>MaxWire)throw new InvalidDataException("Invalid archive byte limits.");
+        if(raw<MinBudget||raw>MaxRaw||wire<MinBudget||wire>MaxWire)throw new InvalidDataException("Invalid archive byte limits.");
     }
     public static Packed Pack(IReadOnlyList<DesktopPublicItem> items,int rawLimit,int wireLimit)
     {
@@ -83,23 +83,10 @@ internal static class DesktopKnowledgeArchive
         if(ids.Distinct(StringComparer.Ordinal).Count()!=count)throw new InvalidDataException("Duplicate archive IDs.");
         return ids;
     }
-    public static async Task SendBytes(DesktopRepChannel channel,byte[] bytes,CancellationToken ct)
-    {
-        for(int offset=0;offset<bytes.Length;offset+=Frame)
-            await channel.SendFrameAsync(bytes.AsSpan(offset,Math.Min(Frame,bytes.Length-offset)).ToArray(),ct);
-    }
-    public static async Task<byte[]> ReadBytes(DesktopRepChannel channel,int size,int limit,CancellationToken ct)
-    {
-        if(size<1||size>limit)throw new InvalidDataException("Invalid archive wire size.");
-        var data=new byte[size];int offset=0;
-        while(offset<size)
-        {
-            var frame=await channel.ReadFrameAsync(ct);
-            if(frame.Length!=Math.Min(Frame,size-offset))throw new InvalidDataException("Invalid archive frame.");
-            frame.CopyTo(data,offset);offset+=frame.Length;
-        }
-        return data;
-    }
+    public static Task SendBytes(DesktopRepChannel channel,byte[] bytes,CancellationToken ct)=>
+        channel.SendPublicBytesAsync(bytes,MaxWire,ct);
+    public static Task<byte[]> ReadBytes(DesktopRepChannel channel,int size,int limit,CancellationToken ct)=>
+        channel.ReadPublicBytesAsync(size,limit,ct);
 }
 internal sealed class DesktopKnowledgeManifest
 {
