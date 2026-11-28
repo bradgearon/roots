@@ -28,7 +28,7 @@ final class XTimelineCardRecords {
     }
     record Field(String role,String value){}
     record Post(String cardPath,int bodyOrder,String key,String body,List<Field> fields,String language){}
-    record Result(List<Post> posts,Map<Integer,String> cardByOrder){}
+    record Result(List<Post> posts,Map<Integer,String> cardByOrder,Map<String,Node> primaryBodies){}
 
     static boolean under(String path,String parent){
         return path.equals(parent)||path.startsWith(parent+"/");
@@ -59,22 +59,78 @@ final class XTimelineCardRecords {
             groups.computeIfAbsent(owner,k->new ArrayList<>()).add(n);
         }
         List<Post> posts=new ArrayList<>();
+        Map<String,Node> primaryBodies=new LinkedHashMap<>();
         for(Map.Entry<String,List<Node>> group:groups.entrySet()){
             List<Node> nodes=group.getValue();
             nodes.sort(Comparator.comparing(Node::path,XTimelineCardRecords::pathCompare));
-            Post post=post(group.getKey(),nodes);
-            if(post!=null)posts.add(post);
+            Node header=header(group.getKey(),nodes);
+            java.util.Set<String> context=contextBranches(group.getKey(),nodes,header);
+            Node body=selectBody(group.getKey(),nodes,header,context);
+            if(body!=null){
+                primaryBodies.put(group.getKey(),body);
+                Post post=post(group.getKey(),nodes,header,body,context);
+                if(post!=null)posts.add(post);
+            }
         }
-        return new Result(List.copyOf(posts),Map.copyOf(owners));
+        return new Result(List.copyOf(posts),Map.copyOf(owners),Map.copyOf(primaryBodies));
     }
-    private static Post post(String card,List<Node> nodes){
-        // The actual Compose header is a direct child of the conversation
-        // card. A second header inside a quoted/media subtree is not its author.
+    private static Node header(String card,List<Node> nodes){
         Node header=null;
         for(Node n:nodes)if(n.header()&&n.primary()&&parent(n.path()).equals(card)){
             if(header!=null)return null;
             header=n;
         }
+        return header;
+    }
+
+    private static java.util.Set<String> contextBranches(String card,List<Node> nodes,Node header){
+        java.util.Set<String> context=new java.util.HashSet<>();
+        for(Node n:nodes)if((n.header()&&(header==null||!under(n.path(),header.path())))||
+                "Quote".equalsIgnoreCase(n.description().trim())){
+            String sub=branch(n.path(),card);
+            if(!sub.isEmpty()&&(header==null||!sub.equals(header.path())))context.add(sub);
+        }
+        return context;
+    }
+
+    private static boolean controlNode(Node n){
+        String role=n.id().toLowerCase(java.util.Locale.ROOT);
+        String type=n.className().toLowerCase(java.util.Locale.ROOT);
+        return role.contains("poll")||role.contains("vote")||
+            type.endsWith(".button")||type.endsWith(".radiobutton")||
+            type.endsWith(".checkbox")||type.endsWith(".switch")||
+            metricRole(n.description()).length()>0;
+    }
+
+    /** Layout identity does not require a visible/untruncated author handle.
+     * Poll labels and other interactive children must not become the body.
+     * A direct full-body span can still identify a post whose header is clipped. */
+    private static Node selectBody(String card,List<Node> nodes,Node header,java.util.Set<String> context){
+        java.util.Set<String> controls=new java.util.HashSet<>();
+        for(Node n:nodes)if(controlNode(n)&&!n.path().equals(card)){
+            String sub=branch(n.path(),card);
+            if(!sub.isEmpty())controls.add(sub);
+        }
+        Node body=null;int best=0;boolean ambiguous=false;
+        for(Node n:nodes){
+            if(!n.primary()||n.text().isBlank()||n.text().length()>4000||
+                (header!=null&&under(n.path(),header.path())))continue;
+            String direct=branch(n.path(),card);
+            if(direct.isEmpty()||context.contains(direct)||controls.contains(direct)||
+                (header!=null&&pathCompare(direct,header.path())<=0))continue;
+            String value=n.text().trim();
+            boolean directText=parent(n.path()).equals(card)&&n.className().endsWith("TextView")&&
+                !isControl(value)&&!COUNT.matcher(value).matches()&&!HANDLE.matcher(value).matches()&&
+                !TIME.matcher(value).matches();
+            int strength=n.bodyRole()?4:n.bodySpan()&&directText?3:header!=null&&directText?1:0;
+            if(strength==0)continue;
+            if(strength>best){body=n;best=strength;ambiguous=false;}
+            else if(strength==best&&!TextFingerprint.normalized(body.text()).equals(TextFingerprint.normalized(n.text())))ambiguous=true;
+        }
+        return ambiguous?null:body;
+    }
+
+    private static Post post(String card,List<Node> nodes,Node header,Node body,java.util.Set<String> contextBranches){
         if(header==null)return null;
         String author="",handle="",time="";
         for(Node n:nodes)if(n.primary()&&under(n.path(),header.path())){
@@ -89,27 +145,6 @@ final class XTimelineCardRecords {
         // No provisional author-only key for a clipped header: otherwise the
         // same post is duplicated when its @handle comes into view later.
         if(handle.isEmpty())return null;
-        // Quoted/embedded headers can be exposed without a named container.
-        // Their descendants are context, not this card's source or body.
-        java.util.Set<String> contextBranches=new java.util.HashSet<>();
-        for(Node n:nodes)if((n.header()&&!under(n.path(),header.path()))||"Quote".equalsIgnoreCase(n.description().trim())){
-            String sub=branch(n.path(),card);if(!sub.isEmpty()&&!sub.equals(header.path()))contextBranches.add(sub);
-        }
-        Node body=null;int best=0;boolean ambiguous=false;
-        for(Node n:nodes){
-            if(!n.primary()||n.text().isBlank()||under(n.path(),header.path())
-                ||n.text().length()>4000)continue;
-            String direct=branch(n.path(),card);
-            if(direct.isEmpty()||contextBranches.contains(direct)||pathCompare(direct,header.path())<=0)continue;
-            String text=n.text().trim();
-            boolean directText=parent(n.path()).equals(card)&&n.className().endsWith("TextView")&&!isControl(text)
-                &&!COUNT.matcher(text).matches()&&!HANDLE.matcher(text).matches()&&!TIME.matcher(text).matches();
-            int strength=n.bodyRole()?4:n.bodySpan()&&parent(n.path()).equals(card)?3:directText?1:0;
-            if(strength==0)continue;
-            if(strength>best){body=n;best=strength;ambiguous=false;}
-            else if(strength==best&&!TextFingerprint.normalized(body.text()).equals(TextFingerprint.normalized(n.text())))ambiguous=true;
-        }
-        if(body==null||ambiguous)return null;
         String original=TextFingerprint.normalized(body.text());
         if(original.isEmpty())return null;
         // Preserve the established handle/body key format, so revisiting a
