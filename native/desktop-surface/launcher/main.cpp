@@ -411,7 +411,14 @@ int wmain(int argc,wchar_t** argv) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     if(FAILED(CoInitializeEx(nullptr,COINIT_MULTITHREADED)))return 3;
 #ifdef ROOTS_SURFACE_OCR
-    if(useOcr && FAILED(RoInitialize(RO_INIT_MULTITHREADED))) { CoUninitialize(); return 4; }
+    bool winrtReady=false;
+    if(useOcr){
+        winrtReady=SUCCEEDED(RoInitialize(RO_INIT_MULTITHREADED));
+        if(!winrtReady){
+            useOcr=false;
+            std::cerr<<"Surface: WinRT initialization unavailable; using UI Automation.\n";
+        }
+    }
 #endif
     ComPtr<IUIAutomation> automation;
     CoCreateInstance(CLSID_CUIAutomation,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&automation));
@@ -420,7 +427,7 @@ int wmain(int argc,wchar_t** argv) {
     if(SUCCEEDED(automation.As(&automation2))){automation2->put_ConnectionTimeout(1500);automation2->put_TransactionTimeout(1500);}
 #ifdef ROOTS_SURFACE_OCR
     std::unique_ptr<OcrLane> ocr;
-    if(useOcr){try{ocr=std::make_unique<OcrLane>();}catch(...){return 4;}}
+    if(useOcr){try{ocr=std::make_unique<OcrLane>();}catch(...){useOcr=false;std::cerr<<"Surface: OCR initialization failed; using UI Automation.\n";}}
 #else
     if(useOcr)return 4;
 #endif
@@ -526,7 +533,7 @@ int wmain(int argc,wchar_t** argv) {
     WTSUnRegisterSessionNotification(signalWindow);DestroyWindow(signalWindow);
     automation2.Reset();automation.Reset();
 #ifdef ROOTS_SURFACE_OCR
-    if(useOcr)RoUninitialize();
+    if(winrtReady)RoUninitialize();
 #endif
     CoUninitialize();return 0;
 }
