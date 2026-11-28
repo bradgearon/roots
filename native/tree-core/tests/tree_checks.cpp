@@ -223,6 +223,42 @@ int main(){
             ok(roots_tree_clear(t));
         }
         {
+            roots_observation observations[]={
+                {"record.experience.body","local:experience:repeat:one","HELLO_DIALOGUE_SENTINEL","",10},
+                {"record.experience.kind","local:experience:repeat:one","observation","",10},
+                {"record.experience.parent","local:experience:repeat:one","session-one","",10},
+                {"record.experience.screen","local:experience:repeat:one","screen-one","",10},
+                {"record.experience.process","local:experience:repeat:one","INTERNAL_METADATA_SENTINEL","",10},
+                {"record.experience.body","local:experience:repeat:two","HELLO_DIALOGUE_SENTINEL","",20},
+                {"record.experience.kind","local:experience:repeat:two","observation","",20},
+                {"record.experience.screen","local:experience:repeat:two","screen-two","",20},
+                {"record.experience.body","local:experience:activity","ACTIVITY_ONLY_SENTINEL","",30},
+                {"record.experience.kind","local:experience:activity","activity.interval","",30}};
+            size_t added=0;ok(roots_tree_observe(t,observations,10,&added));need(added==10,"experience observation fixture");
+            auto bodies=query(t,"HELLO_DIALOGUE_SENTINEL");
+            need(bodies.size()==2,"two independent dialogue occurrences");
+            int64_t count=0;ok(roots_tree_text_occurrences(t,bodies.front().seq,&count));need(count==2,"exact occurrence count");
+            auto projection=dir/"experience-content.gguf";int64_t rev=0;
+            ok(roots_tree_compile_experience(t,projection.u8string().c_str(),&rev));
+            {
+                std::ifstream input(projection,std::ios::binary);
+                std::string bytes((std::istreambuf_iterator<char>(input)),std::istreambuf_iterator<char>());
+                for(auto expected:{"HELLO_DIALOGUE_SENTINEL","experience-content-private","is.occurrence.of","screen:screen-one"})
+                    need(bytes.find(expected)!=std::string::npos,"experience content or relation missing");
+                for(auto excluded:{"INTERNAL_METADATA_SENTINEL","ACTIVITY_ONLY_SENTINEL"})
+                    need(bytes.find(excluded)==std::string::npos,"operational text in content projection");
+            }
+            auto snapshot=dir/"experience-backup.db";int64_t snapshotRevision=0;
+            ok(roots_tree_backup(t,snapshot.u8string().c_str(),&snapshotRevision));
+            need(snapshotRevision==rev,"snapshot revision");
+            need(!std::filesystem::exists(snapshot.u8string()+"-wal"),"backup is self-contained");
+            need(roots_tree_backup(t,snapshot.u8string().c_str(),&snapshotRevision)==ROOTS_TREE_INVALID,"backup never overwrites");
+            ok(roots_tree_clear(t));
+            roots_tree *copy=nullptr;ok(roots_tree_open(snapshot.u8string().c_str(),&copy));
+            int64_t copied=0;auto result=roots_tree_count(copy,&copied);roots_tree_close(copy);
+            ok(result);need(copied==10,"backup retains committed observations after original changes");
+        }
+        {
             // Reproduce a real-sized Experience timeline (76,500 fragments).
             // The former query scanned the whole namespace for each event,
             // which could time out even with a few minutes of screen capture.
