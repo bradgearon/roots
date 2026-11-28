@@ -11,9 +11,23 @@ var home = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationD
 if (string.IsNullOrWhiteSpace(home)) return 2;
 var directory = Path.Combine(home, "Roots", "Experience");
 var database = Path.Combine(directory, "experience.db");
+var control = new ExperienceCaptureControl(directory);
 try
 {
     if (args.Length == 0) args = ["--capture"];
+    if(args[0] is "--pause" or "--resume"){
+        if(args.Length!=1)return Usage();
+        control.SetEnabled(args[0]=="--resume");
+        var state=control.Status();
+        if(state.WatcherRunning&&!state.SupportsPause)
+            Console.WriteLine("Setting saved. Restart the older Surface watcher with Ctrl+C to apply it.");
+        else if(!state.Enabled&&state.WorkerActive)
+            Console.WriteLine("Experience capture off. Native reader is stopping; check --status for confirmation.");
+        else
+            Console.WriteLine(CaptureStatusText(state));
+        return 0;
+    }
+    if(args[0]=="--status"&&args.Length==1)Console.WriteLine(CaptureStatusText(control.Status()));
     if (args[0] is "--status" or "--search" or "--backup")
     {
         if ((args[0] is "--status" or "--backup") && args.Length != 1 || args[0] == "--search" && args.Length != 2) return Usage();
@@ -71,93 +85,109 @@ try
     var devicePath = Path.Combine(directory, "device-id.txt");
     if (!File.Exists(devicePath)) File.WriteAllText(devicePath, Guid.NewGuid().ToString("N"), Encoding.ASCII);
     var device = Guid.Parse(File.ReadAllText(devicePath));
-    var run = Guid.NewGuid();
-    // This descriptor is usable by the host only while the OS-held lease is live.
-    File.WriteAllText(Path.Combine(directory,"capture.session.json"),JsonSerializer.Serialize(new {Run=run.ToString("N"),Excluded=excluded.ToArray()}));
     using var privateTree = new NativeTree(database);
-    Console.WriteLine("Roots Surface — LOCAL CAPTURE ACTIVE. Ctrl+C stops capture.");
-    Console.WriteLine("Automatically following foreground applications. No application is launched or controlled.");
-    if (excluded.Count > 0) Console.WriteLine("Additional exclusions: " + string.Join(", ", excluded));
+    using var cancellation = new CancellationTokenSource();
+    using var shutdown = new ConsoleShutdown(cancellation, "Roots Surface", TimeSpan.FromSeconds(5));
+    var initial=control.Read();
+    control.PublishWorker(new(Guid.NewGuid().ToString("N"),excluded.ToArray(),initial.Epoch,false));
+    Console.WriteLine("Roots Surface — ready. Ctrl+C stops the watcher.");
+    Console.WriteLine("Pause or resume Experience capture from the Roots extension or launch-surface.cmd --pause / --resume.");
     Console.WriteLine(noOcr ? "UI Automation static text only." : "UI Automation and window OCR where available.");
     Console.WriteLine("Only semantic text and activity enter the private Tree. No media file or network upload.");
     Console.WriteLine("Coverage diagnostics are recorded separately. Use --status or --diagnostics to inspect them.");
-    using var cancellation = new CancellationTokenSource();
-    using var shutdown = new ConsoleShutdown(cancellation, "Roots Surface", TimeSpan.FromSeconds(5));
-    using var childJob = ChildProcessJob.Create();
-    var start = new ProcessStartInfo(executable)
-    {
-        UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
-        RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = new UTF8Encoding(false, true)
-    };
-    if (noOcr) start.ArgumentList.Add("--no-ocr");
-    foreach (var name in excluded) { start.ArgumentList.Add("--exclude"); start.ArgumentList.Add(name); }
-    using var child = Process.Start(start) ?? throw new InvalidOperationException("Cannot start Surface agent.");
-    long sequence = 0, textEvents = 0, activityEvents = 0;
-    Task? backupTask=null;
-    try
-    {
-        childJob.Attach(child);
-        backupTask=Task.Run(()=>MaintainBackups(database,cancellation.Token));
-        // Only native coverage diagnostics are shown; do not log text or
-        // arbitrary backend messages from the diagnostic pipe.
-        child.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is { } line && line.StartsWith("Surface: ", StringComparison.Ordinal))
-            {
-                var message=line.Length<=512?line:line[..512];
-                try { File.WriteAllText(Path.Combine(directory,"surface-diagnostics.txt"),message); } catch(IOException) { }
-                if(diagnostics) Console.Error.WriteLine(message);
+    var backupTask=Task.Run(()=>MaintainBackups(database,cancellation.Token));
+    long sequence=0,textEvents=0,activityEvents=0;
+    bool announcedPause=false;
+    try{
+        while(!cancellation.IsCancellationRequested){
+            var policy=control.Read();
+            if(!policy.Enabled){
+                if(!announcedPause){Console.WriteLine("Experience capture paused.");announcedPause=true;}
+                await Task.Delay(200,cancellation.Token);continue;
             }
-        };
-        child.BeginErrorReadLine();
-        Console.WriteLine($"Surface receiver PID {Environment.ProcessId}; native agent PID {child.Id}.");
-        while (!cancellation.IsCancellationRequested)
-        {
-            // WaitAsync cancels our wait even if Windows' anonymous pipe read
-            // itself cannot be interrupted. Closing the child ends that read.
-            var line = await child.StandardOutput.ReadLineAsync().WaitAsync(cancellation.Token);
-            if (line == null) break;
-            var observation = SurfaceObservation.Parse(line, excluded);
-            if (cancellation.IsCancellationRequested) break;
-            // Do not turn our changing counters into new knowledge. Ordinary
-            // terminal text remains eligible; only recognizable own diagnostics are skipped.
-            if (observation.IsOwnDiagnostic()) continue;
-            var rows = observation.ToRows(device, run, ++sequence);
-            privateTree.Observe(rows);
-            if(observation.Kind is "uia" or "ocr")textEvents++;else activityEvents++;
-            if(diagnostics&&(sequence==1||sequence%100==0))
-                Console.WriteLine($"Surface: {textEvents} text events, {activityEvents} activity intervals committed.");
-        }
-        if (!cancellation.IsCancellationRequested)
-        {
-            await child.WaitForExitAsync(cancellation.Token);
-            if (child.ExitCode != 0) throw new InvalidOperationException("Surface agent exited: " + child.ExitCode);
-            Console.WriteLine("Surface agent ended.");
-        }
-    }
-    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
-    finally
-    {
-        try
-        {
-            cancellation.Cancel();
-            // Signal the native agent via EOF. Do not wait for a blocked
-            // UIA/OCR provider indefinitely and do not accept further records.
-            try { child.StandardInput.Close(); } catch (IOException) { }
-            if (!child.HasExited && !child.WaitForExit(1000))
-            {
-                try { child.Kill(entireProcessTree: true); }
-                catch (InvalidOperationException) when (child.HasExited) { }
+            announcedPause=false;
+            // Each active epoch has a new run identity, so restarting the
+            // native child cannot reuse its previous session/sequence keys.
+            var run=Guid.NewGuid();
+            var descriptor=new ExperienceCaptureControl.Worker(run.ToString("N"),excluded.ToArray(),policy.Epoch,true);
+            using var childJob=ChildProcessJob.Create();
+            using var pass=CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+            var start=new ProcessStartInfo(executable){
+                UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,
+                RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=new UTF8Encoding(false,true)
+            };
+            if(noOcr)start.ArgumentList.Add("--no-ocr");
+            foreach(var name in excluded){start.ArgumentList.Add("--exclude");start.ArgumentList.Add(name);}
+            Process? child=null;
+            Task? monitor=null;
+            try{
+                bool started=control.TryCommit(policy.Epoch,()=>{
+                    child=Process.Start(start)??throw new InvalidOperationException("Cannot start Surface agent.");
+                    childJob.Attach(child);
+                    control.PublishWorker(descriptor);
+                });
+                if(!started)continue;
+                var active=child!;
+                active.ErrorDataReceived+=(_,e)=>{
+                    if(e.Data is { } line&&line.StartsWith("Surface: ",StringComparison.Ordinal)){
+                        var message=line.Length<=512?line:line[..512];
+                        try{File.WriteAllText(Path.Combine(directory,"surface-diagnostics.txt"),message);}catch(IOException){}
+                        if(diagnostics)Console.Error.WriteLine(message);
+                    }
+                };
+                active.BeginErrorReadLine();
+                Console.WriteLine($"Experience capture active. Native agent PID {active.Id}.");
+                monitor=WatchCapturePolicy(control,policy.Epoch,pass);
+                while(!pass.IsCancellationRequested){
+                    var line=await active.StandardOutput.ReadLineAsync().WaitAsync(pass.Token);
+                    if(line==null)break;
+                    var observation=SurfaceObservation.Parse(line,excluded);
+                    if(pass.IsCancellationRequested)break;
+                    if(observation.IsOwnDiagnostic())continue;
+                    var rows=observation.ToRows(device,run,++sequence);
+                    if(!control.TryCommit(policy.Epoch,()=>privateTree.Observe(rows))){
+                        pass.Cancel();break;
+                    }
+                    if(observation.Kind is "uia" or "ocr")textEvents++;else activityEvents++;
+                    if(diagnostics&&(sequence==1||sequence%100==0))
+                        Console.WriteLine($"Surface: {textEvents} text events, {activityEvents} activity intervals committed.");
+                }
+                if(!pass.IsCancellationRequested){
+                    await active.WaitForExitAsync(pass.Token);
+                    throw new InvalidOperationException("Surface agent exited: "+active.ExitCode);
+                }
+            }catch(OperationCanceledException) when(pass.IsCancellationRequested){}
+            finally{
+                // Stop the owned native acquisition process, not merely its
+                // database writes. Discard in-flight and buffered old-epoch text.
+                pass.Cancel();
+                try{
+                    if(child!=null){
+                        try{child.StandardInput.Close();}catch(IOException){}
+                        if(!child.HasExited){
+                            try{child.Kill(entireProcessTree:true);}
+                            catch(InvalidOperationException) when(child.HasExited){}
+                        }
+                    }
+                }finally{
+                    childJob.Dispose();
+                    if(child!=null){
+                        try{
+                            if(!child.WaitForExit(2000))
+                                throw new InvalidOperationException("Native Surface reader did not stop.");
+                        }finally{child.Dispose();}
+                    }
+                }
+                // Report paused only after native acquisition has ended.
+                control.PublishWorker(descriptor with {Active=false});
+                if(monitor!=null)await monitor;
             }
         }
-        finally
-        {
-            // Also covers a crashed receiver or partially stopped descendant.
-            childJob.Dispose();
-        }
-        if(backupTask!=null){try{await backupTask.WaitAsync(TimeSpan.FromMilliseconds(500));}catch(TimeoutException){}catch(OperationCanceledException){}}
-        if (!child.WaitForExit(1000))
-            Console.Error.WriteLine($"Surface agent PID {child.Id} did not confirm exit.");
+    }catch(OperationCanceledException) when(cancellation.IsCancellationRequested){}
+    finally{
+        cancellation.Cancel();
+        try{await backupTask.WaitAsync(TimeSpan.FromMilliseconds(500));}
+        catch(TimeoutException){}catch(OperationCanceledException){}
         Console.WriteLine($"Capture stopped. {textEvents} text events, {activityEvents} activity intervals committed.");
     }
     return 0;
@@ -167,6 +197,26 @@ catch (Exception e)
     // Do not log raw text or pipe payloads on failure.
     Console.Error.WriteLine("Surface failed: " + e.GetType().Name);
     return 1;
+}
+
+static string CaptureStatusText(ExperienceCaptureControl.CaptureStatus state)
+{
+    if(state.WatcherRunning&&!state.SupportsPause)return "Experience watcher needs restart to support pause.";
+    if(!state.Enabled)return state.WorkerActive?"Experience capture off; native reader stopping.":"Experience capture paused.";
+    return state.WorkerActive&&state.CurrentEpoch?"Experience capture active.":
+        state.WatcherRunning?"Experience capture starting.":"Experience capture enabled; watcher not running.";
+}
+
+static async Task WatchCapturePolicy(ExperienceCaptureControl control,string epoch,CancellationTokenSource pass)
+{
+    try{
+        while(!pass.IsCancellationRequested){
+            await Task.Delay(150,pass.Token);
+            var state=control.Read();
+            if(!state.Enabled||state.Epoch!=epoch){pass.Cancel();return;}
+        }
+    }catch(OperationCanceledException) when(pass.IsCancellationRequested){}
+    catch(Exception){pass.Cancel();} // Fail closed if capture policy is unreadable.
 }
 
 static async Task MaintainBackups(string database,CancellationToken ct)
@@ -191,6 +241,8 @@ static int Usage()
 {
     Console.WriteLine("launch-surface.cmd [--capture [--no-ocr] [--diagnostics] [--exclude app.exe]]");
     Console.WriteLine("launch-surface.cmd --status");
+    Console.WriteLine("launch-surface.cmd --pause");
+    Console.WriteLine("launch-surface.cmd --resume");
     Console.WriteLine("launch-surface.cmd --backup");
     Console.WriteLine("launch-surface.cmd --search \"text\"");
     return 2;
