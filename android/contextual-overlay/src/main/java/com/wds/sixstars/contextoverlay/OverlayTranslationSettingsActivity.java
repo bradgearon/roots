@@ -88,7 +88,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         Button refreshDiagnostics = button("Refresh scan diagnostics");
         refreshDiagnostics.setOnClickListener(v -> refreshStatus());
         content.addView(refreshDiagnostics);
-        Button inspectPost=button("X post inspector");
+        Button inspectPost=button("X timeline inspector");
         inspectPost.setOnClickListener(v->showPostInspector());
         content.addView(inspectPost);
         content=permissions;
@@ -645,34 +645,53 @@ public final class OverlayTranslationSettingsActivity extends Activity {
     }
 
     private void showPostInspector(){
-        String report=XAccessibilityInspector.report();
-        AlertDialog.Builder dialog=new AlertDialog.Builder(this).setTitle("X post inspector");
-        if(report.isEmpty()){
-            dialog.setMessage(XAccessibilityInspector.status()+"\n\nOpen a public X post first, then return here. Tap Inspect next screen and switch back to that post. Return here to copy the captured node report. The inspector stays local and does not add metadata to the Tree.");
-        }else{
-            TextView detail=text(report,12,RootsUi.TEXT);
-            detail.setTextIsSelectable(true);detail.setPadding(dp(12),dp(8),dp(12),dp(8));
-            ScrollView scroll=new ScrollView(this);scroll.addView(detail);
-            dialog.setView(scroll).setNeutralButton("Copy report",(d,w)->{
-                android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                if(clipboard!=null){
-                    android.content.ClipData clip=android.content.ClipData.newPlainText("X accessibility report",report);
-                    if(android.os.Build.VERSION.SDK_INT>=33){
-                        android.os.PersistableBundle extras=new android.os.PersistableBundle();
-                        extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);
-                    }
-                    clipboard.setPrimaryClip(clip);
-                    android.widget.Toast.makeText(this,"X report copied",android.widget.Toast.LENGTH_SHORT).show();
+        XAccessibilityInspector.Snapshot snapshot=XAccessibilityInspector.snapshot();
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this,android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("X timeline inspector");
+        LinearLayout panel=RootsUi.column(this);
+        panel.setBackgroundColor(RootsUi.BG);
+        panel.setPadding(dp(16),dp(12),dp(16),dp(12));
+        panel.addView(RootsUi.text(this,snapshot.status(),14,RootsUi.TEXT,true));
+        panel.addView(RootsUi.text(this,"Automatically records recent snapshots while local capture is on. Scroll X normally. Preview shows the latest sample; Copy report includes the rolling trace.",13,RootsUi.MUTED,false));
+        Button copy=button("Copy report");
+        copy.setEnabled(!snapshot.report().isEmpty());
+        copy.setAlpha(copy.isEnabled()?1f:0.45f);
+        copy.setOnClickListener(v->{
+            android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            if(clipboard==null)return;
+            try{
+                android.content.ClipData clip=android.content.ClipData.newPlainText("X accessibility scrolling trace",snapshot.report());
+                if(android.os.Build.VERSION.SDK_INT>=33){
+                    android.os.PersistableBundle extras=new android.os.PersistableBundle();
+                    extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);
                 }
-            });
+                clipboard.setPrimaryClip(clip);
+                android.widget.Toast.makeText(this,"Timeline report copied",android.widget.Toast.LENGTH_SHORT).show();
+            }catch(RuntimeException error){
+                android.widget.Toast.makeText(this,"Could not copy the report.",android.widget.Toast.LENGTH_LONG).show();
+            }
+        });
+        panel.addView(copy);
+        if(!snapshot.latest().isEmpty()){
+            TextView detail=RootsUi.text(this,snapshot.latest(),13,RootsUi.TEXT,false);
+            detail.setTypeface(android.graphics.Typeface.MONOSPACE);
+            detail.setBackgroundColor(RootsUi.CARD);
+            detail.setTextIsSelectable(true);
+            detail.setPadding(dp(12),dp(8),dp(12),dp(8));
+            ScrollView scroll=new ScrollView(this);
+            scroll.setBackgroundColor(RootsUi.CARD);scroll.setFillViewport(true);
+            scroll.addView(detail,new ScrollView.LayoutParams(-1,-2));
+            int height=Math.min(dp(420),getResources().getDisplayMetrics().heightPixels*45/100);
+            panel.addView(scroll,new LinearLayout.LayoutParams(-1,height));
         }
-        dialog.setPositiveButton("Inspect next screen",(d,w)->{
+        dialog.setView(panel).setNegativeButton("Close",null);
+        dialog.setNeutralButton("Record 90 seconds",(d,w)->{
             if(!prefs.enabled()||!accessibilityEnabled()){
                 android.widget.Toast.makeText(this,"Enable Roots X accessibility first.",android.widget.Toast.LENGTH_LONG).show();return;
             }
             XAccessibilityInspector.arm();
-            android.widget.Toast.makeText(this,"Return to the X post within 90 seconds, then open this inspector again.",android.widget.Toast.LENGTH_LONG).show();
-        }).setNegativeButton("Close",null).show();
+            android.widget.Toast.makeText(this,"Scroll X normally, then return to the inspector.",android.widget.Toast.LENGTH_LONG).show();
+        }).show();
     }
 
     private boolean accessibilityEnabled() {
