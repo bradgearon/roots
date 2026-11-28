@@ -17,28 +17,31 @@ import java.util.List;
  * Never retains live accessibility nodes or reads editable content. */
 final class XAccessibilityInspector {
     private static final long WINDOW_MS=90000, SAMPLE_MS=1500;
-    private static final int MAX_REPORT=180000,MAX_VALUE=1200,MAX_HISTORY=360000,MAX_FRAMES=6;
+    private static final int MAX_REPORT=90000,MAX_VALUE=4000,MAX_FRAMES=6,MAX_COPY=11000;
     private static long request,deadline,nextSample,accepted;
-    private static int totalChars;
     private static final java.util.ArrayDeque<Frame> frames=new java.util.ArrayDeque<>();
-    private record Frame(String header,String body){}
-    record Snapshot(String status,String latest,String report){}
+    private record Frame(String header,String body,String attributes){}
+    record Snapshot(String status,String latest,String report,String attributes){}
     private XAccessibilityInspector(){}
 
     static synchronized void arm(){
         request++;deadline=SystemClock.elapsedRealtime()+WINDOW_MS;nextSample=0;
     }
-    static synchronized void cancel(){request++;deadline=0;nextSample=0;accepted=0;totalChars=0;frames.clear();}
+    static synchronized void cancel(){request++;deadline=0;nextSample=0;accepted=0;frames.clear();}
     static synchronized boolean armed(){return deadline>SystemClock.elapsedRealtime();}
     static synchronized Snapshot snapshot(){
-        if(frames.isEmpty())return new Snapshot(armed()?"Recording the next 90 seconds of X browsing.":"No timeline samples yet.","","");
+        if(frames.isEmpty())return new Snapshot(armed()?"Recording the next 90 seconds of X browsing.":"No timeline samples yet.","","","");
         String status=frames.size()+" recent timeline sample(s) · "+accepted+" distinct samples recorded";
         StringBuilder report=new StringBuilder("X accessibility scrolling trace · newest sample first\n"+
-            "Node paths and Compose semantics IDs are local UI identifiers, not remote post IDs.\n"+
+            "Actual text values first. Node paths and Compose IDs are UI identifiers, not post IDs.\n"+
             "Read-only metadata probes; no clicks or external lookup.\n");
-        for(Frame frame:frames)report.append("\n").append(frame.header()).append(frame.body()).append("\n");
+        for(Frame frame:frames){
+            String block="\n"+frame.header()+frame.body()+"\n";
+            if(report.length()+block.length()>MAX_COPY){report.append("\n[Older samples omitted from compact copy.]\n");break;}
+            report.append(block);
+        }
         Frame latest=frames.getFirst();
-        return new Snapshot(status,latest.header()+latest.body(),report.toString());
+        return new Snapshot(status,latest.header()+latest.body(),report.toString(),latest.attributes());
     }
     static synchronized Scan begin(boolean captureEnabled){
         long now=SystemClock.elapsedRealtime();
@@ -48,29 +51,41 @@ final class XAccessibilityInspector {
     }
     static synchronized void finish(Scan scan,boolean stillForeground,boolean bounded){
         if(scan==null||scan.request!=request||(!scan.automatic&&!armed())||!stillForeground||scan.count==0)return;
-        String body=scan.text.toString();
+        String body=scan.format();
         Frame previous=frames.peekFirst();
         if(previous!=null&&previous.body().equals(body))return;
         String header="Snapshot "+(++accepted)+" · "+java.time.Instant.now()+"\n"+
-            "Nodes inspected: "+scan.count+(bounded||scan.truncated?" · report bounded":"")+"\n";
-        frames.addFirst(new Frame(header,body));totalChars+=header.length()+body.length();
-        while(frames.size()>MAX_FRAMES||totalChars>MAX_HISTORY){
-            Frame old=frames.removeLast();totalChars-=old.header().length()+old.body().length();
-        }
+            "Nodes inspected: "+scan.count+" · nodes with text or description: "+scan.values.size()+(bounded||scan.truncated?" · report bounded":"")+"\n";
+        frames.addFirst(new Frame(header,body,scan.serialized()));
+        while(frames.size()>MAX_FRAMES)frames.removeLast();
     }
 
+    private record Value(String path,String text,String description){}
     static final class Scan {
         final long request;
         final boolean automatic;
-        final StringBuilder text=new StringBuilder();
+        final List<Value> values=new ArrayList<>();
+        final List<String> cards=new ArrayList<>();
+        final List<String> metadata=new ArrayList<>();
+        final org.json.JSONArray attributes=new org.json.JSONArray();
+        int attributeChars;
         final XPostMetadata.Probe metadataProbe=new XPostMetadata.Probe(12);
         int count;
         boolean truncated;
         Scan(long request,boolean automatic){this.request=request;this.automatic=automatic;}
 
         Bundle node(AccessibilityNodeInfo node,String path,Rect bounds){
-            if(truncated)return null;
+            count++;
             Bundle requested=null;
+            boolean visible=node.isVisibleToUser();
+            boolean card=visible&&XPostMetadata.conversationCard(node);
+            if(card)cards.add(path);
+            CharSequence value=node.getText(),description=node.getContentDescription();
+            if(visible&&(nonempty(value)||nonempty(description)))values.add(new Value(path,clip(value),clip(description)));
+            boolean structural=card||XPostMetadata.timelineHeader(node.getViewIdResourceName())||XKnowledgeRecords.hasPostMetadataRole(node.getViewIdResourceName());
+            // Skip empty layout wrappers in the compact diagnostic, but capture
+            // the actual attributes of visible text, post and tagged nodes.
+            if(!visible||(!structural&&!nonempty(value)&&!nonempty(description)&&node.getViewIdResourceName()==null))return null;
             StringBuilder line=new StringBuilder();
             line.append("\n# ").append(path).append(" ").append(bounds.toShortString());
             field(line,"resource",node.getViewIdResourceName());
@@ -80,7 +95,6 @@ final class XAccessibilityInspector {
                 .append(" children=").append(node.getChildCount())
                 .append(" window=").append(node.getWindowId());
             if(Build.VERSION.SDK_INT>=33)field(line,"uniqueId",node.getUniqueId());
-            CharSequence value=node.getText(),description=node.getContentDescription();
             field(line,"text",value);field(line,"description",description);
             spans(line,"text",value);spans(line,"description",description);
             field(line,"hint",node.getHintText());
@@ -96,18 +110,71 @@ final class XAccessibilityInspector {
             List<String> available=node.getAvailableExtraData();
             if(available!=null&&!available.isEmpty())field(line,"availableExtraData",String.join(", ",available));
             extras(line,"extras",node.getExtras(),0);
-            if(XPostMetadata.conversationCard(node)||XPostMetadata.timelineHeader(node.getViewIdResourceName())||XKnowledgeRecords.hasPostMetadataRole(node.getViewIdResourceName())){
+            if(structural){
                 Bundle outcomes=new Bundle();
                 requested=metadataProbe.read(node,true,outcomes);
+                StringBuilder probe=new StringBuilder(path+" · "+(node.getViewIdResourceName()==null?"conversation card":node.getViewIdResourceName()));
+                extras(probe,"requested",requested,0);extras(probe,"probe",outcomes,0);
+                metadata.add(probe.toString());
                 extras(line,"requested",requested,0);
                 extras(line,"probe",outcomes,0);
             }
-            if(text.length()+line.length()>MAX_REPORT){truncated=true;return requested;}
-            text.append(line).append('\n');count++;
+            try{
+                org.json.JSONObject actual=new org.json.JSONObject();
+                actual.put("path",path).put("text",value==null?org.json.JSONObject.NULL:clip(value))
+                    .put("contentDescription",description==null?org.json.JSONObject.NULL:clip(description))
+                    .put("attributes",line.toString()).put("frameworkNode",clip(node.toString()));
+                int size=actual.toString().length();
+                if(attributeChars+size<=MAX_REPORT){attributes.put(actual);attributeChars+=size;}else truncated=true;
+            }catch(org.json.JSONException ignored){}
             return requested;
+        }
+
+        String format(){
+            StringBuilder out=new StringBuilder("Visible post cards: "+cards.size()+"\n");
+            int index=0;
+            for(String card:cards){
+                out.append("\nPost card ").append(++index).append(" · ").append(card).append('\n');
+                appendValues(out,values,cards,card,6800);
+                if(out.length()>=6800)break;
+            }
+            out.append("\nOther visible text:\n");
+            appendValues(out,values,cards,"",7400);
+            out.append("\nPost metadata (read-only):\n");
+            for(String value:metadata){
+                if(out.length()+value.length()>9800){out.append("[Further metadata in node attributes.]\n");break;}
+                out.append(value).append('\n');
+            }
+            return out.toString();
+        }
+        String serialized(){
+            org.json.JSONObject result=new org.json.JSONObject();
+            try{result.put("format","roots.accessibility.node-attributes.v1").put("inspected",count)
+                .put("bounded",truncated).put("nodes",attributes);}catch(org.json.JSONException ignored){}
+            return result.toString();
         }
     }
 
+    private static boolean nonempty(CharSequence value){return value!=null&&value.length()>0;}
+    private static String clip(CharSequence value){
+        if(value==null)return "";
+        return value.subSequence(0,Math.min(MAX_VALUE,value.length())).toString()+(value.length()>MAX_VALUE?" …":"");
+    }
+    private static boolean under(String path,String parent){return path.equals(parent)||path.startsWith(parent+"/");}
+    private static String owner(String path,List<String> cards){
+        String best="";
+        for(String card:cards)if(under(path,card)&&card.length()>best.length())best=card;
+        return best;
+    }
+    private static void appendValues(StringBuilder out,List<Value> values,List<String> cards,String card,int limit){
+        for(Value value:values){
+            if(!owner(value.path(),cards).equals(card))continue;
+            String block=(value.text().isEmpty()?"":"  text: "+value.text()+"\n")+
+                (value.description().isEmpty()||value.description().equals(value.text())?"":"  description: "+value.description()+"\n");
+            if(out.length()+block.length()>limit){out.append("  [Further values omitted; use Copy node attributes.]\n");return;}
+            out.append(block);
+        }
+    }
     private static void field(StringBuilder line,String name,CharSequence value){
         if(value==null||value.length()==0)return;
         line.append("\n  ").append(name).append(": ");
