@@ -14,16 +14,25 @@ var database = Path.Combine(directory, "experience.db");
 try
 {
     if (args.Length == 0) args = ["--capture"];
-    if (args[0] is "--status" or "--search")
+    if (args[0] is "--status" or "--search" or "--backup")
     {
-        if (args[0] == "--status" && args.Length != 1 || args[0] == "--search" && args.Length != 2) return Usage();
+        if ((args[0] is "--status" or "--backup") && args.Length != 1 || args[0] == "--search" && args.Length != 2) return Usage();
         if (!File.Exists(database)) { Console.WriteLine("No private Experience Tree yet."); return 0; }
+        if(args[0]=="--backup"){
+            long revision=ExperienceSnapshots.Backup(database);
+            Console.WriteLine($"Consistent Experience backup (revision {revision}): {ExperienceSnapshots.BackupPath(database)}");
+            return 0;
+        }
         using var tree = new NativeTree(database);
         Console.WriteLine($"Private Experience Tree: {tree.Count()} fragments.");
         if(args[0]=="--status"){
             var diagnostic=Path.Combine(directory,"surface-diagnostics.txt");
             if(File.Exists(diagnostic))Console.WriteLine(SafeConsole(File.ReadAllText(diagnostic)));
             Console.WriteLine("Database: "+database);
+            foreach(var file in new[]{"experience.backup.db","experience.weights.gguf","experience.content.gguf"}){
+                var path=Path.Combine(directory,file);
+                Console.WriteLine((File.Exists(path)?"Available: ":"Not generated: ")+path);
+            }
         }
         if (args[0] == "--search")
         {
@@ -84,9 +93,11 @@ try
     foreach (var name in excluded) { start.ArgumentList.Add("--exclude"); start.ArgumentList.Add(name); }
     using var child = Process.Start(start) ?? throw new InvalidOperationException("Cannot start Surface agent.");
     long sequence = 0, textEvents = 0, activityEvents = 0;
+    Task? backupTask=null;
     try
     {
         childJob.Attach(child);
+        backupTask=Task.Run(()=>MaintainBackups(database,cancellation.Token));
         // Only native coverage diagnostics are shown; do not log text or
         // arbitrary backend messages from the diagnostic pipe.
         child.ErrorDataReceived += (_, e) =>
@@ -129,6 +140,7 @@ try
     {
         try
         {
+            cancellation.Cancel();
             // Signal the native agent via EOF. Do not wait for a blocked
             // UIA/OCR provider indefinitely and do not accept further records.
             try { child.StandardInput.Close(); } catch (IOException) { }
@@ -143,6 +155,7 @@ try
             // Also covers a crashed receiver or partially stopped descendant.
             childJob.Dispose();
         }
+        if(backupTask!=null){try{await backupTask.WaitAsync(TimeSpan.FromMilliseconds(500));}catch(TimeoutException){}catch(OperationCanceledException){}}
         if (!child.WaitForExit(1000))
             Console.Error.WriteLine($"Surface agent PID {child.Id} did not confirm exit.");
         Console.WriteLine($"Capture stopped. {textEvents} text events, {activityEvents} activity intervals committed.");
@@ -156,11 +169,29 @@ catch (Exception e)
     return 1;
 }
 
+static async Task MaintainBackups(string database,CancellationToken ct)
+{
+    try{
+        // Initial backup after capture has started, then a rolling refresh.
+        await Task.Delay(TimeSpan.FromMinutes(1),ct);
+        long last=-1;
+        while(!ct.IsCancellationRequested){
+            try{
+                long revision;
+                using(var tree=new NativeTree(database))revision=tree.Revision();
+                if(revision!=last)last=ExperienceSnapshots.Backup(database);
+            }catch(Exception e){Console.Error.WriteLine("Experience backup failed: "+e.GetType().Name);}
+            await Task.Delay(TimeSpan.FromMinutes(15),ct);
+        }
+    }catch(OperationCanceledException) when(ct.IsCancellationRequested){}
+}
+
 static string SafeConsole(string s) => string.Concat(s.Select(c => char.IsControl(c) ? ' ' : c));
 static int Usage()
 {
     Console.WriteLine("launch-surface.cmd [--capture [--no-ocr] [--diagnostics] [--exclude app.exe]]");
     Console.WriteLine("launch-surface.cmd --status");
+    Console.WriteLine("launch-surface.cmd --backup");
     Console.WriteLine("launch-surface.cmd --search \"text\"");
     return 2;
 }
