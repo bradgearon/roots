@@ -22,14 +22,43 @@ capture scope, not every monitor, occluded/background window or entire desktop.
 Optional controls: `launch-surface.cmd --capture --exclude private-app.exe`
 adds an exclusion; repeat --exclude for multiple executables.
 `launch-surface.cmd --capture --no-ocr` uses UI Automation only.
-By default the native worker reads visible UI Automation text and control labels,
-including static text under read-only documents. It skips editable and password
-subtrees individually. OCR supplements structured reading when the accessibility
-scan completes without visible sensitive controls. Duplicate text is merged across
-lanes only when the capture-to-screen geometry is verified. It uses the Windows OCR engine from installed profile
-languages, not a new LLM. Missing language packs, unsupported GPU/capture
-or inaccessible windows may leave coverage gaps. Windows OCR coordinates
-are capture pixels; UIA coordinates are desktop pixels. Neither is yet used to paint.
+By default the worker uses two independent reading paths. Cached UI Automation
+queries read visible labels and read-only text; a bounded control walk is
+available if a provider rejects cached queries. OCR reads the actual foreground
+window pixels, including rendered page text, games, images, and canvas text.
+A separate accessibility safety query identifies editable/password rectangles.
+Those regions are blanked before recognition; they no longer suppress the whole
+window. If the safety query or coordinate mapping fails, OCR is skipped rather
+than reading unredacted pixels. The structured reader can continue. Full-resolution
+overlapping tiles support 4K and large windows within a 16-megapixel frame budget.
+Screen changes are fingerprinted only in memory and identical frames are skipped.
+
+### Local OCR engine
+
+The native worker uses an installed 64-bit Tesseract 5 engine when available
+(Apache-2.0; upstream installation information:
+https://github.com/tesseract-ocr/tessdoc/blob/main/Installation.md).
+It looks in `%ProgramFiles%/Tesseract-OCR` or an absolute trusted
+`ROOTS_TESSERACT_DIR`. It loads the C API and language data once and passes
+redacted grayscale pixels in memory, not image files. English is the default;
+set `ROOTS_OCR_LANG=eng+jpn` for multiple installed traineddata languages.
+No dependency is downloaded or installed by Roots automatically.
+
+If Tesseract is absent, Roots attempts the existing Windows.Media.Ocr backend.
+Microsoft officially supports this API in packaged desktop applications; an
+unpackaged executable may not have a usable engine. If the console reports
+`no-ocr-engine`, install the upstream Windows Tesseract 5 distribution, e.g.
+`winget install --id UB-Mannheim.TesseractOCR --exact`, then restart the watcher.
+No rebuild is needed for this optional backend. Neither backend sends media to a
+network service. The console displays process IDs, visible UIA counts, mask
+counts, OCR coverage/backend status, and periodic committed-event totals;
+it does not print captured text. Use the existing Experience viewer or
+`launch-surface.cmd --search "example"` to read stored observations.
+
+The current scope is the active foreground window (including its displayed
+portion on multiple monitors). Whole-desktop simultaneous monitoring,
+background-window acquisition and visual scene understanding remain separate
+work. No process-name blacklist has been reintroduced.
 
 This milestone is experimental, not a broad desktop capture release. Keep the
 visible console open and press Ctrl+C to stop. Pause or stop capture before opening private content; OCR cannot reliably
@@ -44,7 +73,7 @@ or protected capture bypass. Use an ordinary desktop/borderless game.
 The native agent monitors foreground transitions, verifies process creation time
 and window identity, checks lock/input desktop, records bounded focused/idle
 spans, and samples static text at approximately 1 Hz. It revalidates the source
-before forwarding any observation. UIA traversal and WGC frame pool are bounded,
+before forwarding any observation. UIA queries, fallback traversal and the WGC frame pool are bounded,
 and OCR uses temporary memory only. Input idle status is recorded independently of text observation: an unlocked
 screen may still be presenting a cutscene or movie. Secure desktop and lock
 boundaries still suspend capture. Active time is not work/billable time.
