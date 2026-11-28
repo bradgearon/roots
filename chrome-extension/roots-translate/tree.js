@@ -308,7 +308,7 @@ async function refreshBrowserExperience(){
     const state=await command("experienceDomStatus");
     el("browserExperience").dataset.enabled=String(state.enabled===true);
     el("browserExperience").textContent=state.enabled?"Disable webpage reading":"Enable visible webpage reading";
-    el("browserExperienceStatus").textContent=state.enabled?"Enabled while Surface runs":"Chrome site access required once";
+    el("browserExperienceStatus").textContent=state.enabled?"Browser reading allowed when Experience capture is on":"Chrome site access required once";
   }catch(e){el("browserExperienceStatus").textContent=e.message;}
 }
 handle("browserExperience","click",async()=>{
