@@ -2,7 +2,6 @@ package com.wds.sixstars.contextoverlay;
 
 import android.content.Context;
 import android.util.AtomicFile;
-import android.util.Base64;
 import org.json.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -36,8 +35,8 @@ final class PublicFootprints {
     }
     private static byte[] unbase(String value,int limit)throws IOException{
         if(value.length()>((limit+2)/3)*4)throw new IOException("Footprint encoding too large");
-        byte[] bytes=Base64.decode(value,Base64.NO_WRAP);
-        if(bytes.length==0||bytes.length>limit||!Base64.encodeToString(bytes,Base64.NO_WRAP).equals(value))throw new IOException("Invalid footprint encoding");
+        byte[] bytes=Base64.getDecoder().decode(value);
+        if(bytes.length==0||bytes.length>limit||!Base64.getEncoder().encodeToString(bytes).equals(value))throw new IOException("Invalid footprint encoding");
         return bytes;
     }
     private static PublicKey publicKey(byte[] encoded)throws Exception{
@@ -86,8 +85,8 @@ final class PublicFootprints {
         Signature signature=Signature.getInstance("SHA256withECDSA");
         signature.initSign(key.getPrivate());signature.update(body(id,now,links));
         String wire=new JSONObject().put("id",id).put("revision",now).put("links",new JSONArray(links))
-            .put("key",Base64.encodeToString(key.getPublic().getEncoded(),Base64.NO_WRAP))
-            .put("sig",Base64.encodeToString(signature.sign(),Base64.NO_WRAP)).toString();
+            .put("key",Base64.getEncoder().encodeToString(key.getPublic().getEncoded()))
+            .put("sig",Base64.getEncoder().encodeToString(signature.sign())).toString();
         return verify(wire,now);
     }
     private File path(String id){return new File(directory,id+".json");}
