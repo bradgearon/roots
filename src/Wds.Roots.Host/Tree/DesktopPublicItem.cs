@@ -34,7 +34,7 @@ internal sealed record DesktopPublicItem(string Id,string Language,string Topic,
     {
         if(!MeshGraphItem.IsHash(peer)||at<0)throw new ArgumentException("Invalid external peer.");
         var rows=new List<Observation>();
-        string key;
+        string key="";
         void Add(string source,string value,string lang="",long? observed=null)=>rows.Add(new(source,key,value,lang,observed??at));
         if(Graph is null)
         {

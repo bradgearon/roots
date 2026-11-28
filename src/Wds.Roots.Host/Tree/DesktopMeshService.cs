@@ -20,6 +20,8 @@ internal sealed class DesktopMeshService : IAsyncDisposable
     static readonly JsonSerializerOptions WireOptions=new(JsonSerializerDefaults.Web){Encoder=JavaScriptEncoder.UnsafeRelaxedJsonEscaping};
     readonly DesktopTreeService _tree;
     readonly DesktopMeshIdentity _identity;
+    readonly DesktopPublicAxonService? _public;
+    readonly string _publicError="";
     readonly string _directory;
     readonly bool _lan;
     readonly object _gate=new();
@@ -39,20 +41,30 @@ internal sealed class DesktopMeshService : IAsyncDisposable
     {
         lock(_gate)
         {
-            if(!_lan||_peers.Count==0)throw new InvalidOperationException("Bind a LAN peer first.");
+            if(!_lan||(_peers.Count==0&&_public==null))throw new InvalidOperationException("No public discovery or private LAN Axon is available.");
             if(_receiveJob is {IsCompleted:false})return new {ok=true,running=true};
             _receiveStatus="Receiving";_receiveResult=null;
             _receiveJob=Task.Run(async ()=>{
                 try{
-                    object result=await ReceiveAsync(_lifetime.Token);
-                    lock(_gate){_receiveResult=result;_receiveStatus="Completed";}
+                    bool hasPrivate;lock(_gate)hasPrivate=_peers.Count>0;
+                    Task<MeshReceiveResult>? publicReceive=_public?.RequestAsync(_lifetime.Token);
+                    MeshReceiveResult privateResult=new(0,0,0,0),publicResult=new(0,0,0,0);
+                    if(hasPrivate)
+                    {
+                        try{privateResult=await ReceiveAsync(_lifetime.Token);}
+                        catch(Exception) when(!_lifetime.IsCancellationRequested){privateResult=new(0,0,0,1);}
+                    }
+                    if(publicReceive!=null)publicResult=await publicReceive;
+                    var result=new MeshReceiveResult(privateResult.Peers+publicResult.Peers,privateResult.Inserted+publicResult.Inserted,
+                        privateResult.Missing+publicResult.Missing,privateResult.Failed+publicResult.Failed);
+                    lock(_gate){_receiveResult=result;_receiveStatus=result.Missing>0?"Continuation pending":"Completed";}
                 }catch(OperationCanceledException){lock(_gate)_receiveStatus="Cancelled";}
                 catch(Exception e){lock(_gate)_receiveStatus="Receive failed: "+e.GetType().Name;}
             });
             return new {ok=true,running=true};
         }
     }
-    public DesktopMeshService(DesktopTreeService tree,string directory,bool lan)
+    public DesktopMeshService(DesktopTreeService tree,string directory,bool lan,string? repositoryRoot=null)
     {
         _tree=tree;_directory=directory;_lan=lan;
         _identity=new DesktopMeshIdentity(directory);
@@ -62,11 +74,19 @@ internal sealed class DesktopMeshService : IAsyncDisposable
             throw new InvalidDataException("Invalid saved Axon peers.");
         _enabled=File.Exists(Path.Combine(directory,"serving.enabled"));
         if(_enabled&&_lan)Start();
+        if(_lan&&Environment.GetEnvironmentVariable("ROOTS_PUBLIC_AXONS_DISABLED")!="1")
+        {
+            try{_public=new DesktopPublicAxonService(tree,repositoryRoot??Directory.GetCurrentDirectory(),Path.Combine(directory,"External"));}
+            catch(Exception e){_publicError=e.GetType().Name;Console.Error.WriteLine("Public Axon discovery unavailable: "+_publicError);}
+        }
     }
     public object Status()
     {
         lock(_gate)return new { enabled=_enabled,lan=_lan,listening=_listener!=null,status=_status,pin=_identity.Pin,
-            peers=_peers.Select(p=>new {host=p.Host,pin=p.Pin}).ToArray(),
+            peers=_peers.Select(p=>new DesktopAxonPeerView(p.Host,p.Pin,"Private LAN",false,0,"Saved"))
+                .Concat(_public?.Peers()??[]).ToArray(),
+            publicDiscovery=_public!=null,publicStatus=_public?.Status??(_publicError==""?"Public discovery off":"Public discovery unavailable: "+_publicError),
+            publicReceiving=_public?.Receiving??false,
             receiving=_receiveJob is {IsCompleted:false},receiveStatus=_receiveStatus,receiveResult=_receiveResult };
     }
     public string[] Invitations()
@@ -115,6 +135,11 @@ internal sealed class DesktopMeshService : IAsyncDisposable
             if(updated.Count>8)throw new ArgumentException("At most eight bound peers.");
             SavePeers(updated);_peers=updated;
         }
+    }
+    public void BlockPublic(string pin,bool blocked)
+    {
+        if(_public==null||!_public.Contains(pin))throw new ArgumentException("Unknown public Axon.");
+        _public.SetBlocked(pin,blocked);
     }
     public void Unbind(string pin)
     {
@@ -374,7 +399,7 @@ internal sealed class DesktopMeshService : IAsyncDisposable
         }
         var connected=await ConnectAsync(Current(pin),request,ct);sessions[pin]=connected.Item1;return connected.Item2;
     }
-    public async Task<object> ReceiveAsync(CancellationToken cancellationToken)
+    public async Task<MeshReceiveResult> ReceiveAsync(CancellationToken cancellationToken)
     {
         if(!_lan)throw new InvalidOperationException("Desktop host is in local-only mode.");
         if(!await _receive.WaitAsync(0,cancellationToken))throw new InvalidOperationException("Receive already in progress.");
@@ -458,13 +483,14 @@ internal sealed class DesktopMeshService : IAsyncDisposable
                     catch(Exception) when(!ct.IsCancellationRequested){failed++;}
                 }
             }
-            return new {peers,inserted,missing=pending.Count,failed};
+            return new MeshReceiveResult(peers,inserted,pending.Count,failed);
         }
         finally{foreach(var session in sessions.Values)session.Dispose();_receive.Release();}
     }
     public async ValueTask DisposeAsync()
     {
         _lifetime.Cancel();lock(_gate)Stop();
+        if(_public!=null)await _public.DisposeAsync();
         if(_accept!=null)try{await _accept;}catch{}
         await Task.WhenAll(_handlers.Values.ToArray());
         if(_receiveJob!=null)await _receiveJob;

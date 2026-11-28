@@ -81,9 +81,14 @@ function renderPeers(peers){
   if(peerSignature===signature)return;
   peerSignature=signature;el("peers").replaceChildren();
   for(const p of peers){
-    const row=node("div",undefined,"row");row.append(node("span",p.host+" · "+p.pin.slice(0,12)),action("Unbind",async()=>{
-      await command("unbind",{pin:p.pin});await refresh();
-    }));el("peers").append(row);
+    const row=node("div",undefined,"row"),external=p.transport&&p.transport!=="Private LAN";
+    row.append(node("span",(p.host||"Offline")+" · "+p.pin.slice(0,12)+" · "+(p.transport||"Private LAN")+
+      (external?" · "+(p.received||0)+" received · "+(p.status||"Bound"):"")),
+      action(external?(p.blocked?"Unblock":"Block"):"Unbind",async()=>{
+        if(external)await command("public-block",{pin:p.pin,blocked:!p.blocked});
+        else await command("unbind",{pin:p.pin});
+        await refresh();
+      }));el("peers").append(row);
   }
 }
 async function renderInvites(mesh){
@@ -107,11 +112,11 @@ async function refresh(){
     el("capture").disabled=false;el("capture").checked=latest.capture===true;
     const mesh=latest.mesh;
     el("listen").disabled=!mesh?.lan;el("listen").textContent=mesh?.enabled?"Stop listening":"Start listening";
-    el("receive").disabled=!mesh?.lan||!mesh.peers?.length||mesh.receiving;
+    el("receive").disabled=!mesh?.lan||(!mesh.publicDiscovery&&!mesh.peers?.length)||mesh.receiving;
     el("receive").textContent=mesh?.receiving?"Receiving…":"Receive missing knowledge";
     const result=mesh?.receiveResult;
     el("meshStatus").textContent=mesh
-      ? (mesh.lan?mesh.status:"Local-only mode")+" · "+mesh.receiveStatus+(result?" · "+result.inserted+" added · "+result.missing+" missing · "+result.failed+" errors":"")
+      ? (mesh.lan?mesh.status:"Local-only mode")+" · "+mesh.receiveStatus+" · "+(mesh.peers||[]).filter(p=>!p.blocked).length+" Axon subscriptions"+(mesh.publicStatus?" · "+mesh.publicStatus:"")+(result?" · "+result.inserted+" added · "+result.missing+" pending · "+result.failed+" errors":"")
       : "Mesh unavailable"+(latest.meshError?": "+latest.meshError:"");
     renderPeers(mesh?.peers||[]);
     await renderInvites(mesh);

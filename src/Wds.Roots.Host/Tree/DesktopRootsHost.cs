@@ -35,7 +35,7 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
             if(!OperatingSystem.IsWindows())File.SetUnixFileMode(directory,UnixFileMode.UserRead|UnixFileMode.UserWrite|UnixFileMode.UserExecute);
             tree=new DesktopTreeService(directory);
             DesktopMeshService? mesh=null;string error="";
-            try{mesh=new DesktopMeshService(tree,Path.Combine(directory,"Mesh"),lan);}
+            try{mesh=new DesktopMeshService(tree,Path.Combine(directory,"Mesh"),lan,repositoryRoot);}
             catch(Exception e){error=e.GetType().Name;Console.Error.WriteLine("Roots Mesh unavailable: "+error);}
             Console.WriteLine("ROOTS TREE: "+directory+" · "+tree.Count+" fragments · capture "+(tree.Capture?"on":"off"));
             if(mesh!=null)Console.WriteLine("ROOTS MESH: persistent peer identity; manage listening and bindings in the browser extension.");
@@ -52,6 +52,7 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
     record CaptureSetting(bool Enabled);
     record BindRequest(string Invitation);
     record UnbindRequest(string Pin);
+    record PublicBlockRequest(string Pin,bool Blocked);
     record BranchRequest(string Name,string Term);
     record CompileRequest(string Language);
 
@@ -115,6 +116,9 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
         });
         group.MapPost("/mesh/unbind",(UnbindRequest request)=>{
             host!.Mesh().Unbind(request.Pin);return Results.Json(new {ok=true,mesh=host.Mesh().Status()});
+        });
+        group.MapPost("/mesh/public-block",(PublicBlockRequest request)=>{
+            host!.Mesh().BlockPublic(request.Pin,request.Blocked);return Results.Json(new {ok=true,mesh=host.Mesh().Status()});
         });
         group.MapPost("/mesh/receive",()=>Results.Json(host!.Mesh().StartReceive()));
     }

@@ -9,6 +9,13 @@ if defined ROOTS_LAN (
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Ensure-LanFirewall.ps1 -Port 8233
     if errorlevel 1 echo Roots Mesh firewall setup was not completed. Continuing launch.
 )
+rem Optional Windows WinRT BLE route reader. Local IP discovery works without it.
+if defined ROOTS_LAN (
+    if not "%ROOTS_PUBLIC_AXONS_DISABLED%"=="1" (
+        dotnet build src\Wds.Roots.BleDiscovery -c Release
+        if errorlevel 1 echo BLE route reader build unavailable. Continuing with local IP discovery.
+    )
+)
 call build-desktop-tree.cmd
 if errorlevel 1 (
     set "ROOTS_TREE_DISABLED=1"
