@@ -16,3 +16,7 @@ android/.roots-deps/
 
 # Local cognitive atlas weights and research artifacts
 .roots-atlas/
+
+# Independently built Whirlwind transport
+/native/whirlwind/target/
+/android/.roots-whirlwind/

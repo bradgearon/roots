@@ -370,13 +370,13 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         intelligence.setSelection(IntelligenceModel.selected(this).ordinal());
         content.addView(intelligence);
         TextView intelligenceStatus=text(LocalIntelligenceProvider.status(this,IntelligenceModel.selected(this)),14,0xFFE5EFF4);
-        content.addView(text("Desktop intelligence uses its own listener on port 8221. Run launch-intelligence.cmd and get-intelligence-key.cmd on the PC. When enabled, your general intelligence requests, Mesh diagnosis reports and approved Axon reference notes are sent to that paired PC. Poetic Movement and element-flow profiling continue on the phone.",13,0xFFAAC8D4));
+        content.addView(text("Desktop intelligence uses the private Internal Mesh, not public Axons. Run launch-intelligence-remote.cmd for away-from-home use or launch-intelligence.cmd for LAN; pair using get-intelligence-key.cmd. When enabled, your general intelligence requests, Mesh diagnosis reports and approved Axon reference notes are sent to that paired PC. Poetic Movement and element-flow profiling continue on the phone.",13,0xFFAAC8D4));
         CheckBox desktopIntelligence=new CheckBox(this);
         desktopIntelligence.setText("Use desktop intelligence");desktopIntelligence.setTextColor(0xFFE5EFF4);
         desktopIntelligence.setChecked(prefs.desktopIntelligenceEnabled());content.addView(desktopIntelligence);
         EditText intelligenceAddress=new EditText(this);intelligenceAddress.setSingleLine(true);
         intelligenceAddress.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
-        intelligenceAddress.setHint("https://192.168.1.100:8221");intelligenceAddress.setText(prefs.desktopIntelligenceUrl());content.addView(intelligenceAddress);
+        intelligenceAddress.setHint("roots+iroh://… or HTTPS on port 8221");intelligenceAddress.setText(prefs.desktopIntelligenceUrl());content.addView(intelligenceAddress);
         EditText intelligenceKey=new EditText(this);intelligenceKey.setSingleLine(true);intelligenceKey.setSaveEnabled(false);
         intelligenceKey.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         if(android.os.Build.VERSION.SDK_INT>=26)intelligenceKey.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
@@ -401,6 +401,20 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 intelligenceKey.setHint(DesktopIntelligenceKeyStore.configured(this)?"Intelligence key saved — leave blank to keep":"Paste key from get-intelligence-key.cmd");
                 intelligenceStatus.setText("Intelligence connection saved. Test it, then enable Use desktop intelligence.");
             }catch(Exception error){intelligenceStatus.setText(error.getMessage());}
+        });
+        Button copyInternalIdentity=button("Copy my Internal Mesh device identity");content.addView(copyInternalIdentity);
+        copyInternalIdentity.setOnClickListener(v->{
+            // Public device keys only; no bearer or private key in clipboard.
+            new Thread(()->{
+                try{
+                    String identity=DesktopWhirlwind.identity(this);
+                    runOnUiThread(()->{
+                        android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                        if(clipboard!=null)clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Internal Mesh device identity",identity));
+                        intelligenceStatus.setText("Internal device identity copied. On your PC run allow-internal-device.cmd and paste these two lines. Only approved devices may connect.");
+                    });
+                }catch(Exception e){runOnUiThread(()->intelligenceStatus.setText("Could not create Internal Mesh identity. Build the Whirlwind Android library first."));}
+            },"RootsInternalIdentity").start();
         });
         Button testIntelligenceConnection=button("Test desktop intelligence connection");content.addView(testIntelligenceConnection);
         testIntelligenceConnection.setOnClickListener(v->{

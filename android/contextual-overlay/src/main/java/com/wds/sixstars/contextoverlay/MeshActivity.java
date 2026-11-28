@@ -68,6 +68,11 @@ public final class MeshActivity extends Activity {
         publish.addView(RootsUi.text(this,"Tree graph",18,RootsUi.TEXT,true));
         publish.addView(RootsUi.text(this,"Listening shares your Tree with connected peers.",13,RootsUi.MUTED,false));
         publish.addView(RootsUi.action(this,"Write a remembrance",()->publish(this,null,this::refresh)));
+        LinearLayout nearby=RootsUi.card(this,content);
+        nearby.addView(RootsUi.text(this,"Nearby encounters",18,RootsUi.TEXT,true));
+        nearby.addView(RootsUi.text(this,"Automatically discover and exchange published knowledge over Bluetooth. Manage bindings and interactions here.",13,RootsUi.MUTED,false));
+        nearby.addView(RootsUi.action(this,"Manage nearby exchange",()->startActivity(new Intent(this,EncounterActivity.class))));
+        nearby.addView(RootsUi.action(this,"Network Explorer",()->startActivity(new Intent(this,NetworkExplorerActivity.class))));
         LinearLayout listener=RootsUi.card(this,content);
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
         listener.addView(RootsUi.text(this,"Start listening once to serve automatically in the background and after restarts. Stop listening turns sharing off; saved invitations remain valid.",13,RootsUi.MUTED,false));

@@ -438,6 +438,8 @@ final class MeshPeer {
         }
         return items;
     }
+    /** Public encounters never use graphCatalog(), which contains raw captures. */
+    Map<String,MeshItem> encounterCatalog(){return legacyCatalog();}
     int offeredCount()throws Exception{return graphCatalog().size();}
     // Keep batches within the existing framed TLS transport, including JSON
     // escaping for large raw fragments.

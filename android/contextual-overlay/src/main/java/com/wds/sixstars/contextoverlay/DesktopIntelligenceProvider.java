@@ -33,6 +33,7 @@ final class DesktopIntelligenceProvider {
     private static final ThreadLocal<Long> REQUEST_REVISION=new ThreadLocal<>();
     private static volatile String lastStatus="No desktop intelligence connection test yet.";
     private static volatile IntelligenceModel lastStatusModel;
+    private static volatile String lastTransport="LAN TLS";
     private DesktopIntelligenceProvider(){}
 
     static String status(Context context,IntelligenceModel model){
@@ -41,7 +42,7 @@ final class DesktopIntelligenceProvider {
             "\n"+(DesktopIntelligenceKeyStore.configured(context)?"Intelligence key saved.":"Intelligence key missing or unreadable.")+"\n"+
             (lastStatusModel==null||lastStatusModel==model?lastStatus:"No desktop connection result for the selected model yet.");
     }
-    static void disconnect(){REVISION.incrementAndGet();for(Call call:CALLS)call.cancel();lastStatusModel=null;lastStatus="Connection settings changed; test the saved desktop connection.";}
+    static void disconnect(){REVISION.incrementAndGet();DesktopWhirlwind.cancel();for(Call call:CALLS)call.cancel();lastStatusModel=null;lastStatus="Connection settings changed; test the saved desktop connection.";}
     static void submit(Runnable task,LocalIntelligenceProvider.Result result){
         long revision=REVISION.get();
         try{WORK.execute(()->{
@@ -64,7 +65,7 @@ final class DesktopIntelligenceProvider {
         history.running("Waiting for desktop");
         try{
             String text=DesktopIntelligenceProtocol.answer(exchange(context,DesktopIntelligenceProtocol.GENERATE,payload,true),model);
-            history.finish(true,"Desktop intelligence completed");lastStatusModel=model;lastStatus="Last desktop intelligence request succeeded.";return text;
+            history.finish(true,"Desktop intelligence completed");lastStatusModel=model;lastStatus="Last desktop intelligence request succeeded · "+lastTransport+".";return text;
         }catch(Exception error){history.finish(false,"Desktop intelligence failed");lastStatusModel=model;lastStatus=reason(error);throw error;}
     }
     static void testConnection(Context context,IntelligenceModel model,LocalIntelligenceProvider.Result result){
@@ -72,7 +73,7 @@ final class DesktopIntelligenceProvider {
         submit(()->{
             try{
                 DesktopIntelligenceProtocol.health(exchange(app,DesktopIntelligenceProtocol.HEALTH,null,false),model);
-                lastStatusModel=model;lastStatus="Connected · pinned TLS, intelligence key, and selected model verified on port 8221.";
+                lastStatusModel=model;lastStatus="Connected · "+lastTransport+" · pinned TLS, intelligence key and selected model verified.";
                 result.completed(lastStatus,null);
             }catch(Exception error){lastStatusModel=model;lastStatus=reason(error);result.completed(null,lastStatus);}
         },result);
@@ -84,23 +85,37 @@ final class DesktopIntelligenceProvider {
         String base=DesktopIntelligenceProtocol.baseUrl(prefs.desktopIntelligenceUrl());
         String key=DesktopIntelligenceKeyStore.read(context);
         if(key.isEmpty())throw new DesktopIntelligenceProtocol.Failure("Save the intelligence connection key from get-intelligence-key.cmd in Intelligence settings.");
-        ConnectivityManager manager=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        Network network=manager==null?null:manager.getActiveNetwork();
-        NetworkCapabilities caps=network==null?null:manager.getNetworkCapabilities(network);
-        if(caps==null||!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)||!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN))
-            throw new DesktopIntelligenceProtocol.Failure("Connect to the desktop's Wi-Fi without a VPN for desktop intelligence.");
-        DesktopTlsPin pin=new DesktopTlsPin(key.substring(65));
-        SSLContext tls=SSLContext.getInstance("TLS");tls.init(null,new javax.net.ssl.TrustManager[]{pin},null);
-        OkHttpClient client=new OkHttpClient.Builder().socketFactory(network.getSocketFactory())
-            .sslSocketFactory(tls.getSocketFactory(),pin).hostnameVerifier((host,session)->pin.matchesPeer(session))
-            .dns(host->{
-                InetAddress[] addresses=network.getAllByName(host);
-                for(InetAddress address:addresses)if(address.isLoopbackAddress()||address.isAnyLocalAddress()||address.isMulticastAddress())
-                    throw new java.net.UnknownHostException("Invalid desktop address");
-                return Arrays.asList(addresses);
-            }).proxy(Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
-            .connectTimeout(4,TimeUnit.SECONDS).readTimeout(generation?85:8,TimeUnit.SECONDS)
-            .writeTimeout(8,TimeUnit.SECONDS).callTimeout(generation?90:12,TimeUnit.SECONDS).build();
+        boolean remote=DesktopWhirlwind.remote(base);
+        DesktopWhirlwind.Tunnel tunnel=null;
+        OkHttpClient client=null;
+        try{
+            OkHttpClient.Builder http=new OkHttpClient.Builder();
+            if(remote){
+                tunnel=DesktopWhirlwind.open(context,DesktopWhirlwind.route(base));
+                base=tunnel.base();lastTransport="Internal Mesh · "+tunnel.transport();
+                // The tunnel is a one-shot loopback listener. End-to-end HTTPS
+                // still authenticates the exact paired desktop, not the relay.
+                checkRevision();
+            }else{
+                ConnectivityManager manager=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
+                Network network=manager==null?null:manager.getActiveNetwork();
+                NetworkCapabilities caps=network==null?null:manager.getNetworkCapabilities(network);
+                if(caps==null||!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)||!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN))
+                    throw new DesktopIntelligenceProtocol.Failure("For away-from-home GPU use, save the desktop's roots+iroh:// Internal Mesh address. LAN addresses require desktop Wi-Fi.");
+                lastTransport="LAN TLS";
+                http.socketFactory(network.getSocketFactory()).dns(host->{
+                    InetAddress[] addresses=network.getAllByName(host);
+                    for(InetAddress address:addresses)if(address.isLoopbackAddress()||address.isAnyLocalAddress()||address.isMulticastAddress())
+                        throw new java.net.UnknownHostException("Invalid desktop address");
+                    return Arrays.asList(addresses);
+                });
+            }
+            DesktopTlsPin pin=new DesktopTlsPin(key.substring(65));
+            SSLContext tls=SSLContext.getInstance("TLS");tls.init(null,new javax.net.ssl.TrustManager[]{pin},null);
+            client=http.sslSocketFactory(tls.getSocketFactory(),pin).hostnameVerifier((host,session)->pin.matchesPeer(session))
+                .proxy(Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
+                .connectTimeout(4,TimeUnit.SECONDS).readTimeout(generation?85:8,TimeUnit.SECONDS)
+                .writeTimeout(8,TimeUnit.SECONDS).callTimeout(generation?90:12,TimeUnit.SECONDS).build();
         Request.Builder builder=new Request.Builder().url(base+path).header("Authorization","Bearer "+key.substring(0,64)).header("Accept","application/json");
         if(payload!=null)builder.post(RequestBody.create(payload.toString(),MediaType.get("application/json; charset=utf-8")));
         Call call=client.newCall(builder.build());CALLS.add(call);
@@ -112,7 +127,11 @@ final class DesktopIntelligenceProvider {
                 if(response.body()==null)throw new DesktopIntelligenceProtocol.Failure("Desktop intelligence returned an empty response.");
                 return new JSONObject(DesktopIntelligenceProtocol.readLimited(response.body().byteStream()));
             }
-        }finally{CALLS.remove(call);client.connectionPool().evictAll();client.dispatcher().executorService().shutdown();}
+        }finally{CALLS.remove(call);}
+        }finally{
+            if(client!=null){client.connectionPool().evictAll();client.dispatcher().executorService().shutdown();}
+            if(tunnel!=null)tunnel.close();
+        }
     }
     private static void checkRevision()throws DesktopIntelligenceProtocol.Failure{
         Long revision=REQUEST_REVISION.get();
@@ -120,7 +139,8 @@ final class DesktopIntelligenceProvider {
     }
     static String reason(Exception error){
         if(error instanceof DesktopIntelligenceProtocol.Failure)return error.getMessage();
-        if(error instanceof IllegalArgumentException)return "Check the saved PC intelligence address (HTTPS port 8221) and its separate connection key.";
+        if(error instanceof IllegalArgumentException)return "Check the saved desktop HTTPS or Internal Mesh address and its separate connection key.";
+        if(error instanceof IOException&&error.getMessage()!=null&&(error.getMessage().startsWith("Whirlwind")||error.getMessage().startsWith("Invalid tunnel")))return error.getMessage();
         if(error instanceof javax.net.ssl.SSLException)return "Desktop intelligence TLS verification failed. Update the PC, then pair its current get-intelligence-key.cmd key.";
         if(error instanceof java.net.SocketTimeoutException||error instanceof java.io.InterruptedIOException)return "Desktop intelligence timed out or was cancelled. Check the PC's intelligence console.";
         if(error instanceof java.net.ConnectException)return "Desktop intelligence connection refused. Start launch-intelligence.cmd and allow private-LAN TCP 8221.";
