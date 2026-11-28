@@ -20,9 +20,11 @@ final class EncounterSync {
     private final BooleanSupplier active;
     private final long epoch;
     private final Context context;
-    private final boolean automaticScope;
+    private final boolean automaticScope,fullScope;
     private final NavigableMap<String,MeshItem> catalog;
-    private final String root;
+    private String root;
+    private boolean peerGraph;
+    private int maxItems=8,maxIds=64;
     private EncounterBindings.Binding binding;
     private int received,sent,remoteTotal=-1,examined,known;
     private boolean complete,remotePageSeen,peerMore;
@@ -41,12 +43,12 @@ final class EncounterSync {
 
     EncounterSync(Context context,EncounterChannel channel,BooleanSupplier active)throws Exception{
         this.context=context.getApplicationContext();this.channel=channel;this.active=active;bindings=EncounterBindings.get(context);
-        automaticScope=EncounterSettings.automaticPublication(context);
+        automaticScope=EncounterSettings.automaticPublication(context);fullScope=EncounterSettings.fullRootGraph(context);
         tree=TreeRuntime.get(context);epoch=tree.captureEpoch();check();
         external=ExternalKnowledgeStore.get(context);
         catalog=new TreeMap<>(external.catalog());
         catalog.putAll(MeshPeer.get(context).encounterCatalog());
-        root=inventoryRoot(catalog.navigableKeySet());check();
+        check();
         // Persist after the authenticated application bind is accepted, not merely after opening the radio.
     }
     static String inventoryRoot(Collection<String> sortedIds)throws Exception{
@@ -58,7 +60,7 @@ final class EncounterSync {
         return MeshItem.hex(hash.digest());
     }
     private void check()throws IOException{
-        if(!active.getAsBoolean()||bindings.blocked(channel.peerId)||tree.captureEpoch()!=epoch||automaticScope!=EncounterSettings.automaticPublication(context))throw new IOException("Encounter stopped or publication scope/Tree changed");
+        if(!active.getAsBoolean()||bindings.blocked(channel.peerId)||tree.captureEpoch()!=epoch||automaticScope!=EncounterSettings.automaticPublication(context)||fullScope!=EncounterSettings.fullRootGraph(context))throw new IOException("Encounter stopped or publication scope/Tree changed");
     }
     private void send(JSONObject message)throws Exception{
         check();channel.send(message.toString().getBytes(StandardCharsets.UTF_8));
@@ -73,9 +75,21 @@ final class EncounterSync {
     int exchange(boolean client)throws Exception{
         // Both peers have proved their key and persisted a binding before exchange.
         stage="Binding handshake";
-        if(client){send(message("bind"));expect(read(),"bound");binding=bindings.bind(channel.peerId);pull();serve();}
-        else{expect(read(),"bind");binding=bindings.bind(channel.peerId);send(message("bound"));serve();pull();}
+        if(client){
+            send(message("bind").put("root_graph",true));JSONObject reply=read();expect(reply,"bound");
+            negotiate(reply);binding=bindings.bind(channel.peerId);pull();serve();
+        }else{
+            JSONObject request=read();expect(request,"bind");negotiate(request);binding=bindings.bind(channel.peerId);
+            send(message("bound").put("root_graph",true));serve();pull();
+        }
         return received;
+    }
+    private void negotiate(JSONObject hello)throws Exception{
+        peerGraph=hello.optBoolean("root_graph",false);
+        if(peerGraph){maxItems=32;maxIds=256;}
+        else catalog.values().removeIf(item->item.graph()!=null);
+        root=inventoryRoot(catalog.navigableKeySet());
+        check();
     }
     private void checkpoint(String remoteRoot,String after)throws Exception{
         check();
@@ -85,7 +99,7 @@ final class EncounterSync {
         stage="Receiving inventory";
         int inspected=0,transferred=0;
         String after=binding.after(),remoteRoot=binding.root();
-        while(inspected<MAX_IDS&&transferred<MAX_ITEMS){
+        while(inspected<maxIds&&transferred<maxItems){
             send(message("inventory").put("root",remoteRoot).put("after",after));
             JSONObject answer=read();expect(answer,"inventory");remotePageSeen=true;
             String actualRoot=answer.getString("root");
@@ -109,12 +123,12 @@ final class EncounterSync {
             if(!remoteRoot.equals(binding.root())||!after.equals(binding.after()))checkpoint(remoteRoot,after);
             int processed=0;
             for(String id:page){
-                if(inspected>=MAX_IDS||transferred>=MAX_ITEMS)break;
+                if(inspected>=maxIds||transferred>=maxItems)break;
                 if(!catalog.containsKey(id)){
                     stage="Receiving publication";send(message("want").put("id",id));
                     JSONObject data=read();expect(data,"data");
                     MeshItem item=MeshItem.parse(data.getJSONObject("item"));
-                    if(item.graph()!=null||!item.id().equals(id))throw new IOException("Unexpected publication");
+                    if((item.graph()!=null&&!peerGraph)||!item.id().equals(id))throw new IOException("Unexpected publication");
                     check();
                     if(!com.wds.sixstars.contextoverlay.tree.NativeTree.available())throw new IOException("Native Tree unavailable");
                     boolean added=external.receive(item,channel.peerId);
@@ -141,7 +155,7 @@ final class EncounterSync {
             JSONObject request=read();String op=request.getString("op");
             if("release".equals(op)){peerMore=request.optBoolean("more_pending",false);return;}
             if("inventory".equals(op)){
-                if(++pages>3)throw new IOException("Inventory budget exceeded");
+                if(++pages>(peerGraph?9:3))throw new IOException("Inventory budget exceeded");
                 String after=request.getString("after"),knownRoot=request.getString("root");
                 if((!after.isEmpty()&&!EncounterBindings.digest(after))||(!knownRoot.isEmpty()&&!EncounterBindings.digest(knownRoot)))
                     throw new IOException("Invalid inventory cursor");
@@ -154,7 +168,7 @@ final class EncounterSync {
                 send(message("inventory").put("root",root).put("ids",ids).put("more",more).put("total",catalog.size()));
             }else if("want".equals(op)){
                 String id=request.getString("id");
-                if(++items>MAX_ITEMS||!offered.remove(id)||!catalog.containsKey(id))throw new IOException("Invalid or excessive want");
+                if(++items>maxItems||!offered.remove(id)||!catalog.containsKey(id))throw new IOException("Invalid or excessive want");
                 send(message("data").put("item",catalog.get(id).json()));
                 JSONObject ack=read();expect(ack,"ack");if(!id.equals(ack.getString("id")))throw new IOException("Invalid receipt");sent++;
             }else throw new IOException("Unsupported encounter operation");

@@ -25,7 +25,7 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
     @Override public void onUpgrade(SQLiteDatabase db,int from,int to){throw new IllegalStateException("Unsupported external database migration");}
     record Publication(MeshItem item,String peer,long receivedAt,boolean promoted){}
     boolean receive(MeshItem item,String peer)throws Exception{
-        if(item.graph()!=null||!EncounterBindings.digest(peer))throw new IOException("Only verified explicit publications accepted");
+        if(!EncounterBindings.digest(peer)||!RootGraphExchange.fitsFrame(item))throw new IOException("Invalid or oversized external publication");
         String json=item.json().toString();
         if(json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>65536)throw new IOException("Publication too large");
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
@@ -46,7 +46,7 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
         try(Cursor cur=getReadableDatabase().rawQuery("SELECT id,body FROM publications ORDER BY id",null)){
             while(cur.moveToNext()){
                 MeshItem item=MeshItem.parse(new JSONObject(cur.getString(1)));
-                if(item.graph()!=null||!item.id().equals(cur.getString(0)))throw new IOException("Invalid stored publication");
+                if(!item.id().equals(cur.getString(0)))throw new IOException("Invalid stored publication");
                 result.put(item.id(),item);
             }
         }
@@ -58,7 +58,7 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
         try(Cursor cur=getReadableDatabase().rawQuery("SELECT id,body,peer,received_at,promoted FROM publications ORDER BY received_at DESC,id LIMIT "+limit,null)){
             while(cur.moveToNext()){
                 MeshItem item=MeshItem.parse(new JSONObject(cur.getString(1)));
-                if(item.graph()!=null||!item.id().equals(cur.getString(0)))throw new IOException("Invalid stored publication");
+                if(!item.id().equals(cur.getString(0)))throw new IOException("Invalid stored publication");
                 result.add(new Publication(item,cur.getString(2),cur.getLong(3),cur.getInt(4)!=0));
             }
         }
@@ -80,7 +80,7 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
             item=MeshItem.parse(new JSONObject(cur.getString(0)));peer=cur.getString(1);
             receivedAt=cur.getLong(2);previouslyPromoted=cur.getInt(3)!=0;
         }
-        if(item.graph()!=null||!item.id().equals(id)||!EncounterBindings.digest(peer))throw new IOException("Invalid publication");
+        if(!item.id().equals(id)||!EncounterBindings.digest(peer))throw new IOException("Invalid publication");
         // Native Tree uniqueness makes retry safe if the two databases were
         // interrupted between the Tree commit and the external marker.
         long inserted=item.storeReceived(tree,epoch,peer,receivedAt);

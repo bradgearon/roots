@@ -114,11 +114,12 @@ record MeshItem(String id,String language,String topic,String text,String link,G
         return tree.storeExplicit(publicationRows(System.currentTimeMillis()),epoch);
     }
     long storeReceived(TreeRuntime tree,long epoch,String peer,long receivedAt)throws Exception{
-        if(graph!=null||!EncounterBindings.digest(peer)||receivedAt<0)throw new IllegalArgumentException("Invalid external provenance");
+        if(!EncounterBindings.digest(peer)||receivedAt<0)throw new IllegalArgumentException("Invalid external provenance");
         return tree.storeExplicit(receivedRows(peer,receivedAt),epoch);
     }
     List<NativeTree.Observation> receivedRows(String peer,long at)throws Exception{
-        if(graph!=null||!EncounterBindings.digest(peer)||at<0)throw new IllegalArgumentException("Invalid external provenance");
+        if(!EncounterBindings.digest(peer)||at<0)throw new IllegalArgumentException("Invalid external provenance");
+        if(graph!=null)return RootGraphExchange.rows(this,peer,at);
         List<NativeTree.Observation> rows=publicationRows(at);
         rows.add(new NativeTree.Observation("record.mesh.external-peer",key(),peer,"",at));
         rows.add(new NativeTree.Observation("record.mesh.trust",key(),"External reference · unverified claims","",at));

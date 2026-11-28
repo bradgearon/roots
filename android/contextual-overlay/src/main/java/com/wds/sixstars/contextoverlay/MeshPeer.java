@@ -438,15 +438,29 @@ final class MeshPeer {
         }
         return items;
     }
-    /** Public encounters never use graphCatalog(), which includes private raw captures.
-     * Project structured, linked originals only under explicit source-scope consent.
-     * Public projections are generated on demand and never mutate the local Tree. */
+    /** Explicitly approved full Root mode uses the graph catalog; restricted mode
+     * retains the old publication projection. Never export local receipt metadata
+     * as fresh content: external receipts already retain their original envelopes. */
     record EncounterCatalogStats(int total,int automatic,int unlinked){}
     private record EncounterCatalog(Map<String,MeshItem> items,EncounterCatalogStats stats){}
-    private EncounterCatalog buildEncounterCatalog(){
+    private EncounterCatalog buildEncounterCatalog()throws Exception{
         Map<String,MeshItem> items=new java.util.TreeMap<>();
         if(!NativeTree.available())return new EncounterCatalog(items,new EncounterCatalogStats(0,0,0));
+        boolean full=EncounterSettings.fullRootGraph(app);
         boolean automatic=EncounterSettings.automaticPublication(app);
+        if(full){
+            // Full graph is deliberately independent of source links or topic lanes.
+            // Retain explicit legacy items for old peers and separately transfer
+            // native graph fragments and branch definitions to capable peers.
+            items.putAll(legacyCatalog());
+            int before=items.size();
+            for(MeshItem item:graphCatalog().values()){
+                MeshItem.Graph g=item.graph();
+                if(g==null||!RootGraphExchange.localOffer(item))continue;
+                if(RootGraphExchange.fitsFrame(item))items.putIfAbsent(item.id(),item);
+            }
+            return new EncounterCatalog(items,new EncounterCatalogStats(items.size(),items.size()-before,0));
+        }
         int projected=0,unlinked=0;
         for(NativeTree.Master record:tree.allRecords("",10000)){
             MeshItem item=MeshItem.from(record);
@@ -460,12 +474,12 @@ final class MeshPeer {
         }
         return new EncounterCatalog(items,new EncounterCatalogStats(items.size(),projected,unlinked));
     }
-    Map<String,MeshItem> encounterCatalog(){return buildEncounterCatalog().items();}
+    Map<String,MeshItem> encounterCatalog()throws Exception{return buildEncounterCatalog().items();}
     private final Object encounterCountLock=new Object();
     private long encounterCountAt=-1;
     private EncounterCatalogStats encounterStats=new EncounterCatalogStats(0,0,0);
     // UI-only cache: actual session inventory always reads a fresh catalog.
-    EncounterCatalogStats encounterPublicationStats(){
+    EncounterCatalogStats encounterPublicationStats()throws Exception{
         synchronized(encounterCountLock){
             long now=android.os.SystemClock.elapsedRealtime();
             if(encounterCountAt<0||now-encounterCountAt>=30000){
@@ -474,7 +488,7 @@ final class MeshPeer {
             return encounterStats;
         }
     }
-    int encounterPublicationCount(){return encounterPublicationStats().total();}
+    int encounterPublicationCount()throws Exception{return encounterPublicationStats().total();}
     void invalidateEncounterPublicationCount(){synchronized(encounterCountLock){encounterCountAt=-1;}}
     int offeredCount()throws Exception{return graphCatalog().size();}
     // Keep batches within the existing framed TLS transport, including JSON

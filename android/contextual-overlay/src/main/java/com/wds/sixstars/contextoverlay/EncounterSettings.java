@@ -21,6 +21,24 @@ final class EncounterSettings {
     // Existing open-exchange permission covered explicit publications only.
     static boolean automaticPublication(Context c){return prefs(c).getBoolean("automatic_public_posts",false);}
     static boolean publicationScopeReviewed(Context c){return prefs(c).getBoolean("automatic_public_reviewed",false);}
+    static boolean fullRootGraph(Context c){return prefs(c).getBoolean("full_root_graph_v1",false);}
+    static boolean rootGraphReviewed(Context c){return prefs(c).getBoolean("full_root_graph_reviewed_v1",false);}
+    private static void setFullRootGraph(Context c,boolean on){
+        prefs(c).edit().putBoolean("full_root_graph_v1",on).putBoolean("full_root_graph_reviewed_v1",true).commit();
+        if(com.wds.sixstars.contextoverlay.tree.NativeTree.available())MeshPeer.get(c).invalidateEncounterPublicationCount();
+        EncounterService.refreshDiscovery();
+    }
+    static void configureRootGraph(Activity activity,boolean on,Runnable changed){
+        if(!on){setFullRootGraph(activity,false);changed.run();return;}
+        if(explaining)return;
+        explaining=true;
+        AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Share your full Root knowledge graph?")
+            .setMessage("Full Root mode offers all retained Tree observations, linked or unlinked, translations, understanding and branch definitions to nearby Roots peers. This can include sensitive captured text or private messages. Only enable on a Tree whose entire content you are authorized to redistribute publicly. Every nearby compatible Roots member can receive and forward it. Credentials, model files and private network permissions are never part of this protocol. You can disable future sharing; delivered copies cannot be recalled.")
+            .setNegativeButton("Keep restricted publication",(d,w)->{setFullRootGraph(activity,false);changed.run();})
+            .setPositiveButton("Share full Root graph",(d,w)->{setFullRootGraph(activity,true);changed.run();}).create();
+        dialog.setOnDismissListener(d->{explaining=false;prefs(activity).edit().putBoolean("full_root_graph_reviewed_v1",true).apply();changed.run();});
+        dialog.show();
+    }
     private static void setAutomaticPublication(Context c,boolean enabled){
         prefs(c).edit().putBoolean("automatic_public_posts",enabled).putBoolean("automatic_public_reviewed",true).commit();
         if(com.wds.sixstars.contextoverlay.tree.NativeTree.available())MeshPeer.get(c).invalidateEncounterPublicationCount();
@@ -57,7 +75,7 @@ final class EncounterSettings {
         if(!EncounterService.available(activity)||!enabled(activity))return;
         if(eligible(activity)){
             startIfAllowed(activity);
-            if(!publicationScopeReviewed(activity))configureAutomaticPublication(activity,true,()->{});
+            if(!rootGraphReviewed(activity))configureRootGraph(activity,true,()->{});
             return;
         }
         if(!prefs(activity).getBoolean("setup_shown",false))authorize(activity);
@@ -67,10 +85,10 @@ final class EncounterSettings {
         if(consent(activity)){request(activity);return;}
         explaining=true;
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Nearby Roots exchange is on by default")
-            .setMessage("Roots automatically binds over Bluetooth, shares public knowledge and retains received records in your Tree as external references. The default automatic publication scope includes original X posts with exact links. Links do not prove public visibility; enable automatic publication only if those captured posts are safe and permitted to redistribute. Private notes, other screen text, prompts and credentials are excluded. Copies cannot reliably be recalled.")
+            .setMessage("Roots automatically binds over Bluetooth and retains received records in your Tree as external references. You can share only approved public items, or approve full Root graph publication once after permission is granted. No per-peer subscription approval is required. Copies cannot reliably be recalled.")
             .setNegativeButton("Not now",(d,w)->{prefs(activity).edit().putBoolean("setup_shown",true).apply();})
             .setNeutralButton("Only existing publications",(d,w)->{
-                prefs(activity).edit().putBoolean("consent",true).putBoolean("setup_shown",true).putBoolean("automatic_public_posts",false).putBoolean("automatic_public_reviewed",true).commit();request(activity);
+                prefs(activity).edit().putBoolean("consent",true).putBoolean("setup_shown",true).putBoolean("automatic_public_posts",false).putBoolean("automatic_public_reviewed",true).putBoolean("full_root_graph_reviewed_v1",true).commit();request(activity);
             })
             .setPositiveButton("Enable automatic sharing",(d,w)->{
                 prefs(activity).edit().putBoolean("consent",true).putBoolean("setup_shown",true).putBoolean("automatic_public_posts",true).putBoolean("automatic_public_reviewed",true).commit();request(activity);
@@ -84,6 +102,11 @@ final class EncounterSettings {
         activity.requestPermissions(permissions(),REQUEST);
     }
     static void permissionResult(Activity activity,int request){
-        if(request==REQUEST)startIfAllowed(activity);
+        if(request==REQUEST){
+            startIfAllowed(activity);
+            if(eligible(activity)&&!rootGraphReviewed(activity))activity.getWindow().getDecorView().post(()->{
+                if(!activity.isFinishing()&&!activity.isDestroyed()&&!rootGraphReviewed(activity))configureRootGraph(activity,true,()->{});
+            });
+        }
     }
 }
