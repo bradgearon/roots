@@ -162,6 +162,53 @@ public final class AutoOverlayPositionStoreTest {
         assertEquals(170,store.snapshot(130).get(0).rectangle.y);
     }
 
+    @Test public void replacementAtSameBoundsImmediatelyEvictsOldTranslation(){
+        AutoOverlayPositionStore store=new AutoOverlayPositionStore(440,920);
+        store.publish(Arrays.asList(post("old",40,350)),false,100);
+        store.publish(Arrays.asList(post("new",40,350)),false,200);
+        assertEquals(1,store.snapshot(200).size());
+        assertEquals("new",store.snapshot(200).get(0).id);
+        assertFalse(store.contains("old"));
+    }
+
+    @Test public void layoutMovementWithoutScrollEventEvictsMissingPosts(){
+        AutoOverlayPositionStore store=new AutoOverlayPositionStore(440,920);
+        store.publish(Arrays.asList(post("old",40,200),post("remaining",40,600)),false,100);
+        store.publish(Arrays.asList(post("remaining",40,450)),false,200);
+        assertEquals(1,store.snapshot(200).size());
+        assertEquals(450,store.snapshot(200).get(0).rectangle.y);
+        assertFalse(store.contains("old"));
+    }
+
+    @Test public void repeatedTextOwnsSeparatePositions(){
+        AutoOverlayPositionStore store=new AutoOverlayPositionStore(440,920);
+        store.publishScene(Arrays.asList(post("same",40,200),post("same",40,550)),false,100);
+        var first=store.snapshot(100);
+        assertEquals(2,first.size());
+        assertNotEquals(first.get(0).id,first.get(1).id);
+        assertEquals("same",AutoOverlayPositionStore.contentId(first.get(0).id));
+        assertTrue(store.containsContent("same"));
+        store.applyMeasuredScroll(0,50);
+        store.publishScene(Arrays.asList(post("same",40,150),post("same",40,500)),true,200);
+        var moved=store.snapshot(200);
+        assertEquals(first.get(0).id,moved.get(0).id);
+        assertEquals(first.get(1).id,moved.get(1).id);
+        store.publishScene(Arrays.asList(post("same",40,500)),false,250);
+        assertEquals(1,store.snapshot(250).size());
+        assertEquals(first.get(1).id,store.snapshot(250).get(0).id);
+    }
+
+    @Test public void absentSceneItemsDoNotKeepStaleTextEvenOnStationaryScan(){
+        AutoOverlayPositionStore store=new AutoOverlayPositionStore(440,920);
+        store.publishScene(Arrays.asList(post("old",40,200),post("other",40,550)),false,100);
+        store.publishScene(Arrays.asList(post("other",40,550)),false,200);
+        assertFalse(store.containsContent("old"));
+        assertEquals(1,store.snapshot(200).size());
+        store.publishScene(Collections.emptyList(),false,300);
+        assertFalse(store.containsContent("other"));
+        assertTrue(store.snapshot(300).isEmpty());
+    }
+
     @Test public void temporaryStationaryTreeGapDoesNotBlink() {
         AutoOverlayPositionStore store = new AutoOverlayPositionStore(440, 920);
         store.publish(Arrays.asList(post("one", 40, 350)), false, 100);

@@ -18,11 +18,14 @@ final class MeshTlsHandshake {
     private static final int TIMEOUT_MS=2500;
     private MeshTlsHandshake(){}
     static String[] workingProtocols(SSLContext server,SSLContext client)throws IOException{
+        return workingProtocols(server,client,new String[]{"TLSv1.3","TLSv1.2"});
+    }
+    static String[] workingProtocols(SSLContext server,SSLContext client,String[] enabled)throws IOException{
         List<String> supported=Arrays.asList(server.getSupportedSSLParameters().getProtocols());
         List<String> working=new ArrayList<>();
         Exception last=null;
         for(String protocol:new String[]{"TLSv1.3","TLSv1.2"}){
-            if(!supported.contains(protocol))continue;
+            if(!supported.contains(protocol)||!Arrays.asList(enabled).contains(protocol))continue;
             try{probe(server,client,protocol);working.add(protocol);}
             catch(Exception failure){last=failure;}
         }

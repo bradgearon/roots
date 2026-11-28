@@ -166,12 +166,19 @@ final class SecureComputeSocket {
     }
     /** No discovery or heartbeat. Connect only to send actual requested work. */
     JSONObject translate(Network network,String base,String key,JSONObject payload,Runnable started)throws Exception{
+        return runRequest(network,base,key,payload,30000,started);
+    }
+    JSONObject detect(Network network,String base,String key,String text)throws Exception{
+        return runRequest(network,base,key,new JSONObject().put("kind","detect")
+            .put("request",new JSONObject().put("text",text)),2500,()->{});
+    }
+    private JSONObject runRequest(Network network,String base,String key,JSONObject payload,long timeout,Runnable started)throws Exception{
         if(!exchange.tryLock())throw new IOException("Compute socket busy");
         Session s=null;
         try{
             s=connect(network,base,key,"/api/translation/v1/socket");
             if(s==null)throw new IOException("Compute socket unavailable");
-            JSONObject reply=request(s,payload,30000,started);
+            JSONObject reply=request(s,payload,timeout,started);
             s.ready=true;return reply;
         }catch(Exception e){if(s!=null)fail(s);throw e;}
         finally{exchange.unlock();}
@@ -185,7 +192,7 @@ final class SecureComputeSocket {
         String id=pending.id;
         try{
             JSONObject input=payload.getJSONObject("request");
-            input.put("type","translate").put("id",id);
+            input.put("type","detect".equals(payload.optString("kind"))?"detect":"translate").put("id",id);
             if(!s.pending.compareAndSet(null,pending))throw new IOException("Compute socket busy");
             if(s.closed||!s.socket.send(input.toString()))throw new IOException("Compute send failed");
             trace("request="+id+" JSON frame queued over TLS");
@@ -200,6 +207,6 @@ final class SecureComputeSocket {
         finally{s.pending.compareAndSet(pending,null);}
     }
     private static String safeError(String error){
-        return java.util.Set.of("invalid_request","translation_unavailable","too_many_requests","duplicate_id").contains(error)?error:"unknown_error";
+        return java.util.Set.of("invalid_request","translation_unavailable","detection_unavailable","too_many_requests","duplicate_id").contains(error)?error:"unknown_error";
     }
 }

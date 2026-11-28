@@ -22,7 +22,7 @@ internal static class LocalTranslationSocket
 
     public static async Task RunAsync(
         HttpContext context, ITranslationService translator, string secret,
-        ILanguageDetectionService detector, bool lan = false)
+        ILanguageDetectionService detector, bool lan = false, CancellationToken stopping = default)
     {
         if (!context.WebSockets.IsWebSocketRequest)
         {
@@ -44,7 +44,9 @@ internal static class LocalTranslationSocket
 
         using WebSocket socket = await context.WebSockets.AcceptWebSocketAsync(new WebSocketAcceptContext { KeepAliveInterval = mobile ? TimeSpan.Zero : TimeSpan.FromSeconds(20) });
         if (mobile) Trace("mobile TLS socket authenticated");
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, stopping);
+        // A persistent client must not hold the host open during shutdown.
+        using var abortOnStop = stopping.Register(() => { try { socket.Abort(); } catch (ObjectDisposedException) { } });
         using var sendGate = new SemaphoreSlim(1, 1);
         var active = new ConcurrentDictionary<string, CancellationTokenSource>(StringComparer.Ordinal);
         var tasks = new ConcurrentBag<Task>();
@@ -155,7 +157,8 @@ internal static class LocalTranslationSocket
 
             try { await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(3)); }
             catch (Exception) { /* Requests are cancelled; do not block shutdown. */ }
-            await TryCloseAsync(socket, WebSocketCloseStatus.NormalClosure, "Closed");
+            if(stopping.IsCancellationRequested)socket.Abort();
+            else await TryCloseAsync(socket, WebSocketCloseStatus.NormalClosure, "Closed");
         }
     }
 
@@ -301,7 +304,10 @@ internal static class LocalTranslationSocket
         try
         {
             if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-                await socket.CloseAsync(status, reason, CancellationToken.None);
+            {
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                await socket.CloseAsync(status, reason, deadline.Token);
+            }
         }
         catch (Exception) { }
     }

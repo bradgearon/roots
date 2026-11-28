@@ -97,5 +97,7 @@ android {
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("com.samskivert:jmustache:1.16")
+    // Small bundled language classifier; no Roots brain/llama.cpp rebuild.
+    implementation("com.google.mlkit:language-id:17.0.6")
     testImplementation("junit:junit:4.13.2")
 }

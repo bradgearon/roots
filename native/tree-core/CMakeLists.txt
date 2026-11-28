@@ -7,7 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Android's platform sqlite is not a public NDK dependency. Statically link
 # the pinned upstream amalgamation, or an explicitly supplied source directory.
 set(ROOTS_SQLITE_AMALGAMATION_DIR "" CACHE PATH "Directory containing sqlite3.c and sqlite3.h")
-if(ANDROID AND NOT ROOTS_SQLITE_AMALGAMATION_DIR)
+option(ROOTS_TREE_PROVISION_SQLITE "Use the existing pinned SQLite provisioner on desktop" OFF)
+if((ANDROID OR ROOTS_TREE_PROVISION_SQLITE) AND NOT ROOTS_SQLITE_AMALGAMATION_DIR)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ProvisionSQLite.cmake")
     roots_provision_sqlite(ROOTS_SQLITE_AMALGAMATION_DIR)
 endif()

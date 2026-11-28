@@ -27,7 +27,7 @@ import org.json.JSONObject;
 
 /** Local peer access, separate from subscription policy. Only authenticated
  * ciphertext is persisted, under noBackup with a non-exportable Keystore key.
- * Saving a grant does not extend its lifetime on the serving peer. */
+ * Member grants survive listener restarts and normal app updates. */
 final class AxonPeerStore {
     private static final String KEY_ALIAS="roots.axon.peer-access.v1";
     private static final String FILE_NAME="subscription.axon-access";
@@ -76,6 +76,26 @@ final class AxonPeerStore {
             if(plain!=null)Arrays.fill(plain,(byte)0);
             if(sealed!=null)Arrays.fill(sealed,(byte)0);
         }
+    }
+    /** Persist a member grant received from the already pinned source.
+     * Compare the exact previous grant so a concurrent rebind or address edit
+     * is never overwritten by an in-flight request. */
+    static synchronized boolean refreshDerivedGrant(Context context,MeshPeer.Invite previous,String derived)throws IOException{
+        if(!MeshNetworkAccess.validHex(derived))throw invalid();
+        try{
+            AxonSubscription policy=AxonSubscription.load(context);
+            if(policy==null||!policy.pins.contains(previous.pin()))return false;
+            List<MeshPeer.Invite> current=new ArrayList<>(load(context,policy));
+            for(int i=0;i<current.size();i++){
+                MeshPeer.Invite saved=current.get(i);
+                if(!saved.pin().equals(previous.pin())||!saved.host().equals(previous.host()))continue;
+                if(MeshNetworkAccess.equal(saved.token(),derived))return true;
+                if(!MeshNetworkAccess.equal(saved.token(),previous.token()))return false;
+                current.set(i,new MeshPeer.Invite(saved.host(),saved.pin(),derived));
+                save(context,policy,current);return true;
+            }
+            return false;
+        }catch(Exception failure){throw new IOException("Member grant could not be saved securely.");}
     }
     static synchronized void clear(Context context){
         AtomicFile file=file(context);file.delete();

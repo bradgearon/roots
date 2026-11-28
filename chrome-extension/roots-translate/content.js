@@ -190,6 +190,8 @@
         continue;
       }
       active = item;
+      const treePost = globalThis.RootsTreeCapture?.snapshot(item.node);
+      const requestedTarget = targetLang;
       chrome.runtime.sendMessage({
         type:"sixStarsTranslate",
         requestId:item.requestId,
@@ -198,6 +200,8 @@
         auto:!item.manual
       }, response => {
         const messageError = chrome.runtime.lastError?.message;
+        if (!messageError && treePost && response?.ok)
+          globalThis.RootsTreeCapture?.translated(treePost,response,requestedTarget);
         if (active === item) active = null;
         if (pendingKeys.get(item.node) === item.key) pendingKeys.delete(item.node);
         if (!messageError && response?.ok && response.skipped) {

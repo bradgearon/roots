@@ -53,19 +53,35 @@ final class AutoSceneSurfaceManager {
         if (!changed) return false;
         if (next == null) {
             releaseAttached();
+            removeFallback();
+            lastPaint=Collections.emptyList();
             target = null;
             attachFailed = false;
             return true;
         }
         if (target == null || !target.sameSurface(next)) {
             releaseAttached();
+            removeFallback();
+            lastPaint=Collections.emptyList();
             attachFailed = false;
         }
         target = next;
         return true;
     }
 
+    /** Geometry changed: immediately hide pixels that belong to the old
+     * snapshot, even while the replacement frame is being rendered. */
+    void invalidateGeometry() {
+        lastPaint=Collections.emptyList();
+        if(attached!=null)attached.present(lastPaint);
+        if(fallback!=null){
+            fallback.setVisibility(android.view.View.INVISIBLE);
+            fallback.setTextItems(lastPaint);
+        }
+    }
+
     void present(List<AutoOverlaySceneView.TextItem> items) {
+        if(target==null){releaseAttached();removeFallback();lastPaint=Collections.emptyList();return;}
         lastPaint = Collections.unmodifiableList(new ArrayList<>(items));
         if (attached != null) {
             try {
@@ -101,7 +117,10 @@ final class AutoSceneSurfaceManager {
             }
         }
         if (items.isEmpty()) {
-            if (fallback != null) fallback.setTextItems(items);
+            if (fallback != null) {
+                fallback.setVisibility(android.view.View.INVISIBLE);
+                fallback.setTextItems(items);
+            }
             return;
         }
         if (fallback == null) {
@@ -127,6 +146,7 @@ final class AutoSceneSurfaceManager {
             }
         }
         fallback.setTextItems(items);
+        fallback.setVisibility(android.view.View.VISIBLE);
     }
 
     private void onAttachedFailure(int originalWindowId, long generation) {
@@ -143,6 +163,8 @@ final class AutoSceneSurfaceManager {
     /** A resumed/recreated X window can reuse size and an old window ID. */
     void resetAttachment() {
         releaseAttached();
+        removeFallback();
+        lastPaint=Collections.emptyList();
         attachFailed = false;
         target = null;
     }

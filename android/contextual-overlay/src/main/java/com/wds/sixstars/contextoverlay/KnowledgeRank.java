@@ -70,8 +70,12 @@ final class KnowledgeRank {
             if(wave!=null)score+=wave.priority();
             results.add(new Ranked(record,score,java.util.Collections.unmodifiableList(new ArrayList<>(branches)),roles.size(),replicas,demand,wave));
         }
-        results.sort(Comparator.comparingDouble(Ranked::score).reversed().thenComparing(
-            Comparator.comparingLong((Ranked r)->r.record().sequence()).reversed()));
+        // Use the original observation timestamp shown on each card, not the
+        // time a translation was generated or the local insertion sequence.
+        // Existing knowledge weights break ties without promoting older items.
+        results.sort(Comparator.comparingLong((Ranked r)->r.record().body().at()).reversed()
+            .thenComparing(Comparator.comparingDouble(Ranked::score).reversed())
+            .thenComparing(Comparator.comparingLong((Ranked r)->r.record().sequence()).reversed()));
         return results;
     }
 }

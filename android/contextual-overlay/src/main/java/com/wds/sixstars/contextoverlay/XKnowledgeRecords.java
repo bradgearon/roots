@@ -41,7 +41,7 @@ final class XKnowledgeRecords {
     static boolean hasPostMetadataRole(String id){
         String role=roleId(id);
         return !secondaryRole(role)&&(isPermalinkRole(role)||PostTextHeuristics.isPostContainerId(role)
-            ||PostTextHeuristics.isPostTextId(role));
+            ||PostTextHeuristics.isPostTextId(role)||XPostMetadata.timelineHeader(id));
     }
     private static void sourceLink(List<Sample> out,String link,String id,Rect bounds){
         if(link.isEmpty()||bounds.isEmpty())return;
@@ -87,18 +87,33 @@ final class XKnowledgeRecords {
     static void sampleMetadata(List<Sample> out,android.os.Bundle extras,String id,Rect bounds){
         if(extras==null||!hasPostMetadataRole(id))return;
         for(String key:extras.keySet()){
-            String name=key.toLowerCase(Locale.ROOT);
-            name=name.substring(Math.max(name.lastIndexOf('.'),name.lastIndexOf(':'))+1)
-                .replace("_","");
+            String name=XPostMetadata.keyRole(key);
             try{
                 Object value=extras.get(key);
-                if(name.matches("(tweet|post|status)(id|idstr)")){
+                if(XPostMetadata.TEST_TAG.equals(key)){
+                    sourceLink(out,XPostMetadata.linkFromTag(value),id,bounds);
+                }else if(name.matches("(tweet|post|status)(id|idstr)")){
                     sourceLink(out,XPostLink.fromRemoteId(value),id,bounds);
                 }else if(name.matches("(tweet|post|status)(url|uri|link|permalink)|permalink")&&value!=null){
                     sourceLink(out,XPostLink.canonical(value.toString()),id,bounds);
                 }
             }catch(RuntimeException ignored){/* Optional metadata; raw capture still proceeds. */}
         }
+    }
+    /** A node's metadata is gathered together before adding it to the legacy
+     * sample lane, so list truncation cannot change its structural owner. */
+    static void appendSamples(List<Sample> out,List<Sample> samples){
+        for(Sample sample:samples){
+            if(sample.sourceLink)sourceLink(out,sample.text,sample.id,sample.bounds);
+            else if(out.size()<SAMPLE_LIMIT)out.add(sample);
+        }
+    }
+    static List<NativeTree.Observation> assembleCards(List<XTimelineCardRecords.Post> posts,long at){
+        Map<String,NativeTree.Observation> out=new LinkedHashMap<>();
+        for(XTimelineCardRecords.Post post:posts)
+            for(XTimelineCardRecords.Field field:post.fields())
+                add(out,post.key(),field.role(),field.value(),at,field.role().equals("body")?post.language():"");
+        return new ArrayList<>(out.values());
     }
     static List<NativeTree.Observation> assemble(List<TextCandidate> bodies,List<Sample> samples,long at){
         Map<String,NativeTree.Observation> out=new LinkedHashMap<>();
@@ -196,11 +211,13 @@ final class XKnowledgeRecords {
         return null;
     }
     private static void add(Map<String,NativeTree.Observation> out,String key,String role,String value,long at){
+        add(out,key,role,value,at,"");
+    }
+    private static void add(Map<String,NativeTree.Observation> out,String key,String role,String value,long at,String suppliedLanguage){
         for(String text:KnowledgeText.fragments(value)){
             String source="record.x."+role;
             String id=source+"\u001f"+key+"\u001f"+text;
-            String language=role.equals("link")?"":XVisibleTextReader.languageHint(text);
-            if(role.equals("body")&&language.isEmpty())language=KnowledgeLanguage.englishHint(text);
+            String language=role.equals("link")?"":PostLanguage.hint(text,suppliedLanguage);
             out.putIfAbsent(id,new NativeTree.Observation(source,key,text,language,at));
         }
     }

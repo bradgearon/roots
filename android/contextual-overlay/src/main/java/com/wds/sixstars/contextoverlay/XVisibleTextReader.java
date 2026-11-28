@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Captures only X's foreground accessibility nodes. The reader extracts likely
@@ -18,7 +19,7 @@ import java.util.Map;
  * viewport geometry. No screenshot, persistence or non-X application reading.
  */
 public final class XVisibleTextReader {
-    private record ScanNode(AccessibilityNodeInfo node, boolean sourceAllowed){}
+    private record ScanNode(AccessibilityNodeInfo node, boolean sourceAllowed,String path){}
     public static final String X_PACKAGE = "com.twitter.android";
     private static final int MAX_VISITED_NODES = 850;
     private static final int MAX_DETAIL_NODES = 1400;
@@ -32,6 +33,7 @@ public final class XVisibleTextReader {
     private int lastAuthorMatchCount;
     private int lastClippedNameCount;
     private boolean lastPostDetail;
+    private long nextMetadataProbeAt;
     // In-memory discovery snapshot, independent of the chosen render layout.
     private List<TextCandidate> lastDiscovered = Collections.emptyList();
     public List<TextCandidate> lastDiscovered() { return lastDiscovered; }
@@ -62,9 +64,21 @@ public final class XVisibleTextReader {
 
     public List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
             boolean retainKnowledge) {
+        return find(root,width,height,scaledDensity,retainKnowledge,null);
+    }
+
+    List<TextCandidate> find(AccessibilityNodeInfo root,int width,int height,float scaledDensity,
+            boolean retainKnowledge,XAccessibilityInspector.Scan inspector) {
         Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> observations=new LinkedHashMap<>();
-        List<XKnowledgeRecords.Sample> knowledgeSamples=new ArrayList<>();
+        Map<Integer,List<XKnowledgeRecords.Sample>> samplesByOrder=new LinkedHashMap<>();
+        List<XTimelineCardRecords.Node> cardNodes=new ArrayList<>();
+        Map<Integer,Rect> cardNodeBounds=new HashMap<>();
         long observedAt=System.currentTimeMillis();
+        // Do not turn fast scrolling into repeated metadata IPC. Explicit
+        // values already present in extras are still read on every scan.
+        long uptime=android.os.SystemClock.uptimeMillis();
+        XPostMetadata.Probe metadataProbe=new XPostMetadata.Probe(retainKnowledge&&uptime>=nextMetadataProbeAt?6:0);
+        if(retainKnowledge&&uptime>=nextMetadataProbeAt)nextMetadataProbeAt=uptime+1000;
         lastKnowledge=Collections.emptyList();
         lastKnowledgeBounded=false;
         List<TextCandidate> raw = new ArrayList<>();
@@ -83,8 +97,9 @@ public final class XVisibleTextReader {
                 || !X_PACKAGE.contentEquals(root.getPackageName())) return raw;
 
         ArrayDeque<ScanNode> queue = new ArrayDeque<>();
-        queue.add(new ScanNode(root,true));
+        queue.add(new ScanNode(root,true,"0"));
         boolean detailScreen = false;
+        int detailHeadingBottom=0;
 
         while (!queue.isEmpty()
                 && lastVisited < (detailScreen ? MAX_DETAIL_NODES : MAX_VISITED_NODES)) {
@@ -105,7 +120,22 @@ public final class XVisibleTextReader {
                 if(node.getChildCount()>childCount)lastKnowledgeBounded=true;
                 for (int i = 0; i < childCount; i++) {
                     AccessibilityNodeInfo child = node.getChild(i);
-                    if (child != null) queue.add(new ScanNode(child,sourceAllowed));
+                    if (child != null) queue.add(new ScanNode(child,sourceAllowed,entry.path()==null?null:entry.path()+"/"+i));
+                }
+                android.os.Bundle inspectedMetadata=null;
+                if(inspector!=null&&node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())){
+                    try{
+                        Rect bounds=new Rect();node.getBoundsInScreen(bounds);
+                        if(node.isVisibleToUser()||XPostSpatialAnalyzer.onScreen(bounds,width,height)||order==1)
+                            inspectedMetadata=inspector.node(node,entry.path(),bounds);
+                    }catch(RuntimeException ignored){/* A transient or unsupported inspector property must not interrupt capture. */}
+                }
+                if(node.getPackageName()!=null&&X_PACKAGE.contentEquals(node.getPackageName())&&
+                        !node.isVisibleToUser()&&(XPostMetadata.conversationCard(node)||XPostMetadata.timelineHeader(node.getViewIdResourceName()))){
+                    // A clipped parent can own visible descendants. Do not
+                    // read its invisible text; keep only its structural marker.
+                    cardNodes.add(new XTimelineCardRecords.Node(order,entry.path(),node.getViewIdResourceName(),
+                        "", "", "", XPostMetadata.conversationCard(node),XPostMetadata.timelineHeader(node.getViewIdResourceName()),false,false,sourceAllowed,List.of(),""));
                 }
                 if (!node.isVisibleToUser() || node.isEditable() || node.isPassword()) continue;
                 if (node.getPackageName() != null && !X_PACKAGE.contentEquals(node.getPackageName()))
@@ -113,20 +143,37 @@ public final class XVisibleTextReader {
 
                 // Record visible accessibility text before translation or
                 // post-role eligibility, including English and short labels.
-                if(retainKnowledge && node.getPackageName()!=null
-                        && X_PACKAGE.contentEquals(node.getPackageName())){
+                if(node.getPackageName()!=null && X_PACKAGE.contentEquals(node.getPackageName())){
                     Rect observedBounds=new Rect();
                     node.getBoundsInScreen(observedBounds);
                     if(XPostSpatialAnalyzer.onScreen(observedBounds,width,height)){
-                        retain(observations,node.getText(),observedAt);
-                        retain(observations,node.getContentDescription(),observedAt);
-                        XKnowledgeRecords.sample(knowledgeSamples,node.getText(),node.getViewIdResourceName(),observedBounds,false,sourceAllowed);
-                        XKnowledgeRecords.sample(knowledgeSamples,node.getContentDescription(),node.getViewIdResourceName(),observedBounds,true,sourceAllowed);
-                        String metadataRole=node.getViewIdResourceName();
+                        CharSequence value=node.getText(),descriptionValue=node.getContentDescription();
+                        String resource=node.getViewIdResourceName();
+                        boolean conversation=XPostMetadata.conversationCard(node);
+                        List<String> links=new ArrayList<>();
+                        if(retainKnowledge){
+                        retain(observations,value,observedAt);
+                        retain(observations,descriptionValue,observedAt);
+                        List<XKnowledgeRecords.Sample> nodeSamples=new ArrayList<>();
+                        XKnowledgeRecords.sample(nodeSamples,value,resource,observedBounds,false,sourceAllowed);
+                        XKnowledgeRecords.sample(nodeSamples,descriptionValue,resource,observedBounds,true,sourceAllowed);
+                        String metadataRole=sourceAllowed&&conversation?"post_container":resource;
                         if(sourceAllowed&&XKnowledgeRecords.hasPostMetadataRole(metadataRole)){
-                            try{XKnowledgeRecords.sampleMetadata(knowledgeSamples,node.getExtras(),metadataRole,observedBounds);}
-                            catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
+                            try{
+                                XKnowledgeRecords.sampleMetadata(nodeSamples,node.getExtras(),metadataRole,observedBounds);
+                                XKnowledgeRecords.sampleMetadata(nodeSamples,inspectedMetadata!=null?inspectedMetadata:metadataProbe.read(node,true),metadataRole,observedBounds);
+                            }catch(RuntimeException ignored){/* Optional source metadata; keep the visible text. */}
                         }
+                        samplesByOrder.put(order,nodeSamples);
+                        for(XKnowledgeRecords.Sample sample:nodeSamples)if(sample.sourceLink)links.add(sample.text);
+                        }
+                        cardNodes.add(new XTimelineCardRecords.Node(order,entry.path(),resource,
+                            node.getClassName()==null?"":node.getClassName().toString(),
+                            value==null?"":value.toString(),descriptionValue==null?"":descriptionValue.toString(),
+                            conversation,XPostMetadata.timelineHeader(resource),PostTextHeuristics.isPostTextId(resource),
+                            hasBodySpan(value==null||value.length()==0?descriptionValue:value),
+                            sourceAllowed,links,reportedLanguage(node,value==null||value.length()==0?descriptionValue:value)));
+                        cardNodeBounds.put(order,new Rect(observedBounds));
                     }
                 }
 
@@ -163,14 +210,16 @@ public final class XVisibleTextReader {
                 String viewId = node.getViewIdResourceName();
                 String className = node.getClassName() == null
                         ? "" : node.getClassName().toString();
-                String language = bodyLanguageHint(text);
+                String language = PostLanguage.hint(text,reportedLanguage(node,textValue));
 
                 Rect bounds = new Rect();
                 node.getBoundsInScreen(bounds);
                 if (XPostDetailContextService.isDetailHeading(
                         text, viewId, className, node.isClickable(),
-                        node.isEditable(), bounds.top, bounds.bottom, height))
+                        node.isEditable(), bounds.top, bounds.bottom, height)){
                     detailScreen = true;
+                    detailHeadingBottom=Math.max(detailHeadingBottom,bounds.bottom);
+                }
                 if (!XPostSpatialAnalyzer.onScreen(bounds, width, height)) continue;
                 // X sometimes exposes the OPENED post on detail pages through
                 // one localized container description rather than a TextView.
@@ -224,6 +273,58 @@ public final class XVisibleTextReader {
         }
 
         lastKnowledgeBounded|=!queue.isEmpty();
+        XTimelineCardRecords.Result joined=XTimelineCardRecords.assemble(cardNodes);
+        // A structurally selected body is authoritative for the overlay as
+        // well as for storage. Never let a sibling poll choice win the card.
+        // This works even without capture consent or a complete author handle.
+        Map<String,Rect> cardBounds=new HashMap<>();
+        for(XTimelineCardRecords.Node n:cardNodes)if(n.card()&&cardNodeBounds.containsKey(n.order()))
+            cardBounds.put(n.path(),cardNodeBounds.get(n.order()));
+        raw.removeIf(candidate->joined.primaryBodies().containsKey(joined.cardByOrder().getOrDefault(candidate.order,"")));
+        for(var entry:joined.primaryBodies().entrySet()){
+            XTimelineCardRecords.Node body=entry.getValue();
+            String text=TextFingerprint.normalized(body.text());
+            Rect bounds=cardNodeBounds.get(body.order());
+            if(bounds==null||text.isEmpty()||text.length()>MAX_SOURCE_CHARS)continue;
+            Rect postBounds=cardBounds.getOrDefault(entry.getKey(),bounds);
+            raw.add(new TextCandidate(text,PostLanguage.hint(text,body.language()),bounds,postBounds,
+                body.order(),300,true,false,true));
+        }
+        for(XTimelineCardRecords.Node body:joined.quotedBodies().values()){
+            String text=TextFingerprint.normalized(body.text());
+            Rect bounds=cardNodeBounds.get(body.order());
+            if(bounds==null||text.isEmpty()||text.length()>MAX_SOURCE_CHARS)continue;
+            raw.removeIf(candidate->candidate.order==body.order());
+            // Each embedded body has its own overlay bounds, not the outer
+            // conversation's full card rectangle or its master record key.
+            raw.add(new TextCandidate(text,PostLanguage.hint(text,body.language()),bounds,bounds,
+                body.order(),290,true,false,true));
+        }
+        XPostDetailContextService.OpenedBody opened=null;
+        if(detailScreen){
+            List<XPostDetailContextService.Surface> surfaces=new ArrayList<>();
+            for(XTimelineCardRecords.Node node:cardNodes){
+                Rect box=cardNodeBounds.get(node.order());
+                if(box!=null)surfaces.add(new XPostDetailContextService.Surface(node,box.left,box.top,box.right,box.bottom,
+                    joined.cardByOrder().getOrDefault(node.order(),"")));
+            }
+            opened=XPostDetailContextService.selectOpenedBody(surfaces,width,height,detailHeadingBottom);
+            if(opened!=null){
+                Rect bounds=cardNodeBounds.get(opened.order());
+                if(bounds!=null){
+                    int order=opened.order();
+                    Rect postBounds=new Rect(bounds);
+                    String owner=joined.cardByOrder().get(order);
+                    if(owner!=null&&cardBounds.containsKey(owner))postBounds=cardBounds.get(owner);
+                    raw.removeIf(candidate->candidate.order==order);
+                    // This is a verified detail body, not an arbitrary
+                    // description. The classifier, not the reader, decides
+                    // whether to translate its language.
+                    raw.add(new TextCandidate(opened.text(),opened.language(),bounds,postBounds,
+                        order,400,true,opened.fromDescription(),true));
+                }
+            }
+        }
         // The raw lane remains intact. Structural associations are added
         // only after resolving the same measured post/header candidates.
         // Associate each readable body with its nearest profile image. The
@@ -242,20 +343,58 @@ public final class XVisibleTextReader {
         List<TextCandidate> selected =
                 spatial.locate(associated, width, height, detailScreen);
         lastPostDetail = detailScreen;
+        // Protect the opened tweet from avatar/card deduplication and
+        // reply ranking, even when its only representation is a description.
+        if(opened!=null){
+            TextCandidate primary=null;
+            for(TextCandidate candidate:associated)if(candidate.order==opened.order()){primary=candidate;break;}
+            if(primary!=null){
+                final TextCandidate body=primary;
+                selected.removeIf(other->other.order==body.order||Rect.intersects(other.bounds,body.bounds));
+                selected.add(0,body);
+            }
+        }
         List<TextCandidate> authorNames = independentAuthors(authorSamples, avatars,
                 selected, raw, width, scaledDensity);
         // Keep recognized author roles out of the body compositor even
         // when the generic body scorer selected their text.
         selected.removeIf(body -> !body.knownPostTextId && overlapsAuthor(body,authorNames));
+        List<TextCandidate> cardTranslationBodies=new ArrayList<>();
         if(retainKnowledge){
+            // A partial/recycled Compose card is not an independent post.
+            // Preserve its raw text and wait for a complete header/body rather
+            // than creating a second master using a guessed author.
+            List<TextCandidate> legacy=new ArrayList<>();
+            for(TextCandidate body:selected)if(!joined.cardByOrder().containsKey(body.order))legacy.add(body);
             List<com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> all=new ArrayList<>(
-                    XKnowledgeRecords.assemble(selected,knowledgeSamples,observedAt));
+                    XKnowledgeRecords.assembleCards(joined.posts(),observedAt));
+            List<XKnowledgeRecords.Sample> legacySamples=new ArrayList<>();
+            for(var entry:samplesByOrder.entrySet())if(!joined.cardByOrder().containsKey(entry.getKey()))
+                XKnowledgeRecords.appendSamples(legacySamples,entry.getValue());
+            all.addAll(XKnowledgeRecords.assemble(legacy,legacySamples,observedAt));
+            for(XTimelineCardRecords.Post post:joined.posts()){
+                for(TextCandidate candidate:selected)bindCardBody(candidate,post);
+                for(TextCandidate candidate:associated)bindCardBody(candidate,post);
+                for(TextCandidate candidate:raw)bindCardBody(candidate,post);
+                // The compositor can reject a body for layout reasons. The
+                // translation scheduler may still localize the actual record.
+                Rect bounds=cardNodeBounds.get(post.bodyOrder());
+                if(bounds!=null&&post.body().length()<=MAX_SOURCE_CHARS){
+                    TextCandidate candidate=new TextCandidate(post.body(),post.language(),bounds,bounds,
+                        post.bodyOrder(),200,true,false,true);
+                    candidate.knowledgeKey=post.key();cardTranslationBodies.add(candidate);
+                }
+            }
             all.addAll(observations.values());
             lastKnowledge=Collections.unmodifiableList(all);
         }
         Map<String, TextCandidate> work = new LinkedHashMap<>();
         for (TextCandidate name : authorNames) work.put(name.fingerprint, name);
         for (TextCandidate body : selected) work.put(body.fingerprint, body);
+        for(TextCandidate body:cardTranslationBodies){
+            TextCandidate existing=work.get(body.fingerprint);
+            if(existing==null||existing.knowledgeKey.isEmpty())work.put(body.fingerprint,body);
+        }
         for (TextCandidate body : raw) {
             if (body.fromDescription && !body.knownPostTextId
                     || !body.knownPostTextId && overlapsAuthor(body, authorNames))
@@ -281,6 +420,24 @@ public final class XVisibleTextReader {
             if (item.author.truncated) lastClippedNameCount++;
         }
         return scene;
+    }
+
+    private static void bindCardBody(TextCandidate candidate,XTimelineCardRecords.Post post){
+        if(!candidate.authorName&&candidate.order==post.bodyOrder()&&candidate.text.equals(post.body()))
+            candidate.knowledgeKey=post.key();
+    }
+
+    private static boolean hasBodySpan(CharSequence value){
+        if(!(value instanceof android.text.Spanned)||value.length()==0)return false;
+        android.text.Spanned text=(android.text.Spanned)value;
+        for(android.text.style.ClickableSpan span:text.getSpans(0,text.length(),android.text.style.ClickableSpan.class)){
+            if(span instanceof android.text.style.URLSpan||text.getSpanStart(span)!=0)continue;
+            int end=text.getSpanEnd(span);
+            if(end<=0||end>text.length())continue;
+            String suffix=text.subSequence(end,text.length()).toString().trim();
+            if(suffix.isEmpty()||suffix.matches("(?i)(?:…|\\.\\.\\.)?\\s*show more"))return true;
+        }
+        return false;
     }
 
     private static void retain(Map<String,com.wds.sixstars.contextoverlay.tree.NativeTree.Observation> out,
@@ -370,12 +527,13 @@ public final class XVisibleTextReader {
 
     private static void addAuthor(Map<String, TextCandidate> names, XAuthorInfo info) {
         TextCandidate c=TextCandidate.forAuthor(info,names.size());
-        TextCandidate existing=names.get(c.fingerprint);
+        String occurrence=c.fingerprint+"@"+c.bounds.flattenToString();
+        TextCandidate existing=names.get(occurrence);
         if(existing==null || !existing.author.inlineSafe && info.inlineSafe
                 || existing.author.inlineSafe==info.inlineSafe &&
                     (existing.avatarBounds.isEmpty() && !c.avatarBounds.isEmpty()
                         || !existing.author.truncated && info.truncated))
-            names.put(c.fingerprint,c);
+            names.put(occurrence,c);
     }
 
     private static PostCard findCard(AccessibilityNodeInfo node, Rect body, int width, int height) {
@@ -389,7 +547,7 @@ public final class XVisibleTextReader {
                 String id = parent.getViewIdResourceName();
                 if (parent.isScrollable() || XPostDetailContextService.isDetailContainerId(id)
                         || XPostDetailContextService.isReplyContextId(id)) break;
-                if (PostTextHeuristics.isPostContainerId(id))
+                if (PostTextHeuristics.isPostContainerId(id)||XPostMetadata.conversationCard(parent))
                     return new PostCard(rect, true);
 
                 AccessibilityNodeInfo grand = parent.getParent();
@@ -556,27 +714,32 @@ public final class XVisibleTextReader {
      * Best-effort language hint. Actual translation stays with PLaMo. Native X
      * doesn't necessarily expose the tweet's language or normalized post ID.
      */
-    static String bodyLanguageHint(String text) {
-        String hint=languageHint(text);
-        return hint.isEmpty()?KnowledgeLanguage.englishHint(text):hint;
-    }
+    static String bodyLanguageHint(String text) {return PostLanguage.hint(text,"");}
 
-    public static String languageHint(String text) {
-        if (text == null || text.isEmpty()) return "";
-        if (text.codePoints().anyMatch(c -> (c >= 0x3040 && c <= 0x30ff))) return "ja";
-        if (text.codePoints().anyMatch(c -> c >= 0xac00 && c <= 0xd7af)) return "ko";
-        if (text.codePoints().anyMatch(c -> c >= 0x0600 && c <= 0x06ff)) return "ar";
-        if (text.codePoints().anyMatch(c -> c >= 0x0400 && c <= 0x04ff)) return "ru";
-        if (text.codePoints().anyMatch(c -> c >= 0x4e00 && c <= 0x9fff)) return "zh";
-        String s = " " + text.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}]+", " ") + " ";
-        if (containsAny(s, " bonjour ", " merci ", " pourquoi ", " aujourd hui ", " je suis ", " avec vous ")) return "fr";
-        if (containsAny(s, " hola ", " gracias ", " buenos dias ", " buenas noches ", " estoy ", " nosotros ")) return "es";
-        if (containsAny(s, " hallo ", " danke ", " bitte ", " guten morgen ", " ich bin ")) return "de";
+    public static String languageHint(String text) {return PostLanguage.hint(text,"");}
+
+    private static String reportedLanguage(AccessibilityNodeInfo node,CharSequence value){
+        try{
+            android.os.Bundle extras=node.getExtras();
+            for(String key:extras.keySet()){
+                String name=XPostMetadata.keyRole(key);
+                if(!name.matches("(post|tweet|source|text|content)?(lang|language|languagecode)"))continue;
+                Object raw=extras.get(key);
+                if(raw instanceof CharSequence){
+                    String code=PostLanguage.code(raw.toString());
+                    if(!code.isEmpty())return code;
+                }
+            }
+        }catch(RuntimeException ignored){}
+        if(value instanceof android.text.Spanned){
+            android.text.Spanned text=(android.text.Spanned)value;
+            for(android.text.style.LocaleSpan span:text.getSpans(0,text.length(),android.text.style.LocaleSpan.class)){
+                if(text.getSpanEnd(span)-text.getSpanStart(span)<text.length()*.8)continue;
+                java.util.Locale locale=span.getLocale();
+                if(locale!=null)return PostLanguage.code(locale.getLanguage());
+            }
+        }
         return "";
     }
 
-    private static boolean containsAny(String text, String... words) {
-        for (String candidate : words) if (text.contains(candidate)) return true;
-        return false;
-    }
 }

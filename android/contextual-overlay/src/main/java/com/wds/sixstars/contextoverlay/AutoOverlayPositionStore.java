@@ -28,6 +28,7 @@ final class AutoOverlayPositionStore {
         final AutoDetailsPlacementService.Placement details;
         final AutoDetailsPlacementService.Placement nameDetails;
         final String authorName;
+        final boolean nameInlineSafe,nameClipped;
 
         Observation(String id, AutoInlinePlacementService.Placement rectangle) {
             this(id, rectangle, null);
@@ -41,6 +42,15 @@ final class AutoOverlayPositionStore {
         Observation(String id, AutoInlinePlacementService.Placement rectangle,
                 AutoDetailsPlacementService.Placement tweetDetails,
                 AutoDetailsPlacementService.Placement nameDetails, String authorName) {
+            this(id,rectangle,tweetDetails,nameDetails,authorName,true,false);
+        }
+
+        Observation(String id, AutoInlinePlacementService.Placement rectangle,
+                AutoDetailsPlacementService.Placement tweetDetails,
+                AutoDetailsPlacementService.Placement nameDetails, String authorName,
+                boolean nameInlineSafe,boolean nameClipped) {
+            this.nameInlineSafe=nameInlineSafe;
+            this.nameClipped=nameClipped;
             this.id = id;
             this.rectangle = rectangle;
             this.details = tweetDetails;
@@ -55,10 +65,14 @@ final class AutoOverlayPositionStore {
         final AutoDetailsPlacementService.Placement details;
         final AutoDetailsPlacementService.Placement nameDetails;
         final String authorName;
+        final boolean nameInlineSafe,nameClipped;
 
         Located(String id, AutoInlinePlacementService.Placement rectangle,
                 AutoDetailsPlacementService.Placement details,
-                AutoDetailsPlacementService.Placement nameDetails, String authorName) {
+                AutoDetailsPlacementService.Placement nameDetails, String authorName,
+                boolean nameInlineSafe,boolean nameClipped) {
+            this.nameInlineSafe=nameInlineSafe;
+            this.nameClipped=nameClipped;
             this.id = id;
             this.rectangle = rectangle;
             this.details = details;
@@ -73,6 +87,7 @@ final class AutoOverlayPositionStore {
         AutoDetailsPlacementService.Placement details;
         AutoDetailsPlacementService.Placement nameDetails;
         String authorName;
+        boolean nameInlineSafe,nameClipped;
         long missingSince;
         long authorMissingSince;
 
@@ -92,7 +107,7 @@ final class AutoOverlayPositionStore {
     private final int screenHeight;
     private final int safeTop;
     private boolean coordinatesTrusted = true;
-    private long version;
+    private long version, occurrenceSequence;
 
     AutoOverlayPositionStore(int screenWidth, int screenHeight) {
         this(screenWidth, screenHeight, 0);
@@ -106,9 +121,51 @@ final class AutoOverlayPositionStore {
 
     long version() { return version; }
 
+    // A content fingerprint identifies a translation, not an occurrence.
+    // Two visible copies of the same text must own separate positions.
+    static String contentId(String occurrence){
+        int separator=occurrence.lastIndexOf('@');
+        return separator<0?occurrence:occurrence.substring(0,separator);
+    }
+    boolean containsContent(String content){
+        if(!coordinatesTrusted)return false;
+        for(Entry e:entries.values())if(contentId(e.id).equals(content))return true;
+        return false;
+    }
+    void publishScene(List<Observation> fresh,boolean scrolling,long nowMs){
+        List<Observation> assigned=new ArrayList<>();
+        Set<String> used=new HashSet<>();
+        for(Observation o:fresh){
+            if(o==null||o.id==null||o.rectangle==null)continue;
+            boolean duplicate=false;
+            for(Observation a:assigned)if(contentId(a.id).equals(o.id)&&same(a.rectangle,o.rectangle)){
+                duplicate=true;break;
+            }
+            if(duplicate)continue;
+            Entry exact=null, overlapping=null;
+            int overlaps=0;
+            if(coordinatesTrusted)for(Entry e:entries.values()){
+                if(used.contains(e.id)||!contentId(e.id).equals(o.id))continue;
+                if(same(e.rectangle,o.rectangle)){exact=e;break;}
+                if(overlaps(e.rectangle,o.rectangle)){overlapping=e;overlaps++;}
+            }
+            // Only reuse an occurrence when the measured rectangles agree
+            // or overlap unambiguously. No cross-post text-only association.
+            Entry matched=exact!=null?exact:overlaps==1?overlapping:null;
+            String id=matched==null?o.id+"@"+(++occurrenceSequence):matched.id;
+            used.add(id);
+            assigned.add(new Observation(id,o.rectangle,o.details,o.nameDetails,
+                o.authorName,o.nameInlineSafe,o.nameClipped));
+        }
+        // The auto scene never keeps an absent text rectangle. Translation
+        // results stay cached independently and can be displayed on return.
+        publish(assigned,true,nowMs);
+    }
+
     void publish(List<Observation> fresh, boolean scrolling, long nowMs) {
         final boolean recovering = !coordinatesTrusted;
         boolean changed = recovering;
+        boolean layoutMoved = false;
         Set<String> found = new HashSet<>();
         for (Observation observation : fresh) {
             if (observation == null || observation.id == null ||
@@ -119,9 +176,12 @@ final class AutoOverlayPositionStore {
                 existing = new Entry(observation.id, observation.rectangle,
                         observation.details, observation.nameDetails,
                         observation.authorName);
+                existing.nameInlineSafe=observation.nameInlineSafe;
+                existing.nameClipped=observation.nameClipped;
                 entries.put(observation.id, existing);
                 changed = true;
             } else {
+                if(!same(existing.rectangle,observation.rectangle))layoutMoved=true;
                 AutoDetailsPlacementService.Placement nextName = observation.nameDetails;
                 String nextAuthor = observation.authorName;
 
@@ -160,12 +220,16 @@ final class AutoOverlayPositionStore {
                 if (!same(existing.rectangle, observation.rectangle)
                         || !sameDetails(existing.details, observation.details)
                         || !sameDetails(existing.nameDetails, nextName)
-                        || !java.util.Objects.equals(existing.authorName, nextAuthor))
+                        || !java.util.Objects.equals(existing.authorName, nextAuthor)
+                        || existing.nameInlineSafe!=observation.nameInlineSafe
+                        || existing.nameClipped!=observation.nameClipped)
                     changed = true;
                 existing.rectangle = observation.rectangle;
                 existing.details = observation.details;
                 existing.nameDetails = nextName;
                 existing.authorName = nextAuthor;
+                existing.nameInlineSafe=observation.nameInlineSafe;
+                existing.nameClipped=observation.nameClipped;
                 existing.missingSince = 0;
             }
         }
@@ -177,7 +241,13 @@ final class AutoOverlayPositionStore {
             if (found.contains(id)) continue;
             Entry missing = entries.get(id);
             if (missing == null) continue;
-            if (scrolling || recovering) {
+            // No grace period for an old post if the current snapshot
+            // proves that layout moved or another text occupies its bounds.
+            boolean replaced=false;
+            for(Observation current:fresh)if(current!=null&&current.rectangle!=null&&overlaps(missing.rectangle,current.rectangle)){
+                replaced=true;break;
+            }
+            if (scrolling || recovering || layoutMoved || replaced) {
                 entries.remove(id);
                 changed = true;
             } else if (missing.missingSince == 0L) {
@@ -282,7 +352,7 @@ final class AutoOverlayPositionStore {
                     p.x + p.width <= 0 || p.x >= screenWidth ||
                     p.y + p.height <= 0) continue;
             current.add(new Located(entry.id, p, entry.details,
-                    entry.nameDetails, entry.authorName));
+                    entry.nameDetails, entry.authorName,entry.nameInlineSafe,entry.nameClipped));
         }
         return Collections.unmodifiableList(current);
     }
@@ -291,6 +361,10 @@ final class AutoOverlayPositionStore {
         entries.clear();
         coordinatesTrusted = false;
         version++;
+    }
+
+    private static boolean overlaps(AutoInlinePlacementService.Placement a,AutoInlinePlacementService.Placement b){
+        return a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height;
     }
 
     private static boolean same(AutoInlinePlacementService.Placement a,

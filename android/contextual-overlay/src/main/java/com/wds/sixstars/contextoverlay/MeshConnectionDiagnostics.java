@@ -45,7 +45,9 @@ final class MeshConnectionDiagnostics {
     static Failure protocolFailure(String code){
         switch(code){
             case "unauthorized": return new Failure("Authentication","The peer rejected the invitation access token.",
-                "Start or keep the other device listening and copy its current invitation. Stopping or restarting its listener invalidates previous tokens.");
+                "Copy the current invitation from the intended source. Stable member grants survive listener restarts; older session tokens do not.");
+            case "member_required": return new Failure("Authentication","The source requires member-bound network access.","Update Roots on the receiving device.");
+            case "member_proof_failed": return new Failure("Authentication","The receiving device could not prove possession of its bound identity.","Check the receiving device identity; do not replace the source certificate.");
             case "unsupported_version": return new Failure("Protocol","The peer does not support this Mesh protocol version.","Update both Roots installations to compatible versions.");
             case "unsupported_operation": return new Failure("Protocol","The peer does not support this request.","Update both Roots installations to compatible versions.");
             case "invalid_request": return new Failure("Protocol","The peer rejected the request format.","Update both Roots installations and test again.");

@@ -47,4 +47,20 @@ public class MeshTlsHandshakeTest {
         assertEquals(FAIL,pin.observation().state());
         assertTrue(pin.observation().detail().contains(server.pin().substring(0,12)));
     }
+
+    @Test public void memberProofUsesTheExactCertificateAndChallenge()throws Exception{
+        KeyStore store=KeyStore.getInstance("PKCS12");
+        char[] password="roots-test-only".toCharArray();
+        store.load(new ByteArrayInputStream(Base64.getDecoder().decode(FIXTURE)),password);
+        X509Certificate cert=(X509Certificate)store.getCertificate("roots-test");
+        java.security.PrivateKey key=(java.security.PrivateKey)store.getKey("roots-test",password);
+        String member=MeshItem.hex(MessageDigest.getInstance("SHA-256").digest(cert.getEncoded()));
+        String issuer="a".repeat(64),nonce="b".repeat(64);
+        String encoded=Base64.getEncoder().encodeToString(cert.getEncoded());
+        String proof=MeshNetworkAccess.proof(key,issuer,member,nonce);
+        assertTrue(MeshNetworkAccess.verifyProof(encoded,proof,issuer,member,nonce));
+        assertFalse(MeshNetworkAccess.verifyProof(encoded,proof,issuer,member,"c".repeat(64)));
+        assertFalse(MeshNetworkAccess.verifyProof(encoded,proof,"d".repeat(64),member,nonce));
+        assertFalse(MeshNetworkAccess.verifyProof(encoded,proof,issuer,"e".repeat(64),nonce));
+    }
 }

@@ -88,6 +88,9 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         Button refreshDiagnostics = button("Refresh scan diagnostics");
         refreshDiagnostics.setOnClickListener(v -> refreshStatus());
         content.addView(refreshDiagnostics);
+        Button inspectPost=button("X timeline inspector");
+        inspectPost.setOnClickListener(v->showPostInspector());
+        content.addView(inspectPost);
         content=permissions;
 
         Button consent = button("I consent — open Accessibility settings");
@@ -97,6 +100,7 @@ public final class OverlayTranslationSettingsActivity extends Activity {
         Button stop = button("Stop X text processing");
         stop.setOnClickListener(v -> {
             prefs.setEnabled(false);
+            XAccessibilityInspector.cancel();
             TreeRuntime.get(this).setEnabled(false);
             prefs.setDesktopTranslationEnabled(false);
             prefs.setAutoPreview(false);
@@ -651,6 +655,59 @@ public final class OverlayTranslationSettingsActivity extends Activity {
                 "\nTransport: " + TranslationRuntime.transportStatus());
         if (diagnostics != null) {
             diagnostics.setText(OverlayDiagnostics.summary(this));
+        }
+    }
+
+    private void showPostInspector(){
+        XAccessibilityInspector.Snapshot snapshot=XAccessibilityInspector.snapshot();
+        AlertDialog.Builder dialog=new AlertDialog.Builder(this,android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("X timeline inspector");
+        LinearLayout panel=RootsUi.column(this);
+        panel.setBackgroundColor(RootsUi.BG);
+        panel.setPadding(dp(16),dp(12),dp(16),dp(12));
+        panel.addView(RootsUi.text(this,snapshot.status(),14,RootsUi.TEXT,true));
+        panel.addView(RootsUi.text(this,"Automatically records recent snapshots while local capture is on. Scroll X normally. Copy report shows post text first. Copy node attributes exports a recent snapshot, preferring settled post text and span payloads.",13,RootsUi.MUTED,false));
+        Button copy=button("Copy report");
+        copy.setEnabled(!snapshot.report().isEmpty());
+        copy.setAlpha(copy.isEnabled()?1f:0.45f);
+        copy.setOnClickListener(v->copyInspectorReport("X timeline report",snapshot.report()));
+        panel.addView(copy);
+        Button attributes=button("Copy node attributes (JSON)");
+        attributes.setEnabled(!snapshot.attributes().isEmpty());
+        attributes.setAlpha(attributes.isEnabled()?1f:0.45f);
+        attributes.setOnClickListener(v->copyInspectorReport("X accessibility node attributes",snapshot.attributes()));
+        panel.addView(attributes);
+        if(!snapshot.latest().isEmpty()){
+            TextView detail=RootsUi.text(this,snapshot.latest(),13,RootsUi.TEXT,false);
+            detail.setTypeface(android.graphics.Typeface.MONOSPACE);
+            detail.setBackgroundColor(RootsUi.CARD);
+            detail.setTextIsSelectable(true);
+            detail.setPadding(dp(12),dp(8),dp(12),dp(8));
+            ScrollView scroll=new ScrollView(this);
+            scroll.setBackgroundColor(RootsUi.CARD);scroll.setFillViewport(true);
+            scroll.addView(detail,new ScrollView.LayoutParams(-1,-2));
+            int height=Math.min(dp(420),getResources().getDisplayMetrics().heightPixels*45/100);
+            panel.addView(scroll,new LinearLayout.LayoutParams(-1,height));
+        }
+        dialog.setView(panel).setNegativeButton("Close",null);
+        dialog.setNeutralButton("Record 90 seconds",(d,w)->{
+            if(!prefs.enabled()||!accessibilityEnabled()){
+                android.widget.Toast.makeText(this,"Enable Roots X accessibility first.",android.widget.Toast.LENGTH_LONG).show();return;
+            }
+            XAccessibilityInspector.arm();
+            android.widget.Toast.makeText(this,"Scroll X normally, then return to the inspector.",android.widget.Toast.LENGTH_LONG).show();
+        }).show();
+    }
+
+    private void copyInspectorReport(String label,String report){
+        android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if(clipboard==null||report.isEmpty())return;
+        try{
+            // Diagnostic reports are plain text, not password/secret clips.
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label,report));
+            android.widget.Toast.makeText(this,"Report copied",android.widget.Toast.LENGTH_SHORT).show();
+        }catch(RuntimeException error){
+            android.widget.Toast.makeText(this,"Could not copy the report.",android.widget.Toast.LENGTH_LONG).show();
         }
     }
 

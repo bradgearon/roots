@@ -2,14 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- REP/1 is optional; Roots still installs on devices without BLE. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application>
         <activity android:name="com.wds.sixstars.contextoverlay.NetworkExplorerActivity" android:exported="false" android:label="Network Explorer" android:theme="@style/RootsTheme" />
         <activity android:name="com.wds.sixstars.contextoverlay.ExternalKnowledgeActivity" android:exported="false" android:label="External knowledge" android:theme="@style/RootsTheme" />
@@ -18,6 +19,14 @@
         </receiver>
         <activity android:name="com.wds.sixstars.contextoverlay.EncounterActivity" android:exported="false" android:label="Roots Encounters" android:theme="@style/RootsTheme" />
         <service android:name="com.wds.sixstars.contextoverlay.EncounterService" android:exported="false" android:foregroundServiceType="connectedDevice" />
+        <service android:name="com.wds.sixstars.contextoverlay.MeshServingService"
+            android:exported="false" android:stopWithTask="false" android:foregroundServiceType="connectedDevice" />
+        <receiver android:name="com.wds.sixstars.contextoverlay.MeshServingRestoreReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <activity android:name="com.wds.sixstars.contextoverlay.MeshActivity" android:exported="true" android:label="Roots Mesh" android:theme="@style/RootsTheme" android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>

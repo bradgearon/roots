@@ -21,8 +21,22 @@ public final class TranslationCache {
     }
 
     public synchronized void write(String text, String language, String translation) {
+        write(text,language,translation,false);
+    }
+    synchronized boolean isLocalized(String text,String language){
+        Entry entry=values.get(TextFingerprint.of(text)+":"+language);
+        return entry!=null&&entry.localized&&System.currentTimeMillis()-entry.timeMs<=TTL_MS;
+    }
+    synchronized String sourceLanguage(String text,String target){
+        Entry entry=values.get(TextFingerprint.of(text)+":"+target);
+        return entry==null||System.currentTimeMillis()-entry.timeMs>TTL_MS?"":entry.sourceLanguage;
+    }
+    synchronized void write(String text,String language,String translation,boolean localized){
+        write(text,language,translation,localized,"");
+    }
+    synchronized void write(String text,String language,String translation,boolean localized,String sourceLanguage){
         values.put(TextFingerprint.of(text) + ":" + language,
-                new Entry(translation, System.currentTimeMillis()));
+                new Entry(translation, System.currentTimeMillis(),localized,sourceLanguage));
         while (values.size() > MAX_ENTRIES) {
             String eldest = values.keySet().iterator().next();
             values.remove(eldest);
@@ -34,7 +48,11 @@ public final class TranslationCache {
     private static final class Entry {
         final String translation;
         final long timeMs;
-        Entry(String translation, long timeMs) {
+        final boolean localized;
+        final String sourceLanguage;
+        Entry(String translation, long timeMs,boolean localized,String sourceLanguage) {
+            this.sourceLanguage=sourceLanguage==null?"":sourceLanguage;
+            this.localized=localized;
             this.translation = translation;
             this.timeMs = timeMs;
         }

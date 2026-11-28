@@ -40,9 +40,10 @@ public final class OverlayTranslationCoordinator {
     void setTree(com.wds.sixstars.contextoverlay.tree.TreeRuntime runtime){tree=runtime;}
     private void retainTranslation(TextCandidate candidate,String target,String translated,long epoch){
         if(tree==null||candidate==null||candidate.authorName||candidate.knowledgeKey.isEmpty()||candidate.knowledgeEpoch!=epoch||!tree.enabled()||tree.captureEpoch()!=epoch)return;
-        String key=epoch+":"+candidate.knowledgeKey+":"+target+":"+TextFingerprint.of(translated);
+        boolean local=cache.isLocalized(candidate.text,target);
+        String key=epoch+":"+candidate.knowledgeKey+":"+target+":"+(local?"local:":"translated:")+TextFingerprint.of(translated);
         if(savedTranslations.containsKey(key))return;
-        if(tree.recordTranslation(candidate.knowledgeKey,candidate.text,candidate.languageHint,target,translated,epoch)){
+        if(local?tree.recordLocalized(candidate.knowledgeKey,candidate.text,target,epoch):tree.recordTranslation(candidate.knowledgeKey,candidate.text,cache.sourceLanguage(candidate.text,target),target,translated,epoch)){
             savedTranslations.put(key,true);
             if(savedTranslations.size()>2048)savedTranslations.remove(savedTranslations.keySet().iterator().next());
         }
@@ -178,7 +179,7 @@ public final class OverlayTranslationCoordinator {
             if(existing==null)continue;
             if(tree!=null)retainTranslation(candidate,target,existing,tree.captureEpoch());
             if(automatic){
-                if(shouldTranslateAutomatically(candidate,target))
+                if(!cache.isLocalized(candidate.text,target)&&shouldTranslateAutomatically(candidate,target))
                     changeReactor.translated(candidate,existing);
             }else changeReactor.prepared(candidate.fingerprint);
         }
@@ -233,9 +234,10 @@ public final class OverlayTranslationCoordinator {
 
     private long priority(Pending p,long now,String backend,double velocity){
         TextCandidate c=p.candidate;
-        return TranslationWorkPriority.score(visible.contains(c.fingerprint),c.authorName,
+        long score=TranslationWorkPriority.score(visible.contains(c.fingerprint),c.authorName,
                 c.bounds.top,c.bounds.bottom,demand.height(),demand.offset(),velocity,
                 latency.predict(backend,c.text.length()),now-p.firstSeen,now-p.lastSeen);
+        return score>0&&c.bodyScore>=400&&currentlyVisible(c)?score+3000:score;
     }
 
     /** Main-thread admission. Select work only when a provider slot is free. */
@@ -312,7 +314,13 @@ public final class OverlayTranslationCoordinator {
                 " direction="+(int)Math.signum(demand.velocity(SystemClock.uptimeMillis()))+
                 " predicted_ms="+predicted+" pending="+pool.size());
         java.util.concurrent.atomic.AtomicBoolean delivered=new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicBoolean localized=new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicReference<String> detectedSource=new java.util.concurrent.atomic.AtomicReference<>("");
         TranslationProvider.Result callback=new TranslationProvider.Result(){
+            @Override public void identifiedLanguage(String language){detectedSource.set(PostLanguage.code(language));}
+            @Override public void alreadyLocalized(String original,String language){
+                localized.set(true);completed(original,null);
+            }
             @Override public void started(){
                 main.post(()->{
                     if(destroyed || delivered.get() || epoch!=consentEpoch)return;
@@ -347,17 +355,17 @@ public final class OverlayTranslationCoordinator {
             }
             boolean ok=error==null&&translated!=null&&!translated.trim().isEmpty();
             if(ok){
-                if(submittedProfile.equals(profile()))latency.observe(submittedProfile,candidate.text.length(),elapsed);
+                if(!localized.get()&&submittedProfile.equals(profile()))latency.observe(submittedProfile,candidate.text.length(),elapsed);
                 Pending latest=pool.get(candidate.fingerprint+":"+target);
                 android.util.Log.d("RootsTranslationSchedule","complete profile="+submittedProfile+
                         " elapsed_ms="+elapsed+" predicted_ms="+predicted+
                         " still_visible="+currentlyVisible(latest==null?match(latestCandidates,candidate.fingerprint):latest.candidate));
-                cache.write(candidate.text,target,translated);
+                cache.write(candidate.text,target,translated,localized.get(),detectedSource.get());
                 retainTranslation(candidate,target,translated,treeEpoch);
                 retryAfter.remove(k);
             }else{
                 if(retryAfter.size()>100)retryAfter.clear();
-                retryAfter.put(k,System.currentTimeMillis()+AUTO_RETRY_COOLDOWN_MS);
+                retryAfter.put(k,System.currentTimeMillis()+(TranslationProvider.LANGUAGE_UNCERTAIN.equals(error)?120000L:AUTO_RETRY_COOLDOWN_MS));
             }
             // Results remain useful after scrolling away; render only against
             // the latest scene, never the original request's geometry.
@@ -373,7 +381,8 @@ public final class OverlayTranslationCoordinator {
             pump();
         });}};
         try {
-            provider.translate(candidate.text,candidate.languageHint,target,callback);
+            boolean automatic=manualCandidate==null||!k.equals(key(manualCandidate,manualTarget));
+            provider.translateChecked(candidate.text,candidate.languageHint,target,candidate.authorName,automatic,callback);
         }catch(RuntimeException ex){
             callback.completed(null,"Translation provider unavailable.");
         }

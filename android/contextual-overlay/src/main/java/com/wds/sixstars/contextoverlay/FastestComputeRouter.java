@@ -31,6 +31,9 @@ final class FastestComputeRouter implements TranslationProvider {
     private final LocalPLaMoTranslationProvider local;
     private final ThreadPoolExecutor routes=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<>(3));
     private final Map<String,Estimate> timings=new HashMap<>();
+    private final OnDeviceLanguageDetector localDetector=new OnDeviceLanguageDetector();
+    private long detectorRetryAfter;
+    private String detectorRoute="";
     private static final class Estimate {double ms;long at;int count;}
     static synchronized FastestComputeRouter get(Context context){
         if(instance==null)instance=new FastestComputeRouter(context.getApplicationContext());
@@ -145,17 +148,10 @@ final class FastestComputeRouter implements TranslationProvider {
         Estimate e=timings.computeIfAbsent(bucket(route,chars),k->new Estimate());
         e.ms=e.count==0?ms:.75*e.ms+.25*ms;e.count++;e.at=SystemClock.elapsedRealtime();
     }
-    private synchronized boolean preferRemote(String remote,String phone,int chars){
-        Estimate r=timings.get(bucket(remote,chars)),l=timings.get(bucket(phone,chars));
-        if(r==null)return true;if(l==null)return false;
-        long now=SystemClock.elapsedRealtime();
-        // Re-test a stale alternative on real authorized work, not duplicate
-        // requests. Otherwise require a 10% advantage before preferring it.
-        if(now-r.at>120000&&now-l.at<120000)return true;
-        if(now-l.at>120000&&now-r.at<120000)return false;
-        return r.ms<l.ms*.90;
-    }
     @Override public void translate(String text,String source,String target,Result callback){
+        translateChecked(text,source,target,false,false,callback);
+    }
+    @Override public void translateChecked(String text,String source,String target,boolean name,boolean automatic,Result callback){
         if(callback==null)return;
         if(!prefs.enabled()){callback.completed(null,"Translation permission is off.");return;}
         if(text==null||text.trim().isEmpty()||text.length()>1200||target==null||!target.matches("[a-z]{2,3}")||text.contains("<|plamo:")){
@@ -171,19 +167,51 @@ final class FastestComputeRouter implements TranslationProvider {
             boolean remote=network!=null&&key.contains(":")&&familiar.contains(base,fingerprint);
             String reason=!prefs.desktopTranslationEnabled()?"Desktop permission off":
                 network==null?"No active Wi-Fi":!key.contains(":")?"Desktop TLS connection key required":
-                !remote?"Network not remembered":"Measured local preference";
+                !remote?"Network not remembered":"Paired desktop preferred";
             String desktop="desktop:"+base+":"+fingerprint;
-            if(remote&&preferRemote(desktop,phone,text.length())){
-                if(remoteTranslate(network,base,key,desktop,text,source,target,callback,finished))return;
-                remote=false;reason="Fallback after desktop attempt";
+            String language="";
+            try{language=localDetector.detect(text).accepted(name);}
+            catch(Exception|LinkageError unavailable){android.util.Log.d("RootsLanguage","On-device classifier unavailable");}
+            if(language.isEmpty()&&remote&&authorized(base,key)&&network.equals(wifi())&&!PostLanguage.clean(text).isBlank()){
+                long now=SystemClock.elapsedRealtime();
+                if(!desktop.equals(detectorRoute)){detectorRoute=desktop;detectorRetryAfter=0;}
+                if(now>=detectorRetryAfter){
+                    try{
+                        JSONObject detected=socket.detect(network,base,key,PostLanguage.clean(text));
+                        if(authorized(base,key)&&network.equals(wifi()))
+                            language=detected.optBoolean("reliable",false)&&detected.optDouble("confidence",0)>=.70
+                                ?PostLanguage.code(detected.optString("language")):"";
+                    }catch(Exception unavailable){
+                        detectorRetryAfter=SystemClock.elapsedRealtime()+15000;
+                    }
+                }
             }
-            final boolean tryDesktop=remote;
-            status=remote?"On-device PLaMo · measured fastest":"On-device PLaMo · paired host unavailable or disabled";
+            if(!prefs.enabled()){finish(callback,finished,null,"Translation permission is off.");return;}
+            if(language.isEmpty()&&automatic){
+                finish(callback,finished,null,TranslationProvider.LANGUAGE_UNCERTAIN);return;
+            }
+            callback.identifiedLanguage(language);
+            if(target.equalsIgnoreCase(language)){
+                if(finished.compareAndSet(false,true))callback.alreadyLocalized(text,target);
+                return;
+            }
+            // A manual request can still ask PLaMo to infer an uncertain language.
+            final String effectiveSource=language;
+            // Scheduling decides which post is next, never where to run it.
+            // A paired desktop is primary for all text sizes and both visible
+            // and retained/off-screen work. Only an actual failed/busy request
+            // or unavailable/disabled desktop permits a phone fallback.
+            if(remote){
+                if(remoteTranslate(network,base,key,desktop,text,effectiveSource,target,callback,finished))return;
+                reason="Desktop fallback · "+connection;
+            }
+            if(!prefs.enabled()){finish(callback,finished,null,"Translation permission is off.");return;}
+            status="On-device PLaMo · "+reason;
             long start=SystemClock.elapsedRealtime();
             final String localReason=reason;
             InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin(
                 phone.contains(":vulkan:")?"Phone · Vulkan":"Phone · CPU","PLaMo","Translation",localReason);
-            local.translate(text,source,target,new Result(){
+            local.translate(text,effectiveSource,target,new Result(){
                 @Override public void started(){attempt.running("Running");if(!finished.get())callback.started();}
                 @Override public void partial(String prefix){if(!finished.get()&&prefs.enabled())callback.partial(prefix);}
                 @Override public void completed(String translated,String error){
@@ -192,12 +220,6 @@ final class FastestComputeRouter implements TranslationProvider {
                     if(ok){
                         observe(phone,text.length(),SystemClock.elapsedRealtime()-start);
                         finish(callback,finished,translated,null);return;
-                    }
-                    if(tryDesktop&&authorized(base,key)){
-                        try{routes.execute(()->{
-                            if(!remoteTranslate(network,base,key,desktop,text,source,target,callback,finished))
-                                finish(callback,finished,null,error==null?"No translation returned.":error);
-                        });return;}catch(java.util.concurrent.RejectedExecutionException ignored){}
                     }
                     finish(callback,finished,null,error==null?"No translation returned.":error);
                 }

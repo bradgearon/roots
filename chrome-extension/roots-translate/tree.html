@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roots · Tree</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;background:#10141b;color:#e8eaf0;font:15px/1.5 system-ui,sans-serif}
+main{max-width:980px;margin:auto;padding:28px}h1{font-size:24px;margin:0}h2{font-size:17px;margin:0 0 12px}
+section{padding:18px 0;border-bottom:1px solid #384352}
+.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+input:not([type=checkbox]),button,select{border:1px solid #536071;border-radius:7px;background:#1d2632;color:inherit;padding:8px 12px;font:inherit}
+input:not([type=checkbox]){min-width:140px;flex:1}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}a{color:#80c6f4}
+small,.muted{color:#aeb9c6}article{padding:18px 0;border-bottom:1px solid #384352;overflow-wrap:anywhere}
+article p{white-space:pre-wrap;margin:8px 0}details{color:#b7c4d3;margin-top:8px}details p{font-size:13px}
+#message{min-height:1.5em}#invites{display:flex;gap:8px;flex-wrap:wrap}label{cursor:pointer}
+</style>
+</head>
+<body><main>
+<h1>Roots · Tree</h1>
+<p class="muted" id="summary">Connecting to desktop host…</p>
+<p id="message" role="status"></p>
+<section>
+<div class="row"><label><input id="capture" type="checkbox" disabled> Capture visible X posts</label>
+<button id="refresh">Refresh</button>
+<select id="language" aria-label="Local language"><option value="en">English</option><option value="ja">Japanese</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option></select>
+<button id="compile">Compile localized GGUF</button></div>
+</section>
+<section>
+<h2>Mesh</h2>
+<div class="row"><button id="listen" disabled>Start listening</button><button id="receive" disabled>Receive missing knowledge</button></div>
+<p class="muted" id="meshStatus"></p><div id="invites"></div>
+<p class="muted">Bind another trusted Roots peer to receive its graph. Listening shares the local Tree with authorized peers.</p>
+<form id="bind" class="row"><input id="invitation" type="password" placeholder="Paste Roots Mesh invitation" aria-label="Mesh invitation" autocomplete="off" maxlength="1024" required><button>Bind Axon</button></form>
+<div id="peers"></div>
+</section>
+<section><h2>Branches</h2>
+<form id="branch" class="row"><input id="branchName" placeholder="Name" aria-label="Branch name" maxlength="160" required><input id="branchTerm" placeholder="Interest" aria-label="Branch interest" maxlength="512" required><button>Create branch</button></form>
+<div id="branches"></div></section>
+<section><h2>Knowledge</h2>
+<form id="search" class="row"><input id="term" placeholder="Search the Tree" aria-label="Search" maxlength="512"><button>Search</button><select id="view" aria-label="Knowledge view"><option value="records">Grouped posts</option><option value="feed">All fragments</option></select></form>
+<div id="items"></div><button id="more" hidden>Load more</button></section>
+</main><script src="tree.js"></script></body></html>

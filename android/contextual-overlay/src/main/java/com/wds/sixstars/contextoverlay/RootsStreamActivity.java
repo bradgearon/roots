@@ -105,7 +105,7 @@ public final class RootsStreamActivity extends Activity {
         }
     }
 
-    @Override protected void onResume(){super.onResume();EncounterSettings.foreground(this);resumed=true;if(runtime!=null){runtime.addWaveListener(waveListener);reset();}}
+    @Override protected void onResume(){super.onResume();EncounterSettings.foreground(this);resumed=true;MeshServingService.restore(this);if(runtime!=null){runtime.addWaveListener(waveListener);reset();}}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
         super.onRequestPermissionsResult(request,permissions,results);EncounterSettings.permissionResult(this,request);
     }

@@ -27,7 +27,7 @@ import java.util.concurrent.Executors;
 public final class MeshActivity extends Activity {
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsMeshUi");t.setDaemon(true);return t;});
     private MeshPeer mesh;
-    private TextView status,serve,copy,receive,stop,axonStatus;
+    private TextView status,serve,copy,receive,stop,axonStatus,servingStatus;
     private TextView connectionSummary,connectionStatus,connectionDetails,analysisOutput;
     private TextView testConnection,analyzeConnection,copyConnectionReport;
     private TextView savedAxonStatus,boundConnectionStatus;
@@ -35,6 +35,7 @@ public final class MeshActivity extends Activity {
     private static final ExecutorService CONNECTION_REFRESH=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"RootsAxonRefresh");t.setDaemon(true);return t;});
     private final android.os.Handler refreshHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     private volatile boolean foreground;
+    private final Runnable servingObserver=()->runOnUiThread(()->{if(foreground&&!isDestroyed())refresh();});
     private boolean refreshing,clearingSavedInvite;
     private volatile int foregroundGeneration;
     private android.net.ConnectivityManager refreshNetworkManager;
@@ -74,11 +75,28 @@ public final class MeshActivity extends Activity {
         nearby.addView(RootsUi.action(this,"Network Explorer",()->startActivity(new Intent(this,NetworkExplorerActivity.class))));
         LinearLayout listener=RootsUi.card(this,content);
         listener.addView(RootsUi.text(this,"Serve on this Wi-Fi",18,RootsUi.TEXT,true));
-        listener.addView(RootsUi.text(this,"Create a roots:// invitation for another phone. Keep Roots running while the other phone receives. Stop serving to invalidate the invitation.",13,RootsUi.MUTED,false));
+        listener.addView(RootsUi.text(this,"Start listening once to serve automatically in the background and after restarts. Stop listening turns sharing off; saved invitations remain valid.",13,RootsUi.MUTED,false));
+        servingStatus=RootsUi.text(this,"Sharing off",14,RootsUi.ACCENT,true);listener.addView(servingStatus);
         serve=RootsUi.action(this,"Start listening",this::start);listener.addView(serve);
         copy=RootsUi.action(this,"Copy private invitation",this::copy);listener.addView(copy);
         listener.addView(RootsUi.action(this,"Share invitation…",this::share));
-        stop=RootsUi.action(this,"Stop listening",()->{mesh.stop();getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();status.setText(mesh.status());});listener.addView(stop);
+        stop=RootsUi.action(this,"Stop listening",()->{try{MeshServingService.disable(this);invalidateDiagnostics("Listener state changed. Test again for current details.");refresh();}catch(Exception e){status.setText(e.getMessage());}});listener.addView(stop);
+        // One shared connection control, outside the optional Axon section.
+        LinearLayout connection=RootsUi.section(this,content,"Connection details","Check this device and any selected peers.",true);
+        connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
+        connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
+        testConnection=RootsUi.action(this,"Refresh / test connection",this::testConnection);connection.addView(testConnection);
+        connectionStatus=RootsUi.text(this,"No connection test yet.",14,RootsUi.ACCENT,true);connection.addView(connectionStatus);
+        connectionDetails=RootsUi.text(this,"",13,RootsUi.TEXT,false);
+        connectionDetails.setTextIsSelectable(true);
+        copyConnectionReport=RootsUi.action(this,"Copy connection report",this::copyConnectionReport);connection.addView(copyConnectionReport);
+        analyzeConnection=RootsUi.action(this,"Analyze connection with intelligence",this::analyzeConnection);connection.addView(analyzeConnection);
+        connection.addView(RootsUi.action(this,"Intelligence model settings",()->{
+            if(!busy)startActivity(new Intent(this,OverlayTranslationSettingsActivity.class));
+        }));
+        connection.addView(connectionDetails);
+        analysisOutput=RootsUi.text(this,"Run a test to enable analysis with your selected model.",13,RootsUi.MUTED,false);
+        analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         LinearLayout inbound=RootsUi.card(this,content);
         inbound.addView(RootsUi.text(this,"Receive knowledge",18,RootsUi.TEXT,true));
         inbound.addView(RootsUi.text(this,"Use your saved Axon connection, or paste up to eight invitations to add or refresh peers. Leave the invitation box empty to use saved access. Only missing content is requested; private interests stay on this device.",13,RootsUi.MUTED,false));
@@ -97,21 +115,6 @@ public final class MeshActivity extends Activity {
         inbound.addView(savedAxonStatus);
         boundConnectionStatus=RootsUi.text(this,"Bound connection: not checked",13,RootsUi.MUTED,false);
         inbound.addView(boundConnectionStatus);
-        LinearLayout connection=RootsUi.section(this,inbound,"Connection details","Test the peer connection and graph inventory.",true);
-        connectionSummary=RootsUi.text(this,"Checking local network…",13,RootsUi.MUTED,false);
-        connectionSummary.setTextIsSelectable(true);connection.addView(connectionSummary);
-        testConnection=RootsUi.action(this,"Refresh / test connection",this::testConnection);connection.addView(testConnection);
-        connectionStatus=RootsUi.text(this,"No connection test yet.",14,RootsUi.ACCENT,true);connection.addView(connectionStatus);
-        connectionDetails=RootsUi.text(this,"",13,RootsUi.TEXT,false);
-        connectionDetails.setTextIsSelectable(true);
-        copyConnectionReport=RootsUi.action(this,"Copy connection report",this::copyConnectionReport);connection.addView(copyConnectionReport);
-        analyzeConnection=RootsUi.action(this,"Analyze connection with intelligence",this::analyzeConnection);connection.addView(analyzeConnection);
-        connection.addView(RootsUi.action(this,"Intelligence model settings",()->{
-            if(!busy)startActivity(new Intent(this,OverlayTranslationSettingsActivity.class));
-        }));
-        connection.addView(connectionDetails);
-        analysisOutput=RootsUi.text(this,"Run a test to enable analysis with your selected model.",13,RootsUi.MUTED,false);
-        analysisOutput.setTextIsSelectable(true);connection.addView(analysisOutput);
         inbound.addView(RootsUi.action(this,"Bind / edit .axon",this::editAxon));
         inbound.addView(RootsUi.action(this,"View current flow allocation",this::showAxon));
         inbound.addView(RootsUi.action(this,"Arm runtime Axon (30 minutes)",this::armRuntime));
@@ -164,7 +167,7 @@ public final class MeshActivity extends Activity {
         }catch(Exception e){status.setText("Invalid Roots Mesh invitation.");}
     }
     @Override protected void onResume(){
-        super.onResume();foreground=true;foregroundGeneration++;refresh();scheduleBoundRefresh(0);
+        super.onResume();foreground=true;foregroundGeneration++;MeshServingService.addObserver(servingObserver);MeshServingService.restore(this);refresh();scheduleBoundRefresh(0);
         refreshNetworkManager=(android.net.ConnectivityManager)getSystemService(CONNECTIVITY_SERVICE);
         if(refreshNetworkManager!=null){
             android.net.ConnectivityManager.NetworkCallback callback=new android.net.ConnectivityManager.NetworkCallback(){
@@ -181,7 +184,7 @@ public final class MeshActivity extends Activity {
         }
     }
     @Override protected void onPause(){
-        foreground=false;foregroundGeneration++;refreshHandler.removeCallbacks(refreshBoundTick);
+        foreground=false;foregroundGeneration++;MeshServingService.removeObserver(servingObserver);refreshHandler.removeCallbacks(refreshBoundTick);
         if(refreshNetworkManager!=null&&refreshNetworkCallback!=null)
             try{refreshNetworkManager.unregisterNetworkCallback(refreshNetworkCallback);}catch(RuntimeException ignored){}
         refreshNetworkCallback=null;refreshNetworkManager=null;super.onPause();
@@ -236,7 +239,9 @@ public final class MeshActivity extends Activity {
     private void refresh(){
         if(isDestroyed()||mesh==null)return;
         boolean listening=!mesh.invitation().isEmpty();
-        serve.setEnabled(!listening&&!busy);copy.setEnabled(listening);stop.setEnabled(listening);
+        boolean serving=MeshServingService.enabled(this);
+        servingStatus.setText(MeshServingService.status(this)+(listening?" · "+mesh.tlsIdentityStatus():""));
+        enable(serve,!serving&&!busy);enable(copy,serving&&listening);enable(stop,serving);
         receive.setEnabled(!busy&&NativeTree.available());
         invitations.setEnabled(!busy);interests.setEnabled(!busy);useAxon.setEnabled(!busy);
         String summary=mesh.connectionSummary();
@@ -300,14 +305,15 @@ public final class MeshActivity extends Activity {
     private void testConnection(){
         if(busy)return;
         final String raw=invitations.getText().toString();
-        final boolean savedAxon=useAxon.isChecked();
+        final boolean savedAxon=useAxon.isChecked()&&(!raw.trim().isEmpty()||new java.io.File(getNoBackupFilesDir(),"subscription.axon").isFile());
+        final boolean localCheck=!savedAxon&&raw.trim().isEmpty();
         busy=true;refresh();
         final int revision=++diagnosticRevision;
-        reportStale=true;connectionStatus.setText("Testing the selected peer connections…");
+        reportStale=true;connectionStatus.setText(localCheck?"Checking this device…":"Testing the selected peer connections…");
         analysisOutput.setText("Waiting for connection checks…");
         WORK.execute(()->{
             MeshConnectionDiagnostics.Report report=null;String error=null;
-            try{report=mesh.testConnections(raw,savedAxon,progress->runOnUiThread(()->{
+            try{report=localCheck?mesh.testLocal():mesh.testConnections(raw,savedAxon,progress->runOnUiThread(()->{
                 if(!isDestroyed()&&revision==diagnosticRevision)connectionStatus.setText(progress);
             }));}
             catch(Exception|LinkageError e){error="Connection test could not finish ("+e.getClass().getSimpleName()+"). Try again.";}
@@ -320,7 +326,7 @@ public final class MeshActivity extends Activity {
                     invalidateDiagnostics("Setup changed during testing. Run a fresh test.");return;
                 }
                 if(failure==null){
-                    if(savedAxon&&completed!=null){
+                    if(!localCheck&&savedAxon&&completed!=null){
                         if(!raw.trim().isEmpty()&&savedAccessWasStored(completed))clearSavedInvitationDraft();
                         lastBoundHealth=updateBoundHealth(completed);refreshSavedAxon();
                         if(!raw.trim().isEmpty()&&savedAccessWasStored(completed))scheduleBoundRefresh(500);
@@ -362,14 +368,9 @@ public final class MeshActivity extends Activity {
         connectionStatus.setText("Connection report copied. Invitation credentials are excluded.");
     }
     private void start(){
-        if(busy)return;busy=true;refresh();status.setText("Starting local TLS listener…");
-        WORK.execute(()->{
-            String message;
-            try{mesh.start();message="Listening on Wi-Fi · "+mesh.offeredCount()+" graph items\n"+mesh.tlsIdentityStatus();}
-            catch(Exception|LinkageError e){message="Could not start listener: "+e.getClass().getSimpleName()+" · "+e.getMessage();}
-            final String result=message;
-            runOnUiThread(()->{if(isDestroyed())return;busy=false;refresh();if(!mesh.invitation().isEmpty())getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);status.setText(result);});
-        });
+        if(busy)return;
+        try{MeshServingService.enable(this);refresh();}
+        catch(Exception error){status.setText("Could not enable sharing: "+error.getMessage());}
     }
     private void copy(){
         String invitation=mesh.invitation();if(invitation.isEmpty())return;
@@ -405,7 +406,7 @@ public final class MeshActivity extends Activity {
         }
         catch(Exception e){axonStatus.setText(e.getMessage());return;}
         LinearLayout box=RootsUi.column(this);box.setPadding(dp(16),0,dp(16),0);box.setBackgroundColor(RootsUi.CARD);
-        box.addView(RootsUi.text(this,"Peer connection details are saved encrypted on this device. Test and Receive reuse them when the invitation box is empty. If a peer restarts its listener, paste its new invitation to refresh access.",13,RootsUi.MUTED,false));
+        box.addView(RootsUi.text(this,"Saved peer access survives listener restarts. Paste a new invitation only if the source address or access changes.",13,RootsUi.MUTED,false));
         box.addView(RootsUi.text(this,"All knowledge is wanted by default. Optional topics and FFN groups prioritize its flow. Example: music | 7:12,8:2.",13,RootsUi.MUTED,false));
         android.widget.Spinner model=new android.widget.Spinner(this);RootsUi.styleSpinner(this,model,IntelligenceModel.labels());
         model.setSelection((old==null?IntelligenceModel.selected(this):old.model).ordinal());box.addView(model);
