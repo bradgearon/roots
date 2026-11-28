@@ -1,6 +1,7 @@
 #include "ocr.h"
 #include <d3d11.h>
 #include <dxgi.h>
+#include <dwmapi.h>
 #include <windows.graphics.capture.interop.h>
 #include <windows.graphics.directx.direct3d11.interop.h>
 #include <winrt/Windows.Foundation.h>
@@ -64,7 +65,15 @@ struct OcrLane::Impl {
         session.StartCapture(); window=hwnd;
         return true;
     }
-    bool read(HWND hwnd,std::vector<SurfaceText>& output) {
+    RECT screenBounds(HWND hwnd) const {
+        RECT rect{};
+        auto fitsFrame=[&](){return rect.right-rect.left==size.Width&&rect.bottom-rect.top==size.Height;};
+        if(SUCCEEDED(DwmGetWindowAttribute(hwnd,DWMWA_EXTENDED_FRAME_BOUNDS,&rect,sizeof(rect)))&&fitsFrame())return rect;
+        if(GetWindowRect(hwnd,&rect)&&fitsFrame())return rect;
+        return {};
+    }
+    bool read(HWND hwnd,std::vector<SurfaceText>& output,RECT& desktopBounds) {
+        desktopBounds={};
         if(window!=hwnd && !begin(hwnd)) return false;
         Direct3D11CaptureFrame frame{nullptr};
         for(int i=0;i<2;++i) {
@@ -82,6 +91,7 @@ struct OcrLane::Impl {
             pool.Recreate(device,DirectXPixelFormat::B8G8R8A8UIntNormalized,2,size);
             return false;
         }
+        const RECT before=screenBounds(hwnd);
         // One bounded readback per OCR tick; no encoding, images, or video storage.
         auto bitmap=SoftwareBitmap::CreateCopyFromSurfaceAsync(frame.Surface()).get();
         frame.Close();
@@ -90,7 +100,7 @@ struct OcrLane::Impl {
         auto result=engine.RecognizeAsync(gray).get();
         gray.Close();
         for(const auto& line:result.Lines()) {
-            if(output.size()>=64) break;
+            if(output.size()>=256) break;
             auto words=line.Words();
             if(words.Size()==0) continue;
             float l=static_cast<float>(size.Width), t=static_cast<float>(size.Height), r=0,b=0;
@@ -104,12 +114,14 @@ struct OcrLane::Impl {
                 output.push_back({std::move(text),{static_cast<LONG>(std::floor(l)),
                     static_cast<LONG>(std::floor(t)),static_cast<LONG>(std::ceil(r)),static_cast<LONG>(std::ceil(b))}});
         }
+        const RECT after=screenBounds(hwnd);
+        if(EqualRect(&before,&after))desktopBounds=after;
         return true;
     }
 };
 OcrLane::OcrLane():impl(std::make_unique<Impl>()){}
 OcrLane::~OcrLane(){ reset(); }
 void OcrLane::reset() noexcept { impl->reset(); }
-bool OcrLane::read(HWND window,std::vector<SurfaceText>& output) {
-    try { return impl->read(window,output); } catch(...) { reset(); output.clear(); return false; }
+bool OcrLane::read(HWND window,std::vector<SurfaceText>& output,RECT& desktopBounds) {
+    try { return impl->read(window,output,desktopBounds); } catch(...) { reset(); output.clear(); desktopBounds={}; return false; }
 }
