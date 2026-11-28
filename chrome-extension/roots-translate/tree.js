@@ -24,6 +24,13 @@ async function localViewCommand(operation,args){
         agent:String(positive(args.agent)),limit:operation==="viewScreens"?"12":"30"});
       path+=(operation==="viewScreens"?"/screens":operation==="viewRecords"?"/records":"/feed")+"?"+params;timeout=20000;break;
     }
+    case "viewPage":{
+      if(source!=="experience"||typeof args.parent!=="string"||!args.parent.startsWith("local:experience:browser:")||args.parent.length>512)
+        return {ok:false,error:"invalid_page"};
+      const params=new URLSearchParams({parent:args.parent,afterOrder:String(args.afterOrder||"").slice(0,128),
+        afterSequence:String(positive(args.afterSequence)),limit:"100"});
+      path+="/page?"+params;timeout=20000;break;
+    }
     case "viewWeights":
       if(!positive(args.sequence))return {ok:false,error:"invalid_sequence"};
       path+="/weights/"+args.sequence;break;
@@ -93,6 +100,17 @@ function linkFor(members){
 function field(members,role){
   return members.filter(f=>f.source.endsWith("."+role)).at(-1)?.body||"";
 }
+// Native details/summary is accessible via mouse, touch and keyboard.
+// Captured text remains plain text; never interpret it as HTML.
+function expandableText(value,caption="Read full text"){
+  const details=node("details",undefined,"text-reader");
+  const summary=node("summary",undefined,"text-reader-summary");
+  summary.append(node("span",value||"","text-reader-preview"),node("span",caption,"reader-hint"));
+  const full=node("div",undefined,"full-text");
+  full.append(node("p",value||""),action("Copy text",async()=>{await navigator.clipboard.writeText(value||"");status("Text copied.");}));
+  details.append(summary,full);
+  return details;
+}
 function weightDetails(sequence,source){
   const details=node("details");details.append(node("summary","Lexical weights · 128 components"));
   const body=node("div");details.append(body);let requested=false;
@@ -123,7 +141,7 @@ function renderRecord(item,source){
   a.append(node("strong",source==="experience"?(field(members,"process")||"Desktop"):[field(members,"author"),field(members,"handle")].filter(Boolean).join(" ")||field(members,"topic")||"Knowledge"));
   if(source==="experience")a.append(node("span",field(members,"origin").replace("windows.","")||field(members,"kind")||"observation","source-badge"));
   if(body)a.append(node("div",new Date(item.observedMs??body.observedMs).toLocaleString(),"muted"));
-  a.append(node("p",localized?.body||body?.body||""));
+  a.append(expandableText(localized?.body||body?.body||""));
   const url=linkFor(members);
   if(url){
     const link=node("a","Open original post");
@@ -135,39 +153,96 @@ function renderRecord(item,source){
   }
   a.append(details);if(body)a.append(weightDetails(body.sequence,source));return a;
 }
-function renderScreen(item){
-  const a=node("article",undefined,"screen-card");
-  const observations=[...(item.observations||[])].sort((a,b)=>a.sequence-b.sequence);
-  const rows=observations.map(observation=>{
+function screenRows(item){
+  return (item.observations||[]).map(observation=>{
     const members=observation.members||[];
     const body=members.find(f=>f.source==="record.experience.body");
-    return {observation,members,body,origin:field(members,"origin").replace("windows.","")||"text"};
-  }).filter(row=>row.body);
-  const header=node("div",undefined,"row");
-  header.append(node("strong",item.process||"Desktop"),node("span","Screen observations","source-badge"));
-  a.append(header);
+    let evidence={};try{evidence=JSON.parse(field(members,"evidence")||"{}");}catch{}
+    return {observation,members,body,evidence,origin:field(members,"origin").replace("windows.","")||"text",
+      order:field(members,"page-order")};
+  }).filter(row=>row.body).sort((a,b)=>{
+    if(a.order&&b.order)return a.order.localeCompare(b.order)||a.body.sequence-b.body.sequence;
+    // Native capture geometries from different coordinate spaces must not
+    // be mixed as if they shared an origin. Sort within each acquisition lane.
+    const as=a.evidence.coordinateSpace||"",bs=b.evidence.coordinateSpace||"";
+    if(as!==bs)return as.localeCompare(bs);
+    const ar=a.evidence.boundsCssPx||a.evidence.boundsPx,br=b.evidence.boundsCssPx||b.evidence.boundsPx;
+    return Array.isArray(ar)&&Array.isArray(br)?ar[1]-br[1]||ar[0]-br[0]||a.body.sequence-b.body.sequence:
+      a.body.sequence-b.body.sequence;
+  });
+}
+function pageReader(parent){
+  const details=node("details",undefined,"page-reader");
+  details.append(node("summary","Read captured webpage in page order"));
+  const contents=node("div",undefined,"full-text");
+  const info=node("p","Only text actually captured while visible is included. Older captures without page coordinates remain available in their screen groups.","muted");
+  const list=node("div");
+  const more=action("Load next 100 lines",()=>loadPage());
+  const copy=action("Copy loaded page text",async()=>{
+    await navigator.clipboard.writeText(texts.join("\n"));status("Loaded page text copied.");
+  });
+  contents.append(info,list,more,copy);details.append(contents);
+  let cursor="",seq=0,busy=false,started=false,complete=false;const texts=[],seen=new Set();
+  more.hidden=true;copy.hidden=true;
+  async function loadPage(){
+    if(busy||complete)return;
+    busy=true;more.disabled=true;
+    try{
+      const result=await command("viewPage",{source:"experience",parent,afterOrder:cursor,afterSequence:seq});
+      if(!details.isConnected)return;
+      for(const item of result.items||[]){
+        if(seen.has(item.sequence))continue;seen.add(item.sequence);
+        texts.push(item.body);
+        list.append(expandableText(item.body,"Read full line"));
+      }
+      started=true;
+      complete=!result.hasMore||!result.nextSequence||(result.nextSequence===seq&&result.nextOrder===cursor);
+      cursor=result.nextOrder||"";seq=result.nextSequence||0;
+      info.textContent=texts.length?texts.length+" captured lines loaded in document order."+(complete?"":" More lines are available."):
+        "No ordered text yet. Scroll this webpage with the updated reader enabled; prior observations remain in the screen timeline.";
+      more.hidden=complete;copy.hidden=!texts.length;
+    }catch(e){info.textContent=e.message;more.textContent="Retry page read";more.hidden=false;}
+    finally{busy=false;more.disabled=false;}
+  }
+  details.addEventListener("toggle",()=>{if(details.open&&!started)void loadPage();});
+  return details;
+}
+function renderScreen(item){
+  const a=node("article",undefined,"screen-card");
+  const rows=screenRows(item);
   const counts=new Map();
   for(const row of rows)counts.set(row.origin,(counts.get(row.origin)||0)+1);
   const methods=[...counts].map(([method,count])=>count+" "+method).join(" · ");
-  a.append(node("div",new Date(item.observedMs).toLocaleTimeString()+" · "+rows.length+" observations"+(methods?" · "+methods:""),"muted"));
+  // Clicking the heading, preview or explicit expand hint opens the whole
+  // screen. The expanded rows contain all stored text, not just the preview.
+  const details=node("details",undefined,"screen-reader");
+  const summary=node("summary",undefined,"screen-reader-summary");
+  const header=node("div",undefined,"row");
+  header.append(node("strong",item.process||"Desktop"),node("span","Screen observations","source-badge"));
+  const host=rows.find(r=>r.origin==="browser.dom")?.evidence.host;
+  if(host)header.append(node("span",String(host),"muted"));
+  summary.append(header,node("div",new Date(item.observedMs).toLocaleTimeString()+" · "+rows.length+" observations"+(methods?" · "+methods:""),"muted"));
   const preview=node("div",undefined,"screen-preview");
   for(const row of rows.slice(0,5))preview.append(node("p",row.body.body));
   if(rows.length>5)preview.append(node("small","+"+(rows.length-5)+" more"));
-  a.append(preview);
-  const details=node("details");details.append(node("summary","Open screen · "+rows.length+" observations"));
-  const contents=node("div");details.append(contents);
+  summary.append(preview,node("span","Read full screen · "+rows.length+" observations","reader-hint"));
+  const contents=node("div",undefined,"screen-reader-content");
+  details.append(summary,contents);a.append(details);
   let populated=false;
   details.addEventListener("toggle",()=>{
     if(!details.open||populated)return;populated=true;
+    contents.append(action("Copy full screen text",async()=>{
+      await navigator.clipboard.writeText(rows.map(r=>r.body.body).join("\n"));status("Screen text copied.");
+    }));
     for(const row of rows){
       const observation=node("div",undefined,"screen-observation");
-      observation.append(node("small",row.origin),node("p",row.body.body),weightDetails(row.body.sequence,"experience"));
+      observation.append(node("small",row.origin),expandableText(row.body.body),weightDetails(row.body.sequence,"experience"));
       const metadata=node("details");metadata.append(node("summary","Source and coordinates"));
       for(const f of row.members)if(f!==row.body)metadata.append(node("small",f.source),node("p",f.body));
       observation.append(metadata);contents.append(observation);
     }
   });
-  a.append(details);
+  if(item.session?.startsWith("local:experience:browser:")&&rows.some(r=>r.order))a.append(pageReader(item.session));
   return a;
 }
 function appendTimelineItem(item,source,view){
@@ -199,7 +274,7 @@ function appendTimelineItem(item,source,view){
 }
 function renderFragment(f,source){
   const a=node("article");a.append(node("small",f.source+(f.language?" · "+f.language:"")),
-    node("div",new Date(f.observedMs).toLocaleString(),"muted"),node("p",f.body),weightDetails(f.sequence,source));return a;
+    node("div",new Date(f.observedMs).toLocaleString(),"muted"),expandableText(f.body),weightDetails(f.sequence,source));return a;
 }
 async function load(reset=false,live=false){
   const saved=live?{beforeMs,beforeSequence,pages,timelineDay,timelineSection}:null;
@@ -253,7 +328,7 @@ async function refreshSelected(force=false){
     if(epoch!==viewEpoch||source!==selectedSource)return;
     const changed=viewRevision!==null&&viewRevision!==state.revision;
     el("knowledgeSummary").textContent=state.count+" fragments · revision "+state.revision;
-    el("sourceDescription").textContent=source==="experience"?"Private desktop observations · screen groups collect text from one reading pass. Never included in Axon or Mesh exchange.":"Social and received knowledge. Newest observation time first.";
+    el("sourceDescription").textContent=source==="experience"?"Private desktop observations · click a screen to read all captured text; browser pages can be read in scroll order. Never included in Axon or Mesh exchange.":"Social and received knowledge. Newest observation time first.";
     const branches=await command("viewBranches",{source});
     if(epoch!==viewEpoch||source!==selectedSource)return;
     const signature=source+JSON.stringify(branches.items||[]);
