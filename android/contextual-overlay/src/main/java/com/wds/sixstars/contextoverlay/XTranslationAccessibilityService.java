@@ -40,6 +40,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
     private String readerStatus = "Service not scanned yet";
     private boolean scanScheduled;
     private boolean scrollSinceLastScan;
+    private long lastTimelineScrollAt=-1L;
     // Independent, low-frequency recovery only while foreground X can be verified.
     // Normal capture remains event-driven; recovery never starts translation work.
     private static final long CAPTURE_RECOVERY_MS=4000L;
@@ -86,7 +87,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         return !destroyed&&preferences!=null&&preferences.enabled()&&treeRuntime!=null&&treeRuntime.enabled();
     }
     private boolean needsSettledScan(){
-        return preferences!=null&&preferences.enabled()&&(preferences.autoPreview()||captureEnabled());
+        return preferences!=null&&preferences.enabled()&&(preferences.autoPreview()||captureEnabled()||XAccessibilityInspector.armed());
     }
     private boolean screenAllowsCapture(){
         PowerManager power=getSystemService(PowerManager.class);
@@ -216,6 +217,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         }
 
         if (kind == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+            lastTimelineScrollAt=SystemClock.uptimeMillis();
             if(!scrollSinceLastScan && scanScheduled){
                 main.removeCallbacks(scan);scanScheduled=false;
             }
@@ -371,7 +373,7 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         if(captureRequested&&!retain)treeRuntime.noteCaptureReaderState(screenReady?
             "Waiting for verified foreground X":"Screen locked or off; capture waiting");
         long epoch=retain?treeRuntime.captureEpoch():-1L;
-        XAccessibilityInspector.Scan inspection=isXRoot(foreground)&&screenAllowsCapture()?XAccessibilityInspector.begin(retain):null;
+        XAccessibilityInspector.Scan inspection=isXRoot(foreground)&&screenAllowsCapture()?XAccessibilityInspector.begin(retain,lastTimelineScrollAt<0||SystemClock.uptimeMillis()-lastTimelineScrollAt>=SETTLED_SCAN_MS):null;
         AccessibilityNodeInfo root = retain||inspection!=null?foreground:getRootInActiveWindow();
         if (!isXRoot(root)) {
             // Android may report the keyboard or our tiny language/More
