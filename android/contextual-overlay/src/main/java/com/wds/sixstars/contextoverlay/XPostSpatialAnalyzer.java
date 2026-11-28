@@ -149,7 +149,7 @@ public final class XPostSpatialAnalyzer {
 
     private static boolean separateBodies(TextCandidate a,TextCandidate b,boolean detailScreen) {
         return independentBody(a,detailScreen) && independentBody(b,detailScreen)
-                && !a.text.equals(b.text) && (a.bounds.bottom <= b.bounds.top || b.bounds.bottom <= a.bounds.top);
+                && (a.bounds.bottom <= b.bounds.top || b.bounds.bottom <= a.bounds.top);
     }
 
     private static boolean shadowedByKnownBody(TextCandidate candidate,List<TextCandidate> candidates) {
@@ -172,7 +172,7 @@ public final class XPostSpatialAnalyzer {
                     + candidate.avatarBounds.top + ":" + candidate.avatarBounds.right
                     + ":" + candidate.avatarBounds.bottom;
         }
-        return "body:" + candidate.fingerprint;
+        return "body:" + candidate.fingerprint + ":" + candidate.bounds.flattenToString();
     }
 
     private static boolean betterBody(TextCandidate candidate, TextCandidate previous) {
