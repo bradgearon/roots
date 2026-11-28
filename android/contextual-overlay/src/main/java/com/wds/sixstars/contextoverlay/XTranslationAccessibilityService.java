@@ -371,7 +371,8 @@ public final class XTranslationAccessibilityService extends AccessibilityService
         if(captureRequested&&!retain)treeRuntime.noteCaptureReaderState(screenReady?
             "Waiting for verified foreground X":"Screen locked or off; capture waiting");
         long epoch=retain?treeRuntime.captureEpoch():-1L;
-        AccessibilityNodeInfo root = retain?foreground:getRootInActiveWindow();
+        XAccessibilityInspector.Scan inspection=isXRoot(foreground)&&screenAllowsCapture()?XAccessibilityInspector.begin():null;
+        AccessibilityNodeInfo root = retain||inspection!=null?foreground:getRootInActiveWindow();
         if (!isXRoot(root)) {
             // Android may report the keyboard or our tiny language/More
             // control as the active window while X remains the foreground
@@ -386,7 +387,8 @@ public final class XTranslationAccessibilityService extends AccessibilityService
 
         android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
         // All coordinates and overlay windows use screen pixels, not dp.
-        List<TextCandidate> found = reader.find(root, metrics.widthPixels, metrics.heightPixels, metrics.scaledDensity,retain);
+        List<TextCandidate> found = reader.find(root, metrics.widthPixels, metrics.heightPixels, metrics.scaledDensity,retain,inspection);
+        if(inspection!=null)XAccessibilityInspector.finish(inspection,preferences.enabled()&&screenAllowsCapture()&&isXRoot(findXApplicationWindow()),reader.lastKnowledgeBounded());
         if(retain){
             // Recheck foreground and consent after traversal; no extra tree walk.
             boolean stillX=screenAllowsCapture()&&isXRoot(findXApplicationWindow());
