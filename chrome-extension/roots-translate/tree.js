@@ -208,6 +208,23 @@ async function load(reset=false,live=false){
   }return false;}
   finally{if(gen===generation){loading=false;el("more").disabled=false;}}
 }
+async function refreshBrowserExperience(){
+  try{
+    const state=await command("experienceDomStatus");
+    el("browserExperience").dataset.enabled=String(state.enabled===true);
+    el("browserExperience").textContent=state.enabled?"Disable webpage reading":"Enable visible webpage reading";
+    el("browserExperienceStatus").textContent=state.enabled?"Enabled while Surface runs":"Chrome site access required once";
+  }catch(e){el("browserExperienceStatus").textContent=e.message;}
+}
+handle("browserExperience","click",async()=>{
+  const enabled=el("browserExperience").dataset.enabled!=="true";
+  if(enabled){
+    const granted=await chrome.permissions.request({origins:["http://*/*","https://*/*"]});
+    if(!granted){status("Browser reading remains off; site permission was not granted.");return;}
+  }
+  await command("experienceDomEnable",{enabled});
+  await refreshBrowserExperience();
+});
 async function refreshSelected(force=false){
   if(viewRefreshing&&!force)return;
   const epoch=++viewEpoch,source=selectedSource;viewRefreshing=true;
@@ -312,6 +329,8 @@ handle("knowledgeSource","change",async()=>{
   const screenOption=el("view").querySelector('option[value="screens"]');
   screenOption.hidden=screenOption.disabled=selectedSource!=="experience";
   el("view").value=selectedSource==="experience"?"screens":"records";
+  el("browserExperienceControls").hidden=selectedSource!=="experience";
+  if(selectedSource==="experience")await refreshBrowserExperience();
   el("branchFilter").replaceChildren(new Option("All branches","0"));
   el("items").replaceChildren();generation++;loading=false;
   await refreshSelected(true);await load(true);
