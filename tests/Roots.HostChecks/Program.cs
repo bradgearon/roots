@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text;
 using Wds.Roots.Host.Runtime;
 using Wds.Roots.Host;
+using Wds.Roots.Tree;
 using System.Text.Json;
 using System.IO.Compression;
 
@@ -57,6 +58,69 @@ Directory.CreateDirectory(scratch);
 int passed = 0;
 try
 {
+    await Run("Experience pause survives restart and fences old native and DOM observations", async () =>
+    {
+        string directory=Path.Combine(scratch,"experience-policy");
+        Directory.CreateDirectory(directory);
+        var control=new ExperienceCaptureControl(directory);
+        var other=new ExperienceCaptureControl(directory);
+        var initial=control.Read();
+        Require(initial.Enabled,"First launch should retain the existing default.");
+        int writes=0;
+        Require(control.TryCommit(initial.Epoch,()=>writes++),"Initial capture denied.");
+        var paused=other.SetEnabled(false);
+        Require(!paused.Enabled&&!new ExperienceCaptureControl(directory).Read().Enabled,"Pause did not persist.");
+        Require(!control.TryCommit(initial.Epoch,()=>writes++),"Old acquisition committed after pause.");
+        Require(!control.TryCommit(paused.Epoch,()=>writes++),"Paused epoch accepted data.");
+        Require(writes==1,"Paused observation was written.");
+        Require(control.SetEnabled(false)==paused,"Repeated pause should be idempotent.");
+        var resumed=other.SetEnabled(true);
+        Require(resumed.Enabled&&resumed.Epoch!=initial.Epoch&&resumed.Epoch!=paused.Epoch,"Resume did not fence stale writes.");
+        Require(!control.TryCommit(initial.Epoch,()=>writes++),"Pre-pause data was accepted after resume.");
+        Require(control.TryCommit(resumed.Epoch,()=>writes++),"Fresh capture denied.");
+        Require(writes==2,"Unexpected write count.");
+
+        if(OperatingSystem.IsWindows()){
+            var descriptor=new ExperienceCaptureControl.Worker(Guid.NewGuid().ToString("N"),[],resumed.Epoch,true);
+            using(var lease=new FileStream(Path.Combine(directory,"capture.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None)){
+                control.PublishWorker(descriptor);
+                Require(other.ActiveSession()==descriptor||other.ActiveSession()?.Run==descriptor.Run,"Running native session not visible.");
+                var running=other.Status();
+                Require(running.WatcherRunning&&running.WorkerActive&&running.CurrentEpoch&&running.SupportsPause,"Active worker status incorrect.");
+                other.SetEnabled(false);
+                Require(other.ActiveSession()==null,"Paused browser was still authorized.");
+                Require(other.Status().WorkerActive,"Pause reported completion before child exit.");
+                control.PublishWorker(descriptor with{Active=false});
+                Require(!other.Status().WorkerActive,"Stopped child still shown as active.");
+            }
+            Require(!other.Status().WatcherRunning&&other.ActiveSession()==null,"Stale descriptor treated as a live session.");
+        }
+        // A pause must wait for an already-authorized atomic write, and must
+        // reject every later write from that epoch.
+        var active=control.SetEnabled(true);
+        using var entered=new ManualResetEventSlim();
+        using var release=new ManualResetEventSlim();
+        using var requested=new ManualResetEventSlim();
+        Task<bool> writer=Task.Run(()=>control.TryCommit(active.Epoch,()=>{
+            entered.Set();Require(release.Wait(TimeSpan.FromSeconds(5)),"Fixture writer not released.");
+        }));
+        Task<ExperienceCaptureControl.Setting>? pauseTask=null;
+        try{
+            Require(entered.Wait(TimeSpan.FromSeconds(5)),"Fixture writer never acquired gate.");
+            pauseTask=Task.Run(()=>{requested.Set();return other.SetEnabled(false);});
+            Require(requested.Wait(TimeSpan.FromSeconds(5)),"Pause task never started.");
+            await Task.Delay(75);
+            Require(!pauseTask.IsCompleted,"Pause acknowledged while the previous write held the gate.");
+        }finally{release.Set();}
+        Require(await writer,"Existing authorized write did not complete.");
+        Require(pauseTask!=null&&!((await pauseTask).Enabled),"Pause did not complete.");
+        Require(!control.TryCommit(active.Epoch,()=>writes++),"Old write committed after acknowledgement.");
+
+        File.WriteAllText(Path.Combine(directory,"capture.control.json"),"{invalid");
+        Require(!other.Read().Enabled,"Damaged capture policy did not fail closed.");
+        Require(other.SetEnabled(true).Enabled,"Explicit resume could not repair policy.");
+    });
+
     await Run("Compressed public Axon receipts survive camelCase and legacy PascalCase recovery", () =>
     {
         using var item=JsonDocument.Parse("{\"id\":\"fixture\",\"text\":\"Retained knowledge\"}");
