@@ -14,7 +14,11 @@ input:not([type=checkbox]),button,select{border:1px solid #536071;border-radius:
 input:not([type=checkbox]){min-width:140px;flex:1}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}a{color:#80c6f4}
 small,.muted{color:#aeb9c6}article{padding:18px 0;border-bottom:1px solid #384352;overflow-wrap:anywhere}
 article p{white-space:pre-wrap;margin:8px 0}details{color:#b7c4d3;margin-top:8px}details p{font-size:13px}
-#message{min-height:1.5em}#invites{display:flex;gap:8px;flex-wrap:wrap}label{cursor:pointer}
+#message{min-height:1.5em}
+.weight-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;font:12px ui-monospace,monospace;margin:8px 0}
+.weight-grid span{padding:4px;border-radius:3px;background:#1d2632;text-align:center}
+.source-badge{display:inline-block;padding:1px 7px;background:#263548;color:#c7d9e8;border-radius:5px;margin-left:8px;font-size:12px}
+@media(max-width:600px){.weight-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}#invites{display:flex;gap:8px;flex-wrap:wrap}label{cursor:pointer}
 </style>
 </head>
 <body><main>
@@ -35,10 +39,16 @@ article p{white-space:pre-wrap;margin:8px 0}details{color:#b7c4d3;margin-top:8px
 <form id="bind" class="row"><input id="invitation" type="password" placeholder="Paste Roots Mesh invitation" aria-label="Mesh invitation" autocomplete="off" maxlength="1024" required><button>Bind Axon</button></form>
 <div id="peers"></div>
 </section>
+<section><h2>Knowledge source</h2>
+<div class="row"><select id="knowledgeSource" aria-label="Knowledge source"><option value="knowledge">Knowledge · social / received</option><option value="experience">Experience · desktop</option></select>
+<label><input id="liveKnowledge" type="checkbox" checked> Live updates</label>
+<span class="muted" id="knowledgeSummary" role="status"></span></div>
+<p class="muted" id="sourceDescription"></p>
+</section>
 <section><h2>Branches</h2>
 <form id="branch" class="row"><input id="branchName" placeholder="Name" aria-label="Branch name" maxlength="160" required><input id="branchTerm" placeholder="Interest" aria-label="Branch interest" maxlength="512" required><button>Create branch</button></form>
 <div id="branches"></div></section>
 <section><h2>Knowledge</h2>
-<form id="search" class="row"><input id="term" placeholder="Search the Tree" aria-label="Search" maxlength="512"><button>Search</button><select id="view" aria-label="Knowledge view"><option value="records">Grouped posts</option><option value="feed">All fragments</option></select></form>
+<form id="search" class="row"><input id="term" placeholder="Search the Tree" aria-label="Search" maxlength="512"><button>Search</button><select id="view" aria-label="Knowledge view"><option value="records">Grouped records</option><option value="feed">All fragments</option></select><select id="branchFilter" aria-label="Filter by branch"><option value="0">All branches</option></select></form>
 <div id="items"></div><button id="more" hidden>Load more</button></section>
 </main><script src="tree.js"></script></body></html>
