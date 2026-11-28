@@ -314,9 +314,20 @@ static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
         scan.maskReady=true;
         for(int k=0;k<count;++k){
             ComPtr<IUIAutomationElement> node;RECT bounds{},clip{};
-            if(FAILED(sensitive->GetElement(k,&node))||!node||
-               FAILED(node->get_CachedBoundingRectangle(&bounds))||IsRectEmpty(&bounds)){
-                scan.maskReady=false;break;
+            if(FAILED(sensitive->GetElement(k,&node))||!node){scan.maskReady=false;break;}
+            // Chrome may return virtual/offscreen edit controls in a cached
+            // result. Confirm an empty cached rectangle with current geometry
+            // instead of failing the whole window for a non-rendered control.
+            BOOL offscreen=FALSE;
+            if(SUCCEEDED(node->get_CachedIsOffscreen(&offscreen))&&offscreen)continue;
+            if(FAILED(node->get_CachedBoundingRectangle(&bounds))||IsRectEmpty(&bounds)){
+                offscreen=FALSE;
+                if(SUCCEEDED(node->get_CurrentIsOffscreen(&offscreen))&&offscreen)continue;
+                if(FAILED(node->get_CurrentBoundingRectangle(&bounds))||IsRectEmpty(&bounds)){
+                    // Unresolved visible sensitive geometry remains a hard
+                    // safety failure. The independent DOM lane can read prose.
+                    scan.maskReady=false;break;
+                }
             }
             if(IntersectRect(&clip,&bounds,&rect))scan.masks.push_back(clip);
         }
@@ -472,6 +483,26 @@ int wmain(int argc,wchar_t** argv) {
         // Idle is an activity label, not a reason to stop observing an unlocked screen.
         if(!current.hwnd)continue;
         auto scan=uia(automation.Get(),current.hwnd);
+        if(scan.ownView||!(target(excluded)==current)){
+            seenUia.clear();seenOcr.clear();
+#ifdef ROOTS_SURFACE_OCR
+            if(ocr)ocr->reset();
+#endif
+            continue;
+        }
+        for(const auto& row:scan.rows){
+            if(std::none_of(seenUia.begin(),seenUia.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
+                {emit("uia",session,current,wall,wall,now,now,row.bounds,row.text);++textUia;}
+        }
+        // Keep the original scan for cross-lane deduplication. UIA has already
+        // been committed if a game cutscene or window change interrupts OCR.
+        if(scan.complete)seenUia=scan.rows;
+        else {
+            for(const auto& row:scan.rows)
+                if(std::none_of(seenUia.begin(),seenUia.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
+                    seenUia.push_back(row);
+            if(seenUia.size()>512)seenUia.erase(seenUia.begin(),seenUia.begin()+(seenUia.size()-512));
+        }
         std::vector<SurfaceText> optical;RECT captureDesktop{};bool opticalReady=false;
         // A complete *safety* query is enough for OCR. The structured text
         // query may be partial, and ordinary editable controls only mask their
@@ -485,16 +516,12 @@ int wmain(int argc,wchar_t** argv) {
             opticalState=ocr->status();
         } else if(ocr){ocr->reset();seenOcr.clear();}
 #endif
-        if(scan.ownView||!(target(excluded)==current)){
-            seenUia.clear();seenOcr.clear();
+        if(!(target(excluded)==current)){
+            seenOcr.clear();
 #ifdef ROOTS_SURFACE_OCR
             if(ocr)ocr->reset();
 #endif
             continue;
-        }
-        for(const auto& row:scan.rows){
-            if(std::none_of(seenUia.begin(),seenUia.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
-                {emit("uia",session,current,wall,wall,now,now,row.bounds,row.text);++textUia;}
         }
         if(opticalReady){
             std::vector<SurfaceText> unique;
@@ -516,15 +543,7 @@ int wmain(int argc,wchar_t** argv) {
                 <<"; masks "<<scan.masks.size()<<"; OCR "<<opticalState
                 <<" ("<<optical.size()<<" lines); totals UIA "<<textUia<<", OCR "<<textOcr<<"\n";
         }
-        if(scan.complete)seenUia=std::move(scan.rows);
-        else {
-            // Partial scans cannot prove a disappearance. Keep bounded
-            // recent visible occurrences to prevent repeated partial reads.
-            for(auto& row:scan.rows)
-                if(std::none_of(seenUia.begin(),seenUia.end(),[&](const auto& prior){return sameTextAt(prior,row);}))
-                    seenUia.push_back(std::move(row));
-            if(seenUia.size()>512)seenUia.erase(seenUia.begin(),seenUia.begin()+(seenUia.size()-512));
-        }
+
     }
 #ifdef ROOTS_SURFACE_OCR
     ocr.reset();
