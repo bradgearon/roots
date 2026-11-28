@@ -65,6 +65,9 @@ public final class AccessibilityOverlayRenderer {
     public void setAutoTargetWindow(int id, Rect windowScreenBounds) {
         autoInline.setTargetWindow(id, windowScreenBounds);
     }
+    void setAutoTargetWindow(int id,Rect windowScreenBounds,XOverlayOrigin.Offset origin){
+        autoInline.setTargetWindow(id,windowScreenBounds,origin);
+    }
 
     /** Backward-compatible manual call for old callers. */
     public void update(List<TextCandidate> candidates, ClickHandler clicks) {
