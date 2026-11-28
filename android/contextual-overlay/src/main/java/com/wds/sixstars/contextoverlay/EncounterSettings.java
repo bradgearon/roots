@@ -23,7 +23,7 @@ final class EncounterSettings {
     static boolean publicationScopeReviewed(Context c){return prefs(c).getBoolean("automatic_public_reviewed",false);}
     private static void setAutomaticPublication(Context c,boolean enabled){
         prefs(c).edit().putBoolean("automatic_public_posts",enabled).putBoolean("automatic_public_reviewed",true).commit();
-        MeshPeer.get(c).invalidateEncounterPublicationCount();
+        if(com.wds.sixstars.contextoverlay.tree.NativeTree.available())MeshPeer.get(c).invalidateEncounterPublicationCount();
         EncounterService.refreshDiscovery();
     }
     static void configureAutomaticPublication(Activity activity,boolean enabled,Runnable changed){

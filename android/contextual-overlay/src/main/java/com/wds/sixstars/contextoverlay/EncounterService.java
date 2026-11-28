@@ -87,6 +87,7 @@ public final class EncounterService extends Service {
             if(Build.VERSION.SDK_INT>=33)registerReceiver(bluetoothState,filter,Context.RECEIVER_EXPORTED);
             else registerReceiver(bluetoothState,filter);
             receiverRegistered=true;
+            ExternalTreeImport.schedule(this);
             ensureRadio();
             return START_STICKY;
         }catch(Exception failure){status="Could not start nearby exchange";stopSelf();return START_NOT_STICKY;}
@@ -335,6 +336,7 @@ public final class EncounterService extends Service {
             }catch(Exception|LinkageError failure){result="Interrupted · "+(sync==null?"authentication or catalog setup":sync.stage())+" ("+failure.getClass().getSimpleName()+")";return -1;}
             finally{
                 if(deadline!=null)deadline.cancel(false);
+                ExternalTreeImport.schedule(EncounterService.this);
                 int sent=sync==null?0:sync.sent(),received=sync==null?0:sync.received();
                 // Don't build a persistent tracking record of repeatedly rejected blocked encounters.
                 if(!peer.isEmpty()&&!"Blocked or stopped".equals(result)){

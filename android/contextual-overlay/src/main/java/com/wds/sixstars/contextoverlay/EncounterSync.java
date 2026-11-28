@@ -116,6 +116,7 @@ final class EncounterSync {
                     MeshItem item=MeshItem.parse(data.getJSONObject("item"));
                     if(item.graph()!=null||!item.id().equals(id))throw new IOException("Unexpected publication");
                     check();
+                    if(!com.wds.sixstars.contextoverlay.tree.NativeTree.available())throw new IOException("Native Tree unavailable");
                     boolean added=external.receive(item,channel.peerId);
                     stage="Retaining external reference in main Tree";
                     check();external.promote(item.id(),tree,epoch);

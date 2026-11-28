@@ -111,7 +111,20 @@ record MeshItem(String id,String language,String topic,String text,String link,G
             return tree.storeExplicit(java.util.Collections.singletonList(
                 new NativeTree.Observation(graph.source(),graph.key(),text,graph.language(),graph.at())),epoch);
         }
-        long at=System.currentTimeMillis();
+        return tree.storeExplicit(publicationRows(System.currentTimeMillis()),epoch);
+    }
+    long storeReceived(TreeRuntime tree,long epoch,String peer,long receivedAt)throws Exception{
+        if(graph!=null||!EncounterBindings.digest(peer)||receivedAt<0)throw new IllegalArgumentException("Invalid external provenance");
+        return tree.storeExplicit(receivedRows(peer,receivedAt),epoch);
+    }
+    List<NativeTree.Observation> receivedRows(String peer,long at)throws Exception{
+        if(graph!=null||!EncounterBindings.digest(peer)||at<0)throw new IllegalArgumentException("Invalid external provenance");
+        List<NativeTree.Observation> rows=publicationRows(at);
+        rows.add(new NativeTree.Observation("record.mesh.external-peer",key(),peer,"",at));
+        rows.add(new NativeTree.Observation("record.mesh.trust",key(),"External reference · unverified claims","",at));
+        return rows;
+    }
+    private List<NativeTree.Observation> publicationRows(long at)throws Exception{
         List<NativeTree.Observation> rows=new ArrayList<>();
         rows.add(new NativeTree.Observation("record.mesh.body",key(),text,language,at));
         rows.add(new NativeTree.Observation("record.mesh.topic",key(),topic,language,at));
@@ -119,7 +132,7 @@ record MeshItem(String id,String language,String topic,String text,String link,G
         String offer=json().toString();
         if(offer.getBytes(StandardCharsets.UTF_8).length>16384)throw new IllegalArgumentException("Remembrance is too large after encoding.");
         rows.add(new NativeTree.Observation("record.mesh.offer",key(),offer,"",at));
-        return tree.storeExplicit(rows,epoch);
+        return rows;
     }
     static MeshItem from(NativeTree.Master record){
         if(!record.key().startsWith("local:mesh:"))return null;

@@ -47,6 +47,20 @@ public final class RootsStreamActivity extends Activity {
         if(!loading&&rows.isEmpty())reset();
         else status.setText("Coordination changed · tap Rank / refresh");
     });
+    private final android.os.Handler externalHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable refreshExternal=new Runnable(){
+        @Override public void run(){
+            if(closed||!resumed||runtime==null)return;
+            if(loading){externalHandler.postDelayed(this,500);return;}
+            if(feed.getFirstVisiblePosition()<=0)reset();
+            else status.setText("New external knowledge retained · tap Rank / refresh when ready");
+        }
+    };
+    private final Runnable externalListener=()->runOnUiThread(()->{
+        if(closed||!resumed)return;
+        externalHandler.removeCallbacks(refreshExternal);
+        externalHandler.postDelayed(refreshExternal,500);
+    });
     private static final int PAGE=30;
 
     @Override protected void onCreate(Bundle saved){
@@ -105,11 +119,11 @@ public final class RootsStreamActivity extends Activity {
         }
     }
 
-    @Override protected void onResume(){super.onResume();EncounterSettings.foreground(this);resumed=true;MeshServingService.restore(this);if(runtime!=null){runtime.addWaveListener(waveListener);reset();}}
+    @Override protected void onResume(){super.onResume();EncounterSettings.foreground(this);resumed=true;MeshServingService.restore(this);if(runtime!=null){runtime.addWaveListener(waveListener);ExternalTreeImport.addListener(externalListener);ExternalTreeImport.schedule(this);reset();}}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
         super.onRequestPermissionsResult(request,permissions,results);EncounterSettings.permissionResult(this,request);
     }
-    @Override protected void onPause(){resumed=false;if(runtime!=null)runtime.removeWaveListener(waveListener);super.onPause();}
+    @Override protected void onPause(){resumed=false;ExternalTreeImport.removeListener(externalListener);externalHandler.removeCallbacks(refreshExternal);if(runtime!=null)runtime.removeWaveListener(waveListener);super.onPause();}
     @Override protected void onDestroy(){closed=true;generation++;reader.shutdownNow();super.onDestroy();}
     private int dp(int n){return RootsUi.dp(this,n);}
     private void toggleCapture(){

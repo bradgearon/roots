@@ -7,7 +7,7 @@ import com.wds.sixstars.contextoverlay.tree.TreeRuntime;
 import java.util.*;
 import java.util.concurrent.*;
 
-/** Explicit public-to-private knowledge bridge. No capability or route import. */
+/** External receipt history; records normally already live in the main Tree. */
 public final class ExternalKnowledgeActivity extends Activity {
     private final ExecutorService work=Executors.newSingleThreadExecutor();
     private LinearLayout items;
@@ -21,7 +21,7 @@ public final class ExternalKnowledgeActivity extends Activity {
         status=RootsUi.text(this,"Loading public knowledge…",13,RootsUi.MUTED,false);shell.addView(status);
         shell.addView(RootsUi.action(this,"Refresh",this::load));
         shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        shell.addView(RootsUi.action(this,"‹ Encounters",this::finish));setContentView(shell);load();
+        shell.addView(RootsUi.action(this,"‹ Encounters",this::finish));setContentView(shell);ExternalTreeImport.schedule(this);load();
     }
     private void load(){
         if(work.isShutdown())return;
@@ -33,7 +33,7 @@ public final class ExternalKnowledgeActivity extends Activity {
         });
     }
     private void render(List<ExternalKnowledgeStore.Publication> rows){
-        items.removeAllViews();status.setText(rows.size()+" recent publications · not automatically part of your private Tree");
+        items.removeAllViews();status.setText(rows.size()+" recent receipts · automatically retained as external references");
         for(var row:rows){
             MeshItem item=row.item();
             LinearLayout card=RootsUi.card(this,items);
@@ -41,7 +41,8 @@ public final class ExternalKnowledgeActivity extends Activity {
             TextView body=RootsUi.text(this,item.text(),14,RootsUi.TEXT,false);body.setTextIsSelectable(true);card.addView(body);
             card.addView(RootsUi.text(this,"Source peer "+row.peer().substring(0,12)+" · "+item.id().substring(0,12)+" · "+item.language(),12,RootsUi.MUTED,false));
             if(!item.link().isEmpty())card.addView(RootsUi.text(this,item.link(),12,RootsUi.MUTED,false));
-            card.addView(RootsUi.action(this,row.promoted()?"Bring into Tree again":"Bring into my Tree",()->confirm(item)));
+            card.addView(RootsUi.text(this,row.promoted()?"Retained in main Tree":"Pending Tree retention",13,RootsUi.ACCENT,false));
+            if(!row.promoted())card.addView(RootsUi.action(this,"Retry Tree retention",()->confirm(item)));
         }
     }
     private void confirm(MeshItem item){

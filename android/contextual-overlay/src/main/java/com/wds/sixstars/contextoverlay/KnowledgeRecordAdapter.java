@@ -38,7 +38,9 @@ public final class KnowledgeRecordAdapter extends BaseAdapter {
         String sourceLink=XPostLink.forRecord(record);
         String author=grouped?record.first("author"):"";
         String handle=grouped?record.first("handle"):"";
-        card.addView(RootsUi.text(activity,mesh?"ROOTS MESH · REMEMBRANCE":grouped?"X · KNOWLEDGE":"RAW OBSERVATION",12,RootsUi.ACCENT,true));
+        String externalPeer=mesh?record.latest("external-peer"):"";
+        card.addView(RootsUi.text(activity,!externalPeer.isEmpty()?"ROOTS MESH · EXTERNAL REFERENCE":mesh?"ROOTS MESH · REMEMBRANCE":grouped?"X · KNOWLEDGE":"RAW OBSERVATION",12,RootsUi.ACCENT,true));
+        if(!externalPeer.isEmpty())card.addView(RootsUi.text(activity,"Received via Axon "+externalPeer.substring(0,Math.min(12,externalPeer.length()))+" · claims unverified",12,RootsUi.MUTED,false));
         String topic=record.latest("topic");if(!topic.isEmpty())card.addView(RootsUi.text(activity,topic,18,RootsUi.TEXT,true));
         if(!author.isEmpty())card.addView(RootsUi.text(activity,author,17,RootsUi.TEXT,true));
         if(!handle.isEmpty())card.addView(RootsUi.text(activity,handle,13,RootsUi.MUTED,false));

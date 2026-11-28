@@ -7,9 +7,9 @@ import java.io.IOException;
 import java.util.*;
 import org.json.JSONObject;
 
-/** External publications are a separate trust domain and database. Incoming
- * public data does not enter the private Tree or private inference context.
- * An explicit user import preserves the original content-addressed record. */
+/** Durable public receipts. Each verified publication is also retained in the
+ * main Tree as an external reference; its peer provenance is not an authority
+ * or private capability. The promoted marker makes crash recovery idempotent. */
 final class ExternalKnowledgeStore extends SQLiteOpenHelper {
     private static final int LIMIT=10000;
     private static ExternalKnowledgeStore instance;
@@ -64,18 +64,28 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
         }
         return result;
     }
-    void promote(String id,com.wds.sixstars.contextoverlay.tree.TreeRuntime tree,long epoch)throws Exception{
-        if(!EncounterBindings.digest(id))throw new IOException("Invalid publication");
-        MeshItem item;
-        try(Cursor cur=getReadableDatabase().rawQuery("SELECT body FROM publications WHERE id=?",new String[]{id})){
-            if(!cur.moveToFirst())throw new IOException("Publication is unavailable");
-            item=MeshItem.parse(new JSONObject(cur.getString(0)));
+    java.util.List<String> pendingIds(String after,int limit){
+        if(limit<1||limit>100)throw new IllegalArgumentException("Invalid pending page");
+        java.util.List<String> ids=new java.util.ArrayList<>();
+        try(Cursor cur=getReadableDatabase().rawQuery("SELECT id FROM publications WHERE promoted=0 AND id>? ORDER BY id LIMIT "+limit,new String[]{after})){
+            while(cur.moveToNext())ids.add(cur.getString(0));
         }
-        if(item.graph()!=null||!item.id().equals(id))throw new IOException("Invalid publication");
+        return ids;
+    }
+    synchronized void promote(String id,com.wds.sixstars.contextoverlay.tree.TreeRuntime tree,long epoch)throws Exception{
+        if(!EncounterBindings.digest(id))throw new IOException("Invalid publication");
+        MeshItem item;String peer;long receivedAt;boolean previouslyPromoted;
+        try(Cursor cur=getReadableDatabase().rawQuery("SELECT body,peer,received_at,promoted FROM publications WHERE id=?",new String[]{id})){
+            if(!cur.moveToFirst())throw new IOException("Publication is unavailable");
+            item=MeshItem.parse(new JSONObject(cur.getString(0)));peer=cur.getString(1);
+            receivedAt=cur.getLong(2);previouslyPromoted=cur.getInt(3)!=0;
+        }
+        if(item.graph()!=null||!item.id().equals(id)||!EncounterBindings.digest(peer))throw new IOException("Invalid publication");
         // Native Tree uniqueness makes retry safe if the two databases were
         // interrupted between the Tree commit and the external marker.
-        item.store(tree,epoch);
+        long inserted=item.storeReceived(tree,epoch,peer,receivedAt);
         ContentValues values=new ContentValues();values.put("promoted",1);
         getWritableDatabase().update("publications",values,"id=?",new String[]{id});
+        if(inserted>0||!previouslyPromoted)ExternalTreeImport.notifyImported();
     }
 }
