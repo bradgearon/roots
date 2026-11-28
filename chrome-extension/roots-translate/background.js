@@ -314,7 +314,10 @@ function cleanExperienceSnapshot(raw,sender){
     }
     rows.push(row);
   }
-  const snapshot={documentKey:raw.documentKey,host,rows};
+  // Carry only the generation issued by the local capture settings route.
+  if(typeof raw.captureEpoch!=="string"||!/^[0-9a-f]{32}$/i.test(raw.captureEpoch)||
+     typeof raw.captureRun!=="string"||!/^[0-9a-f]{32}$/i.test(raw.captureRun))return null;
+  const snapshot={documentKey:raw.documentKey,host,rows,captureEpoch:raw.captureEpoch,captureRun:raw.captureRun};
   return new TextEncoder().encode(JSON.stringify(snapshot)).length<=96*1024?snapshot:null;
 }
 async function injectFocusedExperience(){
@@ -332,6 +335,9 @@ chrome.permissions.onRemoved.addListener(()=>{
 
 async function treeCommand(request){
   switch(request.operation){
+    case "experienceCaptureStatus":return treeCall("/experience/capture");
+    case "experienceCaptureSet":
+      return typeof request.enabled==="boolean"?treeCall("/experience/capture","POST",{enabled:request.enabled},20000):{ok:false,error:"invalid_setting"};
     case "experienceDomStatus":return {ok:true,enabled:await browserExperienceEnabled()};
     case "experienceDomEnable":return configureExperienceDom(request.enabled===true);
     case "viewStatus":case "viewRecords":case "viewFeed":case "viewScreens":case "viewPage":case "viewWeights":
