@@ -148,16 +148,6 @@ final class FastestComputeRouter implements TranslationProvider {
         Estimate e=timings.computeIfAbsent(bucket(route,chars),k->new Estimate());
         e.ms=e.count==0?ms:.75*e.ms+.25*ms;e.count++;e.at=SystemClock.elapsedRealtime();
     }
-    private synchronized boolean preferRemote(String remote,String phone,int chars){
-        Estimate r=timings.get(bucket(remote,chars)),l=timings.get(bucket(phone,chars));
-        if(r==null)return true;if(l==null)return false;
-        long now=SystemClock.elapsedRealtime();
-        // Re-test a stale alternative on real authorized work, not duplicate
-        // requests. Otherwise require a 10% advantage before preferring it.
-        if(now-r.at>120000&&now-l.at<120000)return true;
-        if(now-l.at>120000&&now-r.at<120000)return false;
-        return r.ms<l.ms*.90;
-    }
     @Override public void translate(String text,String source,String target,Result callback){
         translateChecked(text,source,target,false,false,callback);
     }
@@ -177,7 +167,7 @@ final class FastestComputeRouter implements TranslationProvider {
             boolean remote=network!=null&&key.contains(":")&&familiar.contains(base,fingerprint);
             String reason=!prefs.desktopTranslationEnabled()?"Desktop permission off":
                 network==null?"No active Wi-Fi":!key.contains(":")?"Desktop TLS connection key required":
-                !remote?"Network not remembered":"Measured local preference";
+                !remote?"Network not remembered":"Paired desktop preferred";
             String desktop="desktop:"+base+":"+fingerprint;
             String language="";
             try{language=localDetector.detect(text).accepted(name);}
@@ -207,12 +197,16 @@ final class FastestComputeRouter implements TranslationProvider {
             }
             // A manual request can still ask PLaMo to infer an uncertain language.
             final String effectiveSource=language;
-            if(remote&&preferRemote(desktop,phone,text.length())){
+            // Scheduling decides which post is next, never where to run it.
+            // A paired desktop is primary for all text sizes and both visible
+            // and retained/off-screen work. Only an actual failed/busy request
+            // or unavailable/disabled desktop permits a phone fallback.
+            if(remote){
                 if(remoteTranslate(network,base,key,desktop,text,effectiveSource,target,callback,finished))return;
-                remote=false;reason="Fallback after desktop attempt";
+                reason="Desktop fallback · "+connection;
             }
-            final boolean tryDesktop=remote;
-            status=remote?"On-device PLaMo · measured fastest":"On-device PLaMo · paired host unavailable or disabled";
+            if(!prefs.enabled()){finish(callback,finished,null,"Translation permission is off.");return;}
+            status="On-device PLaMo · "+reason;
             long start=SystemClock.elapsedRealtime();
             final String localReason=reason;
             InferenceHistory.Attempt attempt=InferenceHistory.get(app).begin(
@@ -226,12 +220,6 @@ final class FastestComputeRouter implements TranslationProvider {
                     if(ok){
                         observe(phone,text.length(),SystemClock.elapsedRealtime()-start);
                         finish(callback,finished,translated,null);return;
-                    }
-                    if(tryDesktop&&authorized(base,key)){
-                        try{routes.execute(()->{
-                            if(!remoteTranslate(network,base,key,desktop,text,effectiveSource,target,callback,finished))
-                                finish(callback,finished,null,error==null?"No translation returned.":error);
-                        });return;}catch(java.util.concurrent.RejectedExecutionException ignored){}
                     }
                     finish(callback,finished,null,error==null?"No translation returned.":error);
                 }
