@@ -211,6 +211,7 @@ struct UiaScan {
     std::vector<SurfaceText> rows;
     std::vector<RECT> masks;
     bool complete=false,maskReady=false,ownView=false;
+    RECT inspectedBounds{};
 };
 // Build small cached queries rather than walking Chrome's entire tree with
 // several cross-process COM calls per element. Never ask for edit values.
@@ -250,6 +251,7 @@ static UiaScan uia(IUIAutomation* automation,HWND hwnd) {
     ComPtr<IUIAutomationElement> root;
     if(!automation||!GetWindowRect(hwnd,&rect)||
        FAILED(automation->ElementFromHandle(hwnd,&root))||!root)return scan;
+    scan.inspectedBounds=rect;
     if(ownViewName(nameOf(root.Get()))){scan.ownView=true;return scan;}
     BOOL pw=TRUE;CONTROLTYPEID kind=0;
     if(FAILED(root->get_CurrentIsPassword(&pw))||FAILED(root->get_CurrentControlType(&kind)))return scan;
@@ -366,6 +368,7 @@ int wmain(int argc,wchar_t** argv) {
     DWORD consoleMode=0;if(GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE),&consoleMode))return 2;
     if(GetFileType(GetStdHandle(STD_OUTPUT_HANDLE))!=FILE_TYPE_PIPE ||
        GetFileType(GetStdHandle(STD_INPUT_HANDLE))!=FILE_TYPE_PIPE)return 2;
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     if(FAILED(CoInitializeEx(nullptr,COINIT_MULTITHREADED)))return 3;
 #ifdef ROOTS_SURFACE_OCR
     if(useOcr && FAILED(RoInitialize(RO_INIT_MULTITHREADED))) { CoUninitialize(); return 4; }
@@ -381,7 +384,6 @@ int wmain(int argc,wchar_t** argv) {
 #else
     if(useOcr)return 4;
 #endif
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     ownerThread=GetCurrentThreadId(); MSG msg{};
     PeekMessageW(&msg,nullptr,WM_USER,WM_USER,PM_NOREMOVE);
     WNDCLASSW wc{};wc.lpfnWndProc=signalProc;wc.hInstance=GetModuleHandleW(nullptr);wc.lpszClassName=L"RootsSurfaceSignals";
@@ -411,12 +413,13 @@ int wmain(int argc,wchar_t** argv) {
         auto now=Clock::now();auto wall=utc();auto next=target(excluded);bool isIdle=idle();
         const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(now-previous).count();
         const bool gap=elapsed>3000||wall<lastUtc||std::llabs((wall-lastUtc)-elapsed)>3000;
-        if(gap||!(next==current)||isIdle!=wasIdle) {
+        if(!(next==current)||isIdle!=wasIdle) {
             close(previous,lastUtc);current=next;++session;spanStart=now;startUtc=wall;seenUia.clear();seenOcr.clear();wasIdle=isIdle;lastReport={};
 #ifdef ROOTS_SURFACE_OCR
             if(ocr)ocr->reset();
 #endif
         }
+        if(gap){close(previous,lastUtc);spanStart=now;startUtc=wall;}
         if(current.hwnd && now-spanStart>=std::chrono::seconds(5))close(now,wall);
         previous=now;lastUtc=wall;
         // Idle is an activity label, not a reason to stop observing an unlocked screen.
@@ -428,7 +431,9 @@ int wmain(int argc,wchar_t** argv) {
         // own screen rectangles. Pixels are redacted before recognition.
         const char* opticalState=useOcr?"safety-query-unavailable":"disabled";
 #ifdef ROOTS_SURFACE_OCR
-        if(ocr&&scan.maskReady&&!scan.ownView){
+        RECT currentBounds{};
+        if(ocr&&scan.maskReady&&!scan.ownView&&target(excluded)==current&&
+           GetWindowRect(current.hwnd,&currentBounds)&&EqualRect(&currentBounds,&scan.inspectedBounds)){
             opticalReady=ocr->read(current.hwnd,optical,captureDesktop,scan.masks);
             opticalState=ocr->status();
         } else if(ocr){ocr->reset();seenOcr.clear();}
@@ -460,7 +465,7 @@ int wmain(int argc,wchar_t** argv) {
         if(lastReport==Clock::time_point{}||now-lastReport>=std::chrono::seconds(5)){
             lastReport=now;
             // Counts and state only, never captured text.
-            std::cerr<<"Surface: UIA "<<scan.rows.size()<<" visible, "<<(scan.complete?"complete":"partial")
+            std::cerr<<"Surface: process "<<current.pid<<"; UIA "<<scan.rows.size()<<" visible, "<<(scan.complete?"complete":"partial")
                 <<"; masks "<<scan.masks.size()<<"; OCR "<<opticalState
                 <<" ("<<optical.size()<<" lines); totals UIA "<<textUia<<", OCR "<<textOcr<<"\n";
         }
