@@ -85,7 +85,8 @@ try
     }
 
     Console.WriteLine(external ? "PLaMo ready; model alias verified." : "PLaMo ready.");
-    await using var gateway = new LocalTranslationGateway(8223, PLaMoReadiness.BaseUrl + "/v1/completions", lan);
+    await using var roots = DesktopRootsHost.TryOpen(root,lan);
+    await using var gateway = new LocalTranslationGateway(8223, PLaMoReadiness.BaseUrl + "/v1/completions", lan, roots);
     await gateway.StartAsync(quit.Token);
     Task shutdown = Task.Delay(Timeout.Infinite, quit.Token);
     if (engine != null)
