@@ -11,7 +11,8 @@ el("save").addEventListener("click", async () => {
   await chrome.storage.local.set({
     token, targetLang:el("target").value, autoTranslate:el("auto").checked
   });
-  status("Saved. Reload X to apply.");
+  status("Saved. Reload X to apply translation settings.");
+  refreshTree();
 });
 el("ping").addEventListener("click", () => {
   chrome.runtime.sendMessage({type:"sixStarsHealth"}, answer =>
