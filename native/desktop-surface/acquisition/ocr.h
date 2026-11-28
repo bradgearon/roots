@@ -19,7 +19,9 @@ public:
     OcrLane& operator=(const OcrLane&) = delete;
     void reset() noexcept;
     // Returns false when there was no new readable frame. Never writes a bitmap.
-    bool read(HWND window, std::vector<SurfaceText>& output);
+    // desktopBounds is nonempty only when the capture-to-screen transform
+    // was verified. OCR output itself retains capture-frame coordinates.
+    bool read(HWND window, std::vector<SurfaceText>& output, RECT& desktopBounds);
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;
