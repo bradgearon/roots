@@ -36,6 +36,8 @@ internal sealed class DesktopTreeService : IDisposable
     public long Revision { get { lock(_gate) return _tree.Revision(); } }
     public IReadOnlyList<Fragment> Feed(string term,long before,uint limit)
     { lock(_gate) return _tree.Query(term,0,before,limit); }
+    public IReadOnlyList<RecordMember> Records(string term,long before,uint limit)
+    { lock(_gate) return _tree.Records(term,0,before,limit); }
     public IReadOnlyList<BranchAgent> Branches() { lock(_gate) return _tree.Agents(); }
     public long AddBranch(string name,string term) { lock(_gate) return _tree.CreateAgent(name,term); }
     public void RemoveBranch(long id) { lock(_gate) _tree.RemoveAgent(id); }
@@ -143,6 +145,24 @@ internal sealed class DesktopTreeService : IDisposable
                 _tree.CreateAgent(branch.Key,branch.Text);count++;
             }
             return count;
+        }
+    }
+    public object CompileLocalized(string language)
+    {
+        language=Lang(language);
+        if(language=="")throw new ArgumentException("Invalid projection language.");
+        lock(_gate)
+        {
+            string path=Path.Combine(_directory,"tree.gguf");
+            string temporary=Path.Combine(_directory,"tree-"+Guid.NewGuid().ToString("N")+".gguf");
+            try
+            {
+                long revision=_tree.CompileLocalized(temporary,language);
+                if(revision!=_tree.Revision())throw new InvalidOperationException("Tree changed during compile.");
+                if(File.Exists(temporary))File.Move(temporary,path,true);else File.Delete(path);
+                return new {revision,language,available=File.Exists(path)};
+            }
+            finally {File.Delete(temporary);}
         }
     }
     public void Dispose() { lock(_gate) _tree.Dispose(); }
