@@ -462,7 +462,7 @@ final class MeshPeer {
                 for(NativeTree.Fragment fragment:page){
                     try{
                         MeshItem item=MeshItem.fromFragment(fragment);
-                        if(RootGraphExchange.localOffer(item)&&RootGraphExchange.fitsFrame(item))items.putIfAbsent(item.id(),item);
+                        if(RootGraphExchange.localOffer(item)&&RootGraphExchange.fitsArchive(item))items.putIfAbsent(item.id(),item);
                     }catch(IllegalArgumentException malformed){/* Keep other eligible observations available. */}
                 }
                 long next=page.get(page.size()-1).sequence();
@@ -471,7 +471,7 @@ final class MeshPeer {
                 if(page.size()<100)break;
             }
             for(NativeTree.Agent agent:tree.agents()){
-                try{MeshItem item=MeshItem.fromBranch(agent);if(RootGraphExchange.fitsFrame(item))items.putIfAbsent(item.id(),item);}
+                try{MeshItem item=MeshItem.fromBranch(agent);if(RootGraphExchange.fitsArchive(item))items.putIfAbsent(item.id(),item);}
                 catch(IllegalArgumentException malformed){}
             }
             return new EncounterCatalog(items,new EncounterCatalogStats(items.size(),items.size()-before,0));

@@ -91,7 +91,7 @@ final class ExternalKnowledgeStore extends SQLiteOpenHelper {
         try{
             long count=android.database.DatabaseUtils.longForQuery(db,"SELECT COUNT(*) FROM publications",null);
             for(MeshItem item:items){
-                if(!RootGraphExchange.fitsFrame(item))throw new IOException("Invalid publication size");
+                if(!RootGraphExchange.fitsArchive(item))throw new IOException("Invalid publication size");
                 boolean exists=false;
                 try(Cursor cur=db.rawQuery("SELECT body,peer,received_at,promoted FROM publications WHERE id=?",new String[]{item.id()})){
                     if(cur.moveToFirst()){

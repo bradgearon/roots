@@ -132,6 +132,10 @@ final class EncounterSync {
         catalog.putAll(external.catalog());pendingReceipts=external.pendingSet();
         catalog.putAll(MeshPeer.get(context).encounterCatalog());
         if(!peerGraph)catalog.values().removeIf(item->item.graph()!=null);
+        if(!peerChunks){
+            Iterator<MeshItem> legacy=catalog.values().iterator();
+            while(legacy.hasNext())if(!RootGraphExchange.fitsFrame(legacy.next()))legacy.remove();
+        }
         root=inventoryRoot(catalog.navigableKeySet());
         if(peerChunks){
             // A persisted receipt that has not reached the main Tree is

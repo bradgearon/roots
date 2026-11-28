@@ -28,6 +28,11 @@ final class RootGraphExchange {
     static boolean fitsFrame(MeshItem item)throws Exception{
         return new JSONObject().put("op","data").put("item",item.json()).toString().getBytes(StandardCharsets.UTF_8).length<=EncounterChannel.MAX_FRAME;
     }
+    static boolean fitsArchive(MeshItem item)throws Exception{
+        // The item schema already bounds individual fields. The archive byte
+        // budget, not the obsolete encrypted record size, governs transfer.
+        return item.json().toString().getBytes(StandardCharsets.UTF_8).length+2<=KnowledgeChunk.MAX_RAW;
+    }
     static String externalKey(MeshItem item)throws Exception{
         MeshItem.Graph g=item.graph();
         // For grouped records, use the original group identifier; for raw
