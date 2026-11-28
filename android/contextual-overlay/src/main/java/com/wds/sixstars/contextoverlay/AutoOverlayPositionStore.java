@@ -124,6 +124,7 @@ final class AutoOverlayPositionStore {
     void publish(List<Observation> fresh, boolean scrolling, long nowMs) {
         final boolean recovering = !coordinatesTrusted;
         boolean changed = recovering;
+        boolean layoutMoved = false;
         Set<String> found = new HashSet<>();
         for (Observation observation : fresh) {
             if (observation == null || observation.id == null ||
@@ -139,6 +140,7 @@ final class AutoOverlayPositionStore {
                 entries.put(observation.id, existing);
                 changed = true;
             } else {
+                if(!same(existing.rectangle,observation.rectangle))layoutMoved=true;
                 AutoDetailsPlacementService.Placement nextName = observation.nameDetails;
                 String nextAuthor = observation.authorName;
 
@@ -198,7 +200,13 @@ final class AutoOverlayPositionStore {
             if (found.contains(id)) continue;
             Entry missing = entries.get(id);
             if (missing == null) continue;
-            if (scrolling || recovering) {
+            // No grace period for an old post if the current snapshot
+            // proves that layout moved or another text occupies its bounds.
+            boolean replaced=false;
+            for(Observation current:fresh)if(current!=null&&current.rectangle!=null&&overlaps(missing.rectangle,current.rectangle)){
+                replaced=true;break;
+            }
+            if (scrolling || recovering || layoutMoved || replaced) {
                 entries.remove(id);
                 changed = true;
             } else if (missing.missingSince == 0L) {
@@ -312,6 +320,10 @@ final class AutoOverlayPositionStore {
         entries.clear();
         coordinatesTrusted = false;
         version++;
+    }
+
+    private static boolean overlaps(AutoInlinePlacementService.Placement a,AutoInlinePlacementService.Placement b){
+        return a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height;
     }
 
     private static boolean same(AutoInlinePlacementService.Placement a,
