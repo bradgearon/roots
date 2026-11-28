@@ -32,13 +32,14 @@ pub extern "system" fn Java_com_wds_sixstars_contextoverlay_DesktopWhirlwind_nat
     answer(&mut env,result)
 }
 #[no_mangle]
-pub extern "system" fn Java_com_wds_sixstars_contextoverlay_DesktopWhirlwind_nativeOpen(mut env:JNIEnv,_:JClass,context:JObject,bytes:JByteArray,target:JString,fallback:JString)->jstring{
+pub extern "system" fn Java_com_wds_sixstars_contextoverlay_DesktopWhirlwind_nativeOpen(mut env:JNIEnv,_:JClass,context:JObject,bytes:JByteArray,target:JString,relay:JString,fallback:JString)->jstring{
     let result=(||{
         init(&env,&context)?;
         let target:String=env.get_string(&target)?.into();
+        let relay:String=env.get_string(&relay)?.into();
         let fallback:String=env.get_string(&fallback)?.into();
         let mut s=seed(&env,&bytes)?;
-        let result=runtime().block_on(tunnel(&s,&target,&fallback));s.zeroize();
+        let result=runtime().block_on(tunnel(&s,&target,&relay,&fallback));s.zeroize();
         let t=result?;
         let result=format!("{}:{}",t.port,t.transport);
         let mut active=ACTIVE.lock().map_err(|_|anyhow!("tunnel lock"))?;

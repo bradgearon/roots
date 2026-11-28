@@ -1,9 +1,9 @@
 //! Internal compute tunnel. External mesh identities and routes are never loaded here.
 //! An independently authenticated transport stream carries the existing pinned TLS
 //! gateway. No automatic fallback after sending any HTTP request bytes.
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use futures::StreamExt;
-use iroh::{Endpoint, SecretKey, PublicKey, endpoint::presets};
+use iroh::{Endpoint, EndpointAddr, SecretKey, PublicKey, endpoint::presets};
 use libp2p::{identity, Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder, swarm::{NetworkBehaviour, SwarmEvent}, multiaddr::Protocol};
 use sha2::{Digest, Sha256};
 use std::{path::{Path,PathBuf}, sync::Arc, time::Duration};
@@ -70,9 +70,9 @@ async fn swarm(seed:&[u8;32])->Result<Swarm<InternalBehaviour>>{
     Ok(s)
 }
 async fn iroh_endpoint(seed:&[u8;32],server:bool)->Result<Endpoint>{
-    // N0 DNS/Pkarr lookup and relay are prototype infrastructure. Private peer
-    // membership and the capability grant are never published to that lookup.
-    let mut b=Endpoint::builder(presets::N0).secret_key(iroh_key(seed));
+    // Keep default relay traversal, but disable public DNS/Pkarr publication
+    // and lookup. Routes are conveyed privately as part of device pairing.
+    let mut b=Endpoint::builder(presets::N0).clear_address_lookup().secret_key(iroh_key(seed));
     if server {b=b.alpns(vec![ALPN.to_vec()]);}
     Ok(b.bind().await?)
 }
@@ -105,7 +105,7 @@ async fn host_iroh(ep:Endpoint,grants:PathBuf,slots:Arc<Semaphore>){
         tokio::spawn(async move{
             let _permit=permit;
             let result:Result<()>=async{
-                let conn=timeout(SETUP,incoming).await??;
+                let conn=timeout(SETUP,async {incoming.await}).await??;
                 let id=hex::encode(conn.remote_id().as_bytes());
                 if !allowed(&grants,"iroh",&id){conn.close(1u32.into(),b"denied");bail!("not authorized")}
                 let (mut send,mut recv)=timeout(SETUP,conn.accept_bi()).await??;
@@ -164,7 +164,11 @@ async fn host_p2p(seed:&[u8;32],grants:PathBuf,relay:Option<&str>,slots:Arc<Sema
 pub async fn serve(seed:&[u8;32],grants:PathBuf,relay:Option<&str>)->Result<()>{
     let ep=iroh_endpoint(seed,true).await?;
     let (iroh_id,peer)=identities(seed)?;
-    println!("Internal compute address: roots+iroh://{iroh_id}");
+    if timeout(Duration::from_secs(20),ep.online()).await.is_ok(){
+        let address=ep.addr();
+        for relay in address.relay_urls(){println!("Internal compute address: roots+iroh://{iroh_id}?relay={relay}");}
+    }
+    if ep.addr().relay_urls().next().is_none(){eprintln!("No Iroh relay route yet; use a configured libp2p fallback or retry host startup");}
     println!("Internal fallback peer: {peer}");
     println!("Only explicitly allowed devices can open the compute tunnel; the existing TLS pin and inference key remain required.");
     let slots=Arc::new(Semaphore::new(4));
@@ -177,10 +181,12 @@ pub async fn serve(seed:&[u8;32],grants:PathBuf,relay:Option<&str>)->Result<()>{
 }
 
 struct IrohPrepared {ep:Endpoint,conn:iroh::endpoint::Connection,send:iroh::endpoint::SendStream,recv:iroh::endpoint::RecvStream}
-async fn prepare_iroh(seed:&[u8;32],target:&str)->Result<IrohPrepared>{
+async fn prepare_iroh(seed:&[u8;32],target:&str,relay:&str)->Result<IrohPrepared>{
     let id=parse_iroh_id(target)?;
+    if relay.is_empty(){bail!("Private relay route missing")}
+    let address=EndpointAddr::new(id).with_relay_url(relay.parse()?);
     let ep=iroh_endpoint(seed,false).await?;
-    let conn=ep.connect(id,ALPN).await?;
+    let conn=ep.connect(address,ALPN).await?;
     let (mut send,mut recv)=conn.open_bi().await?;
     send.write_all(HELLO).await?;
     let mut ack=[0];recv.read_exact(&mut ack).await?;
@@ -215,10 +221,10 @@ async fn prepare_p2p(seed:&[u8;32],target:&str)->Result<P2pPrepared>{
 }
 enum Prepared {Iroh(IrohPrepared),P2p(P2pPrepared)}
 pub struct Tunnel {pub port:u16,pub transport:&'static str,pub task:JoinHandle<()>}
-pub async fn tunnel(seed:&[u8;32],target:&str,fallback:&str)->Result<Tunnel>{
+pub async fn tunnel(seed:&[u8;32],target:&str,relay:&str,fallback:&str)->Result<Tunnel>{
     // Fallback is strictly pre-request: the local listener is created only
     // after the chosen remote transport has accepted the capability stream.
-    let prepared=match timeout(SETUP,prepare_iroh(seed,target)).await{
+    let prepared=match timeout(SETUP,prepare_iroh(seed,target,relay)).await{
         Ok(Ok(path))=>Prepared::Iroh(path),
         _ if !fallback.is_empty()=>Prepared::P2p(timeout(SETUP,prepare_p2p(seed,fallback)).await??),
         _=>bail!("Iroh unavailable or device not authorized"),
