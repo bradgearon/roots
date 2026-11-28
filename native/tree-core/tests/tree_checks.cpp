@@ -259,6 +259,42 @@ int main(){
             ok(result);need(copied==10,"backup retains committed observations after original changes");
         }
         {
+            // Scroll down, then back above the first acquired screen. Page
+            // reading must follow document position rather than capture time.
+            const char *parent="local:experience:browser:fixture:page";
+            const char *top="local:experience:browser:fixture:page:line:top";
+            const char *middle="local:experience:browser:fixture:page:line:middle";
+            const char *bottom="local:experience:browser:fixture:page:line:bottom";
+            auto put=[&](const char *id,const char *text,const char *order,const char *position,int64_t at){
+                roots_observation rows[]={
+                    {"record.experience.body",id,text,"",at},
+                    {"record.experience.kind",id,"observation","",at},
+                    {"record.experience.parent",id,parent,"",at},
+                    {"record.experience.page-order",id,order,"",at},
+                    {"record.experience.page-key",id,position,"",at}};
+                size_t n=0;ok(roots_tree_observe(t,rows,5,&n));need(n==5,"page line");
+            };
+            put(bottom,"Bottom","0000000300","bottom-position",10);
+            put(top,"Top","0000000000","top-position",20);
+            put(middle,"Middle","0000000150","middle-position",30);
+            int64_t seen=0;
+            ok(roots_tree_experience_seen(t,top,"different-position",&seen));need(seen==1,"existing anchor survives scroll/reflow");
+            ok(roots_tree_experience_seen(t,"local:experience:browser:fixture:page:line:recreated","top-position",&seen));
+            need(seen==1,"recreated DOM node at same position");
+            ok(roots_tree_experience_seen(t,"local:experience:browser:fixture:page:line:other","other-position",&seen));
+            need(seen==0,"distinct placement remains new");
+            std::vector<std::pair<int64_t,std::string>> page;
+            ok(roots_tree_experience_page(t,parent,"",0,2,record_member,&page));
+            need(page.size()==10&&page[0].second=="Top"&&page[5].second=="Middle","page order independent of ingestion order");
+            auto cursor=page[5].first;page.clear();
+            ok(roots_tree_experience_page(t,parent,"0000000150",cursor,2,record_member,&page));
+            need(page.size()==5&&page[0].second=="Bottom","stable forward page cursor");
+            page.clear();
+            ok(roots_tree_experience_page(t,parent,"0000000300",query(t,"Bottom").front().seq,2,record_member,&page));
+            need(page.empty(),"end of page");
+            ok(roots_tree_clear(t));
+        }
+        {
             // Reproduce a real-sized Experience timeline (76,500 fragments).
             // The former query scanned the whole namespace for each event,
             // which could time out even with a few minutes of screen capture.
