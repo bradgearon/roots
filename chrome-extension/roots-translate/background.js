@@ -256,7 +256,7 @@ function cleanTreePost(raw) {
 async function treeCommand(request){
   switch(request.operation){
     case "viewStatus":case "viewRecords":case "viewFeed":case "viewWeights":
-    case "viewBranches":case "viewAddBranch":case "viewRemoveBranch":{
+    case "viewBranches":case "viewAddBranch":case "viewRemoveBranch":case "viewCompile":{
       const source=request.source;
       if(source!=="experience"&&source!=="knowledge")return {ok:false,error:"invalid_source"};
       const path="/view/"+source;
@@ -270,6 +270,7 @@ async function treeCommand(request){
           return treeCall(path+(request.operation==="viewRecords"?"/records":"/feed")+"?"+params);
         }
         case "viewWeights":return positive(request.sequence)?treeCall(path+"/weights/"+request.sequence):{ok:false,error:"invalid_sequence"};
+        case "viewCompile":return treeCall(path+"/compile","POST",{language:String(request.language||"en").slice(0,3)},60000);
         case "viewBranches":return treeCall(path+"/branches");
         case "viewAddBranch":return treeCall(path+"/branches","POST",{name:String(request.name||"").slice(0,160),term:String(request.term||"").slice(0,512)});
         case "viewRemoveBranch":return positive(request.id)?treeCall(path+"/branches/"+request.id,"DELETE"):{ok:false,error:"invalid_branch"};
