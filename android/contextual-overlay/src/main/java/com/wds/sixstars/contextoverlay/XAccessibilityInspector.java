@@ -49,7 +49,11 @@ final class XAccessibilityInspector {
             if(detailed.spanNodes()==0||frame.settled()&&!detailed.settled())detailed=frame;
             if(detailed.settled())break;
         }
-        return new Snapshot(status,latest.header()+latest.body(),report.toString(),detailed.attributes());
+        return new Snapshot(status,latest.header()+latest.body(),report.toString(),withCaptureHeader(detailed));
+    }
+    private static String withCaptureHeader(Frame frame){
+        try{return new org.json.JSONObject(frame.attributes()).put("snapshot",frame.header()).toString();}
+        catch(org.json.JSONException ignored){return frame.attributes();}
     }
     static synchronized Scan begin(boolean captureEnabled,boolean settled){
         long now=SystemClock.elapsedRealtime();
@@ -183,7 +187,7 @@ final class XAccessibilityInspector {
         }
         String serialized(){
             org.json.JSONObject result=new org.json.JSONObject();
-            try{result.put("format","roots.accessibility.node-attributes.v2").put("capturedAt",java.time.Instant.now().toString())
+            try{result.put("format","roots.accessibility.node-attributes.v2")
                 .put("settled",settled).put("spanNodes",spanDetails.size()).put("inspected",count)
                 .put("bounded",truncated).put("nodes",attributes);}catch(org.json.JSONException ignored){}
             return result.toString();
