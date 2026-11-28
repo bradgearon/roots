@@ -175,7 +175,7 @@ References: [Surface plan](../../design/desktop-surface-experience.md),
 
 ### Browser Experience, dialogue and backups
 
-Reload extension 0.4.5 and choose Experience → Enable visible webpage reading.
+Reload extension 0.4.6 and choose Experience → Enable visible webpage reading.
 Grant Chrome's requested site access once. It uses visible top-level page text,
 not hidden DOM, form values, browser history, or background tabs. The host also
 checks the live Surface lease and foreground Chromium window. The setting can
@@ -222,3 +222,28 @@ a new document identity. No attempt is made to reconstruct unobserved text or
 historical page positions from old records. Native OCR/UIA continue to retain
 separate screen occurrences; their within-screen display is sorted by coordinates
 inside each acquisition lane.
+
+### Pause or resume Experience capture
+
+The Tree page and toolbar popup have a separate **Pause Experience capture** /
+**Resume Experience capture** button. This master switch governs native UIA/OCR,
+foreground activity and authorized browser DOM capture. It does not change the
+X-post Knowledge capture setting, Mesh exchange, translation, or saved data.
+The setting is saved in the local Experience directory and survives restart.
+Pausing stops the owned native reader and blocks new writes through the shared
+capture epoch; a paused receiver remains ready to resume. Wait until the UI
+reports **Paused** (not **Pausing**) before exposing content you want to keep out
+of Experience. Ctrl+C still fully stops the Surface receiver and its child.
+
+The same control works without the browser or Roots host:
+
+```cmd
+launch-surface.cmd --pause
+launch-surface.cmd --status
+launch-surface.cmd --resume
+```
+
+If the watcher has already stopped, resume only enables the setting; run
+`launch-surface.cmd` to start the receiver. The first upgrade requires stopping
+the old watcher, rebuilding, and reloading the extension and webpage tabs.
+An older watcher is explicitly reported as not supporting pause.
