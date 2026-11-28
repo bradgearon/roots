@@ -93,6 +93,17 @@ internal sealed class DesktopRootsHost : IAsyncDisposable
             ctx.RequestAborted.ThrowIfCancellationRequested();
             return Results.Json(new {ok=true,inserted=host._tree.Observe(post)});
         });
+        // Private DOM ingestion shares the existing local token boundary.
+        // It does not call the social observation or Mesh import path.
+        group.MapGet("/experience/browser/status",()=>Results.Json(new{ok=true,capture=DesktopBrowserExperience.Enabled()}));
+        group.MapPost("/experience/browser/observe",async (HttpContext ctx)=>{
+            var limit=ctx.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if(limit!=null&&!limit.IsReadOnly)limit.MaxRequestBodySize=96*1024;
+            if(!DesktopBrowserExperience.Enabled())return Results.Json(new{ok=false,error="capture_off"},statusCode:409);
+            var snapshot=await ctx.Request.ReadFromJsonAsync<DesktopBrowserExperience.Snapshot>(cancellationToken:ctx.RequestAborted);
+            ctx.RequestAborted.ThrowIfCancellationRequested();
+            return Results.Json(DesktopBrowserExperience.Observe(snapshot));
+        });
         group.MapGet("/feed",(string? term,long? before,int? limit)=>{
             var page=host!._tree.Feed(term??"",Math.Max(0,before??0),(uint)Math.Clamp(limit??30,1,100));
             return Results.Json(new {ok=true,items=page,nextBefore=page.Count==0?0:page[^1].Sequence});
