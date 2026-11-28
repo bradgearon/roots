@@ -303,7 +303,16 @@ function cleanExperienceSnapshot(raw,sender){
        !Array.isArray(r.bounds)||r.bounds.length!==4||!r.bounds.every(n=>Number.isSafeInteger(n)&&n>=0&&n<=32768)||
        r.bounds[0]>=r.bounds[2]||r.bounds[1]>=r.bounds[3])return null;
     total+=r.text.length;if(total>16000)return null;
-    rows.push({text:r.text,bounds:r.bounds});
+    const row={text:r.text,bounds:r.bounds};
+    // Accept legacy extension snapshots, but do not invent their page order.
+    const fields=["anchor","start","end","pageX","pageY","order"];
+    if(fields.some(k=>r[k]!==undefined)){
+      if(!fields.every(k=>Number.isSafeInteger(r[k]))||
+         r.anchor<1||r.anchor>1000000000||r.start<0||r.end<=r.start||r.end>1000000000||
+         Math.abs(r.pageX)>1000000000||Math.abs(r.pageY)>1000000000||r.order<0||r.order>1000000000)return null;
+      for(const k of fields)row[k]=r[k];
+    }
+    rows.push(row);
   }
   const snapshot={documentKey:raw.documentKey,host,rows};
   return new TextEncoder().encode(JSON.stringify(snapshot)).length<=96*1024?snapshot:null;
@@ -325,7 +334,7 @@ async function treeCommand(request){
   switch(request.operation){
     case "experienceDomStatus":return {ok:true,enabled:await browserExperienceEnabled()};
     case "experienceDomEnable":return configureExperienceDom(request.enabled===true);
-    case "viewStatus":case "viewRecords":case "viewFeed":case "viewScreens":case "viewWeights":
+    case "viewStatus":case "viewRecords":case "viewFeed":case "viewScreens":case "viewPage":case "viewWeights":
     case "viewBranches":case "viewAddBranch":case "viewRemoveBranch":case "viewCompile":{
       const source=request.source;
       if(source!=="experience"&&source!=="knowledge")return {ok:false,error:"invalid_source"};
@@ -340,6 +349,13 @@ async function treeCommand(request){
             agent:String(positive(request.agent)),limit:request.operation==="viewScreens"?"12":"30"});
           const endpoint=request.operation==="viewScreens"?"/screens":request.operation==="viewRecords"?"/records":"/feed";
           return treeCall(path+endpoint+"?"+params,"GET",undefined,20000);
+        }
+        case "viewPage":{
+          if(source!=="experience"||typeof request.parent!=="string"||!request.parent.startsWith("local:experience:browser:")||request.parent.length>512)
+            return {ok:false,error:"invalid_page"};
+          const params=new URLSearchParams({parent:request.parent,afterOrder:String(request.afterOrder||"").slice(0,128),
+            afterSequence:String(positive(request.afterSequence)),limit:"100"});
+          return treeCall(path+"/page?"+params,"GET",undefined,20000);
         }
         case "viewWeights":return positive(request.sequence)?treeCall(path+"/weights/"+request.sequence):{ok:false,error:"invalid_sequence"};
         case "viewCompile":return treeCall(path+"/compile","POST",{language:String(request.language||"en").slice(0,3)},60000);
