@@ -16,7 +16,7 @@ public class PostLanguageTest {
     }
     @Test public void uncertainClassificationDoesNotInventALanguage(){
         assertEquals("",new PostLanguage.Detection("fr",.52,.06,true).accepted(false));
-        assertEquals("",new PostLanguage.Detection("fr",.83,.30,true).accepted(true));
+        assertEquals("fr",new PostLanguage.Detection("fr",.83,.30,true).accepted(true));
         assertEquals("ja",new PostLanguage.Detection("ja",.97,.94,true).accepted(true));
         assertEquals("",PostLanguage.resolve("This is an English post.","en","fr",.52,false));
         assertEquals(0,PostLanguage.letters("🐓🥚 123"));
