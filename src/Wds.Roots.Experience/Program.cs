@@ -44,7 +44,7 @@ try
     }
     if (excluded.Count > 64) return Usage();
     Console.WriteLine("Roots will follow eligible foreground windows automatically and retain text and activity locally.");
-    Console.WriteLine("Known private apps, browsers, protected surfaces and sensitive controls are excluded.");
+    Console.WriteLine("No applications are excluded by name unless you explicitly specify an exclusion. Protected surfaces and sensitive controls remain excluded.");
     Console.WriteLine("Screen text can contain confidential information. Stop capture before opening private content.");
     Console.Write("Start desktop watching? [y/N] ");
     if (!string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase)) return 0;
@@ -127,15 +127,6 @@ static int Usage()
 internal sealed record SurfaceObservation(string Kind, ulong Session, uint Pid, ulong Created, ulong Window,
     long StartUtc, long EndUtc, long StartMono, long EndMono, string ProcessName, int[] Bounds, string Text)
 {
-    private static readonly HashSet<string> Denied = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe",
-        "roots-surface.exe", "wds.roots.host.exe", "wds.roots.experience.exe", "dotnet.exe", "windowsterminal.exe",
-        "conhost.exe", "openconsole.exe", "credentialuibroker.exe", "logonui.exe", "keepass.exe", "keepassxc.exe",
-        "1password.exe", "bitwarden.exe", "outlook.exe", "olk.exe", "thunderbird.exe", "ms-teams.exe",
-        "teams.exe", "slack.exe", "discord.exe", "signal.exe", "telegram.exe", "whatsapp.exe", "skype.exe",
-        "mstsc.exe", "msrdc.exe"
-    };
     internal static bool ValidProcess(string name) =>
         name.Length is > 4 and <= 128 && name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
         !name.Any(c => char.IsControl(c) || c is '/' or '\\' or ':' or '*' or '?');
@@ -157,7 +148,7 @@ internal sealed record SurfaceObservation(string Kind, ulong Session, uint Pid, 
         var process = Decode(p[9]); var text = Decode(p[11]);
         var bounds = p[10].Split(',').Select(x => int.Parse(x, CultureInfo.InvariantCulture)).ToArray();
         bool activity = p[0] is "focused" or "idle";
-        if (session == 0 || pid == 0 || created == 0 || window == 0 || !ValidProcess(process) || Denied.Contains(process) || excluded.Contains(process) ||
+        if (session == 0 || pid == 0 || created == 0 || window == 0 || !ValidProcess(process) || excluded.Contains(process) ||
             start < 0 || end < start || end > DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds() ||
             startMono < 0 || endMono < startMono || endMono - startMono > 15_000_000 ||
             bounds.Length != 4 || bounds[2] < bounds[0] || bounds[3] < bounds[1] ||
