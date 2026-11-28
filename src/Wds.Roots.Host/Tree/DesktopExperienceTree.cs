@@ -22,10 +22,12 @@ internal static class DesktopExperienceTree
         return read(tree);
     }
     public static (long Count,long Revision) Status()=>Read(t=>(t.Count(),t.Revision()),(0L,0L));
+    public static IReadOnlyList<Fragment> Feed(string term,long beforeMs,long beforeSequence,uint limit,long agent)
+        =>Read<IReadOnlyList<Fragment>>(t=>t.QueryByTime(term,agent,beforeMs,beforeSequence,limit),Array.Empty<Fragment>());
     public static IReadOnlyList<RecordMember> Records(string term,long beforeMs,long beforeSequence,uint limit,long agent)
-        =>Read(t=>t.RecordsByTime(term,agent,beforeMs,beforeSequence,limit),Array.Empty<RecordMember>() as IReadOnlyList<RecordMember>);
+        =>Read<IReadOnlyList<RecordMember>>(t=>t.RecordsByTime(term,agent,beforeMs,beforeSequence,limit),Array.Empty<RecordMember>());
     public static IReadOnlyList<BranchAgent> Branches()
-        =>Read(t=>t.Agents(),Array.Empty<BranchAgent>() as IReadOnlyList<BranchAgent>);
+        =>Read<IReadOnlyList<BranchAgent>>(t=>t.Agents(),Array.Empty<BranchAgent>());
     public static float[] Weights(long sequence)
         =>Read(t=>t.FragmentWeights(sequence),Array.Empty<float>());
     public static long AddBranch(string name,string term)
