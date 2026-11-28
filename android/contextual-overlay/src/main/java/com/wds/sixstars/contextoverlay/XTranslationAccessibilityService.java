@@ -259,10 +259,24 @@ public final class XTranslationAccessibilityService extends AccessibilityService
                 // Neither source is extrapolated from time or gesture speed.
                 int directY = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
                         ? event.getScrollDeltaY() : 0;
-                String origin = event.getWindowId() + ":" +
-                        String.valueOf(event.getClassName());
+                String origin=null;
+                int absoluteY=-1;
+                // Android initializes absolute scroll/max offsets to zero.
+                // Never treat two default zeros as proof the timeline stayed
+                // still, or subtract offsets of unrelated Compose nodes.
+                if(event.getMaxScrollY()>0&&event.getScrollY()>=0){
+                    try{
+                        AccessibilityNodeInfo source=Build.VERSION.SDK_INT>=33?event.getSource(0):event.getSource();
+                        if(source!=null){
+                            try{
+                                origin=event.getWindowId()+":"+source.hashCode()+":"+String.valueOf(event.getClassName());
+                                absoluteY=event.getScrollY();
+                            }finally{source.recycle();}
+                        }
+                    }catch(RuntimeException ignored){}
+                }
                 XMeasuredScrollTracker.Result movement = scrollTracker.observe(
-                        origin, directY, event.getScrollY());
+                        origin, directY, absoluteY);
                 if (movement.measured && movement.deltaY != 0) {
                     coordinator.noteMeasuredScroll(movement.deltaY,android.os.SystemClock.uptimeMillis());
                     if (movement.deltaY != 0)
