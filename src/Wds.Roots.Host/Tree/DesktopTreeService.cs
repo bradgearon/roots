@@ -147,6 +147,8 @@ internal sealed class DesktopTreeService : IDisposable
             return count;
         }
     }
+    public ulong ImportExternal(DesktopPublicItem item,string peer,long receivedAt)
+    { lock(_gate) return _tree.Observe(item.Rows(peer,receivedAt)); }
     public object CompileLocalized(string language)
     {
         language=Lang(language);
